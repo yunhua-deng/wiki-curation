@@ -1,0 +1,23 @@
+{
+  "$id": "https://openclaw.dev/wiki/record/3.0",
+  "version": "3.0",
+  "description": "wiki-curation record.json 约束常量（records/schema.py 消费；手写校验，不依赖 jsonschema）",
+  "required_fields": ["version", "id", "title", "tldr", "topic_type", "tags", "entities", "links", "source"],
+  "entity_buckets": ["company", "author", "product", "series"],
+  "link_kinds": ["github", "arxiv", "huggingface", "homepage", "weixin", "linkedin", "docs", "other"],
+  "link_roles": ["canonical", "related"],
+  "link_origins": ["explicit", "inferred"],
+  "tags_min": 1,
+  "tags_max": 8,
+  "tldr_max_chars": 200,
+  "summary_max_chars": 600,
+  "rules": [
+    "version 必须为 3.0",
+    "topic_type 必须能归一化到 VALID_TOPIC_TYPES",
+    "entities 必须含 company/author/product/series 四键（可为空数组）",
+    "links 每项 url 必须以 http(s):// 开头且去重",
+    "同一 kind 的 role=canonical 至多一个",
+    "tags 数量 1-8",
+    "links 允许为空数组（提取失败合法）"
+  ]
+}

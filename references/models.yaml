@@ -1,0 +1,18 @@
+# wiki 工作流模型配置 — skill 默认
+# 优先级：环境变量 WIKI_MODEL_BRIEF / WIKI_MODEL_DEEP / WIKI_MODEL_RECORD > 本文件 > 硬编码默认值
+
+brief:
+  primary: kimi/kimi-for-coding
+  fallback:
+    - deepseek/deepseek-v4-flash
+
+deep:
+  primary: kimi/kimi-for-coding
+  fallback:
+    - deepseek/deepseek-v4-flash
+
+# record 提取任务（默认与 brief 同档：读 raw 材料产结构化记录）
+record:
+  primary: kimi/kimi-for-coding
+  fallback:
+    - deepseek/deepseek-v4-flash

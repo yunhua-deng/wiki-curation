@@ -1,0 +1,120 @@
+/* Wiki Site v3.2 — compact table, inline expansion */
+:root {
+  --bg: #fff; --surface: #fafbfc; --border: #d0d7de; --ink: #1f2328;
+  --muted: #656d76; --accent: #0969da; --accent-soft: #ddf4ff;
+  --radius: 6px; --font: -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --font-mono: "SF Mono",Consolas,monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0d1117; --surface: #161b22; --border: #30363d; --ink: #e6edf3; --muted: #8b949e; --accent: #58a6ff; --accent-soft: #0c2d6b; }
+}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;font-family:var(--font);font-size:14px;line-height:1.5;color:var(--ink);background:var(--bg)}
+.page-wrapper{max-width:1400px;margin:0 auto;padding:0 1rem}
+.container{padding:1rem 0}
+footer{text-align:center;padding:2rem 0;color:var(--muted);font-size:.85rem}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+.empty{text-align:center;color:var(--muted);padding:3rem 0;font-size:1.1rem}
+
+/* Hero */
+.hero{text-align:center;padding:1.5rem 0 0.5rem}
+.hero h1{font-size:1.5rem;margin:0}
+.stats{display:flex;justify-content:center;gap:2rem;margin-top:.5rem;color:var(--muted)}
+.stat b{color:var(--ink)}
+
+/* Controls */
+.controls{display:flex;gap:.5rem;margin:1rem 0;flex-wrap:wrap}
+.controls input[type=search]{flex:1;min-width:200px;padding:.4rem .75rem;border:1px solid var(--border);border-radius:var(--radius);font-size:.9rem;background:var(--surface);color:var(--ink)}
+.controls select{padding:.4rem .5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--ink);font-size:.85rem}
+
+/* Badges */
+.badge{display:inline-block;padding:0 .4rem;border-radius:4px;font-size:.75rem;line-height:1.5;white-space:nowrap}
+.badge-other{background:var(--surface);border:1px solid var(--border);color:var(--muted)}
+.badge-record{background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent);font-weight:600}
+.badge-tag{background:var(--accent-soft);color:var(--accent);cursor:pointer;margin:0 .15rem}
+.badge-done{background:#dafbe1;color:#1a7f37}
+.badge-pending{background:#fff8c5;color:#9a6700}
+.badge-running{background:#ddf4ff;color:#0969da}
+.badge-failed{background:#ffebe9;color:#cf222e}
+
+/* Month groups */
+.month-group{margin-bottom:1.5rem}
+.month-header{cursor:pointer;font-size:1rem;margin:0 0 .25rem;padding:.25rem 0;user-select:none}
+.month-header:hover{color:var(--accent)}
+.month-group.collapsed .month-body{display:none}
+
+/* Table */
+.wiki-table{width:100%;border-collapse:collapse;font-size:.85rem}
+.wiki-table td{padding:.3rem .5rem;border-bottom:1px solid var(--border);vertical-align:top}
+.wiki-table .col-id{width:155px;font-family:var(--font-mono);font-size:.8rem;color:var(--muted)}
+.wiki-table .col-type{width:75px;text-align:center}
+.wiki-table .col-title{font-weight:500}
+.wiki-table .col-tldr{color:var(--muted);max-width:400px}
+.wiki-table .col-links{width:130px}
+.wiki-table .col-date{width:80px;text-align:right;color:var(--muted);font-family:var(--font-mono);font-size:.8rem}
+
+.tldr-trunc{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;line-height:1.4}
+
+/* Detail row */
+.wiki-detail td{padding:.5rem;background:var(--surface);border-bottom:2px solid var(--accent-soft)}
+.detail-card{display:flex;flex-direction:column;gap:.5rem}
+.detail-card p{margin:0;line-height:1.6}
+
+/* Link badges */
+.link-badge{display:inline-flex;align-items:center;gap:.15rem;padding:.05rem .4rem;border:1px solid var(--border);border-radius:999px;font-size:.75rem;color:var(--ink);text-decoration:none;margin:0 .1rem;white-space:nowrap}
+.link-badge:hover{border-color:var(--accent);color:var(--accent)}
+.link-badge.inferred{border-style:dashed;opacity:.75}
+.dot{width:5px;height:5px;border-radius:50%;display:inline-block;margin-left:1px}
+.dot.ok{background:#2da44e}
+.dot.dead{background:#cf222e}
+
+/* Dark mode badges */
+@media (prefers-color-scheme: dark) {
+  .badge-done{background:#033a16;color:#3fb950}
+  .badge-pending{background:#3b2300;color:#d29922}
+  .badge-running{background:#0c2d6b;color:#58a6ff}
+  .badge-failed{background:#3b0112;color:#f85149}
+}
+
+/* v3.3 summary block（段落式解读摘要） */
+.summary-block {
+  border-left: 3px solid var(--accent);
+  padding-left: 0.75rem;
+  margin: 0.25rem 0;
+  color: var(--ink);
+  line-height: 1.65;
+}
+.summary-block p { margin: 0.35rem 0; }
+
+/* v3.4 trends 视图 */
+.nav-pills { display: flex; justify-content: center; gap: 0.5rem; margin-top: 0.75rem; }
+.nav-pills button {
+  padding: 0.35rem 1rem; border: 1px solid var(--border);
+  background: var(--surface); border-radius: 999px; cursor: pointer;
+  font-size: 0.85rem; color: var(--ink);
+}
+.nav-pills button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+.trend-card {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 0.75rem 1rem; margin-bottom: 0.75rem; cursor: pointer;
+  background: var(--surface); transition: box-shadow 0.15s;
+}
+.trend-card:hover { box-shadow: 0 1px 6px rgba(0,0,0,0.08); }
+.trend-card h3 { margin: 0 0 0.25rem; font-size: 1rem; }
+.trend-meta { color: var(--muted); font-size: 0.8rem; margin-bottom: 0.35rem; }
+.trend-card p { margin: 0; line-height: 1.5; }
+
+#trend-back {
+  margin-bottom: 1rem; padding: 0.3rem 0.8rem;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); cursor: pointer; color: var(--ink);
+}
+.markdown-body { line-height: 1.7; max-width: 860px; }
+.markdown-body h1 { font-size: 1.5rem; } .markdown-body h2 { font-size: 1.2rem; margin-top: 1.5rem; }
+.markdown-body h3 { font-size: 1.05rem; }
+.markdown-body table { border-collapse: collapse; margin: 0.75rem 0; }
+.markdown-body th, .markdown-body td { border: 1px solid var(--border); padding: 0.3rem 0.6rem; }
+.markdown-body blockquote { border-left: 3px solid var(--accent); margin: 0.5rem 0; padding-left: 0.75rem; color: var(--muted); }
+.markdown-body code { background: var(--accent-soft); padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.85em; }

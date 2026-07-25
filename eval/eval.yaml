@@ -1,0 +1,220 @@
+name: wiki-curation
+version: 1.0.0
+description: |
+  Local skillgrade-style evaluation for wiki-curation.
+  Deterministic graders verify CLI schema, package imports, and code hygiene.
+  LLM-rubric graders judge the quality of generated task payloads.
+
+tasks:
+  - id: manifest-schema
+    name: CLI manifest returns valid schema
+    type: deterministic
+    description: >
+      `cli.py --json manifest` must return ok=true with a commands list
+      containing run, doctor, and stats.
+    command:
+      - python
+      - -m
+      - scripts.cli
+      - --json
+      - manifest
+    checks:
+      - name: exit_code
+        type: exit_code
+        value: 0
+      - name: ok is true
+        type: json_path
+        path: ok
+        value: true
+      - name: has run command
+        type: json_contains
+        path: data.commands
+        item: run
+        key: name
+      - name: has doctor command
+        type: json_contains
+        path: data.commands
+        item: doctor
+        key: name
+      - name: has stats command
+        type: json_contains
+        path: data.commands
+        item: stats
+        key: name
+
+  - id: doctor-quick
+    name: CLI doctor --quick returns grade
+    type: deterministic
+    description: >
+      `cli.py --json doctor --quick` must return ok=true with a grade string.
+    command:
+      - python
+      - -m
+      - scripts.cli
+      - --json
+      - doctor
+      - --quick
+    checks:
+      - name: exit_code
+        type: exit_code
+        value: 0
+      - name: ok is true
+        type: json_path
+        path: ok
+        value: true
+      - name: grade present
+        type: json_path
+        path: data.grade
+        regex: "^[A-F]$"
+
+  - id: stats-schema
+    name: CLI stats returns counts
+    type: deterministic
+    description: >
+      `cli.py --json stats` must return ok=true with total and status_counts.
+    command:
+      - python
+      - -m
+      - scripts.cli
+      - --json
+      - stats
+    checks:
+      - name: exit_code
+        type: exit_code
+        value: 0
+      - name: ok is true
+        type: json_path
+        path: ok
+        value: true
+      - name: total present
+        type: json_path_exists
+        path: data.total
+
+  - id: classify-url
+    name: CLI classify recognizes arXiv URL
+    type: deterministic
+    description: >
+      `cli.py --json classify --input <arxiv-url>` must classify as arxiv_paper.
+    command:
+      - python
+      - -m
+      - scripts.cli
+      - --json
+      - classify
+      - --input
+      - https://arxiv.org/abs/2501.12345
+    checks:
+      - name: exit_code
+        type: exit_code
+        value: 0
+      - name: status ok
+        type: json_path
+        path: data.status
+        value: ok
+      - name: contains arxiv_paper
+        type: json_contains
+        path: data.results
+        item: arxiv_paper
+        key: subtype
+
+  - id: package-imports
+    name: scripts/ is importable as a package
+    type: deterministic
+    description: >
+      Direct Python imports of the key modules must succeed without sys.path hacks.
+    command:
+      - python
+      - -c
+      - >
+        from scripts import cli;
+        from scripts.exec import generate_task;
+        from scripts.records.interpret_record import generate_record_task;
+        from scripts.records.schema import validate_record;
+        from scripts.intake import classify_source;
+        print("import-ok")
+    checks:
+      - name: exit_code
+        type: exit_code
+        value: 0
+      - name: stdout contains import-ok
+        type: stdout_contains
+        value: import-ok
+
+  - id: no-orphan-sys-path
+    name: No stray sys.path.insert outside allowed entrypoints
+    type: deterministic
+    description: >
+      Only cli.py may contain the conditional bootstrap;
+      all other modules must not insert paths.
+    command:
+      - python
+      - eval/check_hygiene.py
+    checks:
+      - name: exit_code
+        type: exit_code
+        value: 0
+      - name: stdout clean
+        type: stdout_contains
+        value: clean
+
+  - id: record-task-envelope
+    name: Record task payload has task_mode=record (deterministic)
+    type: deterministic
+    description: >
+      `interpret_record.py` must emit a JSON envelope with task_mode=record,
+      harness mode=run, and an output_path ending in record.json.
+    setup_files:
+      artifacts/eval_test/raw/tech_blog.html: "synthetic blog content\n"
+    command:
+      - python
+      - -m
+      - scripts.records.interpret_record
+      - --slug
+      - eval_test
+      - --source-type
+      - tech_blog
+      - --json
+    checks:
+      - name: exit_code
+        type: exit_code
+        value: 0
+      - name: task_mode is record
+        type: json_path
+        path: task_mode
+        value: record
+      - name: harness mode is run
+        type: json_path
+        path: mode
+        value: run
+      - name: output_path present
+        type: json_path_exists
+        path: output_path
+
+  - id: record-schema-validate
+    name: record.json validator accepts valid and rejects empty (deterministic)
+    type: deterministic
+    description: >
+      validate_record must accept a minimal valid record and reject an empty dict.
+    command:
+      - python
+      - -c
+      - >
+        from scripts.records.schema import validate_record;
+        rec = {"version": "3.0", "id": "x", "title": "t", "date": "",
+        "topic_type": "article", "tldr": "s", "tags": ["a"],
+        "entities": {"company": [], "author": [], "product": [], "series": []},
+        "links": [], "source": {"input_type": "url", "source_type": "blog",
+        "direct_source": "", "original_source": ""}};
+        ok, errs = validate_record(rec);
+        assert ok, errs;
+        bad, _ = validate_record({});
+        assert not bad;
+        print("record-schema-ok")
+    checks:
+      - name: exit_code
+        type: exit_code
+        value: 0
+      - name: stdout contains record-schema-ok
+        type: stdout_contains
+        value: record-schema-ok
+

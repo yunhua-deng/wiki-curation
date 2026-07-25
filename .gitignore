@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# Runtime workspace state (consumer-side, not skill code)
+wiki/data/wiki.db
+wiki/raw/
+wiki/artifacts/
+wiki/configs/
+
+# OS files
+.DS_Store
+Thumbs.db

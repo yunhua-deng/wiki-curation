@@ -1,0 +1,11 @@
+{
+  "version": "1.0",
+  "description": "Manual recall evaluation cases — (input, expected_id) pairs for deterministic regression testing.",
+  "cases": [
+    {"input": "https://github.com/octo-models/octo", "expected": "2026-07-22_recordtest", "note": "url_exact via source_input + shared_link"},
+    {"input": "Octo robot policy", "expected": "2026-07-22_recordtest", "note": "fts match on title/tldr"},
+    {"input": "Figure AI Helix VLA", "expected": "", "note": "entity match on Figure+Helix if rec published"},
+    {"input": "robot manipulation diffusion transformer", "expected": "", "note": "fts multi-keyword on VLA content"},
+    {"input": "https://www.anthropic.com/news/claude-robotics", "expected": "", "note": "fts match on robotoics+claude overlap"}
+  ]
+}

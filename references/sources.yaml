@@ -1,0 +1,503 @@
+# sources.yaml — Wiki 工作流来源类型单一真相源
+# 整合：分类规则、抓取策略、下钻策略、素材检查清单
+
+aliases:
+  paper: arxiv_paper
+  arxiv: arxiv_paper
+  weixin_paper: weixin
+  github_project: github
+  company: startup_name
+  general: tech_blog
+  blog: tech_blog
+  project: project_name
+  product: product_name
+  news: news_article
+  webpage: generic_web
+  local: local_file
+  local-file: local_file
+  localfile: local_file
+  multi-source: multi_source
+  multisource: multi_source
+
+settings:
+  max_drill_depth: 3
+  max_children_per_level: 5
+  max_l3_children_per_parent: 2
+  fetch_timeout: 60
+  curl_command: curl
+  max_code_zip_mb: 80  # interpret.py 下载代码 zip 的大小上限（MB），超限降级
+
+source_types:
+  # ============================================================
+  # 学术 / 论文
+  # ============================================================
+  arxiv_paper:
+    label_cn: "arXiv论文"
+    classification:
+      input_type: url
+      domains: [arxiv.org]
+      path_patterns: ["/abs/", "/pdf/", "/html/"]
+      extract_patterns:
+        arxiv_id: 'arxiv\.org/(?:abs|pdf|html)/(\d{4}\.\d{4,5})(?:v\d+)?'
+    fetch:
+      handler: arxiv
+      drill: [arxiv_paper, github]
+    checklist:
+      required:
+        - { pattern: "paper.*", min_size_kb: 10, message: "论文全文（PDF 或 HTML）" }
+      optional:
+        - { pattern: "arxiv_abstract.*", message: "arXiv摘要" }
+        - { pattern: "github_readme.*", message: "关联GitHub仓库" }
+        - { pattern: "weixin_article.*", message: "相关微信文章" }
+
+  arxiv_id:
+    label_cn: "arXiv论文ID"
+    classification:
+      input_type: keywords
+      patterns: ['\b(\d{4}\.\d{4,5})(?:v\d+)?\b']
+    fetch:
+      handler: arxiv
+      drill: [arxiv_paper, github]
+    checklist:
+      required:
+        - { pattern: "paper.*", min_size_kb: 10, message: "论文全文（PDF 或 HTML）" }
+      optional:
+        - { pattern: "arxiv_abstract.*", message: "arXiv摘要" }
+
+  arxiv_title:
+    label_cn: "arXiv论文标题"
+    classification:
+      input_type: keywords
+      keywords: ['arxiv', '论文']
+    fetch:
+      handler: search_then_arxiv
+      drill: [arxiv_paper, github]
+    checklist:
+      required:
+        - { pattern: "paper.*", min_size_kb: 10, message: "论文全文（PDF 或 HTML）" }
+      optional:
+        - { pattern: "arxiv_abstract.*", message: "arXiv摘要" }
+
+  paper_keyword:
+    label_cn: "论文搜索"
+    classification:
+      input_type: keywords
+      keywords: ['论文', 'paper', '文献', '搜索', '查找', '推荐']
+    fetch:
+      handler: search
+      drill: [arxiv_paper, github]
+    checklist:
+      required:
+        - { pattern: "paper.*", min_size_kb: 10, message: "至少一篇论文全文" }
+      optional:
+        - { pattern: "search_results.*", message: "搜索结果" }
+        - { pattern: "arxiv_abstract.*", message: "arXiv摘要" }
+
+  # ============================================================
+  # 本地文件（用户手动提供）
+  # ============================================================
+  local_file:
+    label_cn: "本地文件"
+    classification:
+      input_type: local
+    fetch:
+      handler: none
+      drill: []
+    checklist:
+      required:
+        - { pattern: "*", message: "至少一个素材文件" }
+      optional: []
+
+  multi_source:
+    label_cn: "多源聚合"
+    classification:
+      input_type: keywords
+    fetch:
+      handler: none
+      drill: []
+    checklist:
+      required:
+        - { pattern: "*", message: "至少一个素材文件" }
+      optional: []
+
+  # ============================================================
+  # 代码 / 开源
+  # ============================================================
+  github:
+    label_cn: "GitHub项目"
+    classification:
+      input_type: url
+      domains: [github.com]
+    fetch:
+      handler: github
+      drill: [arxiv_paper, github]
+    checklist:
+      required:
+        - { pattern: "github_readme.*", min_size_kb: 0.5, message: "GitHub README" }
+      optional:
+        - { pattern: "*.pdf", message: "关联论文" }
+        - { pattern: "project_page.*", message: "项目主页" }
+        - { pattern: "weixin_article.*", message: "微信文章" }
+        - { pattern: "hf_model_card.*", message: "HuggingFace模型卡" }
+
+  huggingface:
+    label_cn: "HuggingFace"
+    classification:
+      input_type: url
+      domains: [huggingface.co, modelscope.cn]
+    fetch:
+      handler: webpage
+      file_stem: "hf_model_card"
+      drill: [arxiv_paper, github]
+    checklist:
+      required:
+        - { pattern: "hf_*.*", message: "HF页面内容" }
+      optional:
+        - { pattern: "*.pdf", message: "关联论文" }
+        - { pattern: "github_readme.*", message: "关联GitHub" }
+
+  project_name:
+    label_cn: "开源项目"
+    classification:
+      input_type: keywords
+      keywords: ['开源项目', 'GitHub项目', 'repo', '项目']
+    fetch:
+      handler: search_then_github
+      drill: [github, arxiv_paper]
+    checklist:
+      required:
+        - { pattern: "github_readme.*", min_size_kb: 0.5, message: "GitHub README" }
+      optional:
+        - { pattern: "*.pdf", message: "关联论文" }
+        - { pattern: "project_page.*", message: "项目主页" }
+
+  # ============================================================
+  # 社交媒体 / 内容平台
+  # ============================================================
+  weixin:
+    label_cn: "微信公众号"
+    classification:
+      input_type: url
+      domains: [mp.weixin.qq.com]
+    fetch:
+      handler: weixin
+      drill: [arxiv_paper, github]
+    checklist:
+      required:
+        - { pattern: "*", message: "微信文章原文" }
+      optional:
+        - { pattern: "*.pdf", min_size_kb: 10, message: "引用的论文PDF" }
+        - { pattern: "github_readme.*", message: "引用的GitHub README" }
+        - { pattern: "project_page.*", message: "引用的项目主页" }
+        - { pattern: "arxiv_abstract.*", message: "arXiv摘要" }
+
+  linkedin:
+    label_cn: "LinkedIn帖子"
+    classification:
+      input_type: url
+      domains: [linkedin.com]
+    fetch:
+      handler: linkedin
+      drill: [arxiv_paper, github]
+    checklist:
+      required:
+        - { pattern: "linkedin_post.*", message: "LinkedIn帖子全文" }
+      optional:
+        - { pattern: "github_readme.*", message: "关联GitHub" }
+        - { pattern: "project_page.*", message: "项目主页" }
+        - { pattern: "*.pdf", message: "关联论文" }
+
+  zhihu:
+    label_cn: "知乎"
+    classification:
+      input_type: url
+      domains: [zhihu.com]
+    fetch:
+      handler: webpage
+      file_stem: "zhihu_article"
+      drill: [arxiv_paper, github]
+    checklist:
+      required:
+        - { pattern: "zhihu_article.*", message: "知乎文章全文" }
+      optional:
+        - { pattern: "*.pdf", message: "引用的论文" }
+        - { pattern: "github_readme.*", message: "引用的GitHub" }
+
+  reddit:
+    label_cn: "Reddit"
+    classification:
+      input_type: url
+      domains: [reddit.com]
+    fetch:
+      handler: webpage
+      file_stem: "reddit_post"
+      drill: [github, arxiv_paper]
+    checklist:
+      required:
+        - { pattern: "reddit_post.*", message: "Reddit帖子全文" }
+      optional:
+        - { pattern: "*.pdf", message: "引用的论文" }
+        - { pattern: "github_readme.*", message: "引用的GitHub" }
+
+  twitter_x:
+    label_cn: "Twitter/X"
+    classification:
+      input_type: url
+      domains: [twitter.com, x.com, threads.net]
+    fetch:
+      handler: webpage
+      file_stem: "twitter_post"
+      drill: [github, arxiv_paper]
+    checklist:
+      required:
+        - { pattern: "twitter_post.*", message: "Twitter帖子全文" }
+      optional:
+        - { pattern: "*.pdf", message: "引用的论文" }
+        - { pattern: "github_readme.*", message: "引用的GitHub" }
+
+  youtube:
+    label_cn: "YouTube"
+    classification:
+      input_type: url
+      domains: [youtube.com, youtu.be, vimeo.com]
+    fetch:
+      handler: webpage
+      file_stem: "youtube_transcript"
+      drill: [github, arxiv_paper]
+    checklist:
+      required:
+        - { pattern: "*transcript.*", message: "视频转录/Caption" }
+      optional:
+        - { pattern: "video_description.*", message: "视频描述" }
+        - { pattern: "*.pdf", message: "关联论文" }
+        - { pattern: "github_readme.*", message: "关联GitHub" }
+
+  bilibili:
+    label_cn: "B站"
+    classification:
+      input_type: url
+      domains: [bilibili.com]
+    fetch:
+      handler: webpage
+      file_stem: "bilibili_transcript"
+      drill: [github, arxiv_paper]
+    checklist:
+      required:
+        - { pattern: "*transcript.*", message: "视频转录/Caption" }
+      optional:
+        - { pattern: "video_description.*", message: "视频描述" }
+        - { pattern: "*.pdf", message: "关联论文" }
+
+  podcast:
+    label_cn: "播客"
+    classification:
+      input_type: url
+      domains: []
+      fuzzy_domains: ['podcast']
+    fetch:
+      handler: webpage
+      file_stem: "podcast_transcript"
+      drill: [arxiv_paper, github]
+    checklist:
+      required:
+        - { pattern: "*transcript.*", message: "播客转录/Caption" }
+      optional:
+        - { pattern: "show_notes.*", message: "节目笔记" }
+        - { pattern: "*.pdf", message: "关联论文/资料" }
+
+  # ============================================================
+  # 网页 / 博客 / 文档 / 新闻
+  # ============================================================
+  tech_blog:
+    label_cn: "技术博客"
+    classification:
+      input_type: url
+      domains: [medium.com, substack.com, dev.to, hackernews.com, news.ycombinator.com]
+      fuzzy_domains: ['blog', 'jiqizhixin.com', 'sspai.com']
+    fetch:
+      handler: webpage
+      file_stem: "tech_blog"
+      drill: [arxiv_paper, github]
+    checklist:
+      required:
+        - { pattern: "*", message: "博客内容" }
+      optional:
+        - { pattern: "*.pdf", message: "引用的论文" }
+        - { pattern: "github_readme.*", message: "引用的GitHub" }
+
+  project_page:
+    label_cn: "项目主页"
+    classification:
+      input_type: url
+      fuzzy_domains: ['github.io', 'notion.site', 'notion.so', 'vercel.app', 'netlify.app', 'pages.dev', 'research.']
+    fetch:
+      handler: webpage
+      file_stem: "project_page"
+      drill: [arxiv_paper, github]
+    checklist:
+      required:
+        - { pattern: "*", message: "项目页面内容" }
+      optional:
+        - { pattern: "*.pdf", message: "关联论文" }
+        - { pattern: "github_readme.*", message: "关联GitHub" }
+
+  company_site:
+    label_cn: "公司官网"
+    classification:
+      input_type: url
+      domains: [chatgpt.com, deepseek.com, platform.deepseek.com, claude.ai, kimi.moonshot.cn, gemini.google.com, chat.openai.com, autodl.com]
+      fuzzy_domains: ['company']
+    fetch:
+      handler: webpage
+      file_stem: "company_site"
+      drill: [arxiv_paper, github]
+    checklist:
+      required:
+        - { pattern: "*", message: "官网提取内容" }
+      optional:
+        - { pattern: "weixin_article.*", message: "微信报道" }
+        - { pattern: "*.pdf", message: "相关论文/白皮书" }
+
+  docs:
+    label_cn: "技术文档"
+    classification:
+      input_type: url
+      fuzzy_domains: ['readthedocs.io', '^docs\.']
+    fetch:
+      handler: webpage
+      file_stem: "docs_page"
+      drill: [github, arxiv_paper]
+    checklist:
+      required:
+        - { pattern: "*", message: "文档内容" }
+      optional:
+        - { pattern: "*.pdf", message: "PDF版文档" }
+
+  news_article:
+    label_cn: "新闻报道"
+    classification:
+      input_type: url
+      fuzzy_domains: ['news.', '36kr.com']
+    fetch:
+      handler: webpage
+      file_stem: "news_article"
+      drill: [arxiv_paper, github]
+    checklist:
+      required:
+        - { pattern: "*", message: "新闻文章全文" }
+      optional:
+        - { pattern: "*.pdf", message: "相关报告/论文" }
+
+  # ============================================================
+  # 实体 / 问题 / 对比 / 趋势
+  # ============================================================
+  startup_name:
+    label_cn: "公司分析"
+    classification:
+      input_type: keywords
+      keywords: ['公司', '企业', 'startup', '初创', '厂商']
+      named_entities: ['OpenAI', 'Google DeepMind', 'Anthropic', 'Meta AI', 'Stability AI', 'Mistral', 'Cohere', 'Figure AI', 'Physical Intelligence', 'Skild AI', 'Covariant', 'Sanctuary', 'Agility', 'Apptronik', 'Teslabot', 'Boston Dynamics', 'NVIDIA', 'ByteDance']
+    fetch:
+      handler: search
+      drill: [arxiv_paper, github]
+    checklist:
+      required:
+        - { pattern: "*", message: "公司相关信息" }
+      optional:
+        - { pattern: "weixin_article.*", message: "微信报道" }
+        - { pattern: "search_results.*", message: "搜索结果" }
+        - { pattern: "*.pdf", message: "相关论文" }
+
+  product_name:
+    label_cn: "产品分析"
+    classification:
+      input_type: keywords
+      keywords: ['产品', '应用', 'app', 'tool']
+    fetch:
+      handler: search
+      drill: [arxiv_paper, github]
+    checklist:
+      required:
+        - { pattern: "*", message: "产品相关信息" }
+      optional:
+        - { pattern: "search_results.*", message: "搜索结果" }
+        - { pattern: "weixin_article.*", message: "微信报道" }
+        - { pattern: "company_site.*", message: "官网内容" }
+        - { pattern: "*.pdf", message: "相关论文/白皮书" }
+
+  researcher:
+    label_cn: "学者解读"
+    classification:
+      input_type: keywords
+      keywords: ['教授', '学者', '研究者', 'researcher', 'scholar', 'scientist']
+      named_entities: ['Yann LeCun', 'Geoffrey Hinton', 'Yoshua Bengio', 'Andrew Ng', 'Fei-Fei Li', 'Andrej Karpathy', 'Ilya Sutskever', 'Jim Fan', 'Pieter Abbeel', 'Sergey Levine', 'Chelsea Finn', 'Ken Goldberg']
+    fetch:
+      handler: search
+      drill: [arxiv_paper, github]
+    checklist:
+      required:
+        - { pattern: "*", message: "学者相关信息" }
+      optional:
+        - { pattern: "search_results.*", message: "搜索结果" }
+        - { pattern: "*.pdf", message: "相关论文" }
+
+  concept_query:
+    label_cn: "概念查询"
+    classification:
+      input_type: keywords
+      keywords: ['什么是', '是什么', '解释', '定义', '概念']
+      abbreviations: ['RLHF', 'RL', 'MDP', 'Transformer', 'Attention', 'Diffusion', 'VLA', 'LLM', 'MCP', 'RAG', 'RLVR', 'GRPO', 'PPO', 'SFT', 'LoRA', 'MoE', 'MLA']
+    fetch:
+      handler: search
+      drill: [arxiv_paper, github]
+    checklist:
+      required:
+        - { pattern: "*", message: "至少一个参考资料" }
+      optional:
+        - { pattern: "search_results.*", message: "搜索结果" }
+        - { pattern: "*.pdf", message: "相关论文" }
+
+  comparison:
+    label_cn: "对比分析"
+    classification:
+      input_type: keywords
+      keywords: ['对比', '比较', 'vs', 'versus', '哪个', 'A/B']
+    fetch:
+      handler: search
+      drill: [arxiv_paper, github]
+    checklist:
+      required:
+        - { pattern: "*", message: "至少一个参考资料" }
+      optional:
+        - { pattern: "search_results.*", message: "搜索结果" }
+        - { pattern: "*.pdf", message: "相关论文" }
+
+  trend_question:
+    label_cn: "趋势分析"
+    classification:
+      input_type: keywords
+      keywords: ['趋势', '发展前景', '展望', '未来方向', '前沿趋势', '综述', 'survey', 'roadmap', '技术路线']
+    fetch:
+      handler: search
+      drill: [arxiv_paper, github]
+    checklist:
+      required:
+        - { pattern: "search_results.*", message: "搜索结果" }
+      optional:
+        - { pattern: "*.pdf", message: "引用论文" }
+        - { pattern: "weixin_article.*", message: "微信文章" }
+
+  generic_web:
+    label_cn: "网页"
+    classification:
+      input_type: url
+      fallback: true
+    fetch:
+      handler: webpage
+      file_stem: "webpage"
+      drill: [arxiv_paper, github]
+    checklist:
+      required:
+        - { pattern: "*", message: "网页内容" }
+      optional:
+        - { pattern: "*.pdf", message: "引用的论文" }

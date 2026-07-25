@@ -1,0 +1,320 @@
+# entity_aliases.yaml — 实体同义词与术语归一化字典
+#
+# 用于 wiki 站点构建时的实体抽取与关联：
+# - 把同一实体的多种写法归一到一个 canonical 名称
+# - 把同一术语的中英文/简写归一，便于跨标签关联
+#
+# 维护方式：随 wiki 规模扩大逐步追加。agent 发现新的常见变体时应更新本文件。
+
+# --- 术语/概念同义词 ---
+# key: canonical 中文术语
+# value: 需要被归一到该术语的别名列表（含英文、简写、大小写变体）
+terms:
+  具身智能:
+    - embodied intelligence
+    - embodied AI
+    - Embodied AI
+    - Embodied Intelligence
+    - 具身人工智能
+    - embodied-ai
+  世界模型:
+    - world model
+    - world models
+    - World Model
+    - World Models
+  视觉基础模型:
+    - visual foundation model
+    - visual foundation models
+    - VFM
+  视觉语言动作模型:
+    - vision-language-action
+    - vision language action
+    - VLA
+    - vla
+  深度估计:
+    - depth estimation
+    - monocular depth estimation
+  机器人操作:
+    - robot manipulation
+    - robotic manipulation
+  扩散模型:
+    - diffusion model
+    - diffusion models
+  强化学习:
+    - reinforcement learning
+    - RL
+  模仿学习:
+    - imitation learning
+    - IL
+
+# --- 公司/机构实体别名 ---
+# key: canonical 名称
+# value: 别名列表（大小写、英文、简称）
+entities:
+  company:
+    蚂蚁灵波:
+      - Robbyant
+      - Robbyant Team
+      - 灵波
+      - 蚂蚁集团灵波
+    极佳科技:
+      - GigaWorld
+      - 极佳
+      - GigaAI
+    英伟达:
+      - Nvidia
+      - NVIDIA
+      - nvidia
+    斯坦福大学:
+      - Stanford
+      - Stanford University
+    清华智能产业研究院:
+      - AIR
+      - Tsinghua AIR
+    上海人工智能实验室:
+      - Shanghai AI Lab
+      - 浦江实验室
+      - PJLab
+    字节跳动:
+      - ByteDance
+      - bytedance
+
+  # --- 产品/模型实体别名 ---
+  product:
+    # LingBot 系列（会在 series_roots 中再归到 LingBot）
+    LingBot-Vision: []
+    LingBot-Depth 2.0:
+      - LingBot-Depth
+    LingBot-Depth: []
+    LingBot-VLA 2.0:
+      - LingBot-VLA
+    LingBot-VLA: []
+
+    VGGT:
+      - VGGT-omega
+      - vggt
+    DINOv3: []
+    DINOv2: []
+
+    GR00T N1.7:
+      - GR00T
+      - GR00T-1.7
+    MolmoAct2: []
+    Pi0: []
+    SmolVLA: []
+
+  # --- 人物/作者实体别名 ---
+  # key: canonical 中文或英文名
+  # value: 别名列表（英文名、简写、不同拼写）
+  person:
+    翁荔:
+      - Lilian Weng
+      - Lilian
+      - Liliang Weng
+    李飞飞:
+      - Fei-Fei Li
+      - Fei Fei Li
+    何恺明:
+      - Kaiming He
+    谢赛宁:
+      - Saining Xie
+    贾扬清:
+      - Yangqing Jia
+
+# --- 技术系列/产品族根节点 ---
+# key: series canonical 名称
+# value: 属于该系列的产品名列表（优先匹配 product 实体）
+series_roots:
+  LingBot:
+    - LingBot-Vision
+    - LingBot-Depth
+    - LingBot-Depth 2.0
+    - LingBot-VLA
+    - LingBot-VLA 2.0
+  VGGT:
+    - VGGT
+    - VGGT-omega
+  DINO:
+    - DINOv2
+    - DINOv3
+  GR00T:
+    - GR00T N1.7
+  Molmo:
+    - MolmoAct2
+    - Molmo 2
+  Pi:
+    - Pi0
+    - Pi0Fast
+    - Pi0.5
+
+# --- 宏观主题（Macro Themes）---
+# key: 主题标识符（snake_case）
+# label: 前端展示名称
+# short_description: 主题一句话说明
+# terms: 种子词列表（中英文、缩写）
+# entities: 命中即归为主题的实体，按 company/product/series/person 分类
+#
+# 2026-07-17 重构：原 embodied_intelligence 过大（367 篇）且与空间智能/数据闭环交叉，
+# 按「模型 / 数据」两个维度拆分；伞词（具身智能/embodied intelligence）不做种子词，
+# 伞视角由自动主题层承担；data_loop 取消独立主题——物理/仿真数据并入 embodied_data，
+# agent 数据与轨迹并入 agent 主题；agent_observability 与 self_evolution 合并为
+# agent_engineering；超泛词（dataset/数据集）不再做种子词以避免超大主题。
+themes:
+  embodied_models:
+    label: "具身模型（Embodied Models）"
+    short_description: "面向物理世界感知-决策-行动的模型体系，涵盖 VLA、WAM/世界动作模型、小脑模型、人形机器人与操作控制策略。"
+    terms:
+      - VLA
+      - vision-language-action
+      - 视觉语言动作模型
+      - WAM
+      - WMA
+      - world action model
+      - 世界动作模型
+      - 小脑模型
+      - 具身控制
+      - robotic control
+      - 机器人操作
+      - robot manipulation
+      - 人形机器人
+      - humanoid
+      - locomotion
+      - robot policy
+    entities:
+      product:
+        - LingBot-VLA
+        - LingBot-Vision
+        - LingBot-Depth
+        - OpenVLA
+        - RT-2
+        - GR00T
+        - pi0
+        - Helix
+        - GigaBrain
+      series:
+        - LingBot
+      company:
+        - 蚂蚁灵波
+        - Physical Intelligence
+
+  embodied_data:
+    label: "具身数据（Embodied Data）"
+    short_description: "驱动具身模型训练的数据资产与生产管线，涵盖 Ego 视频、3D/仿真数据、合成数据、遥操作采集与 sim-to-real 闭环。"
+    terms:
+      - ego 视频
+      - egocentric
+      - 第一视角
+      - 第一人称
+      - 3d data
+      - 3d 数据
+      - 点云数据
+      - 仿真数据
+      - simulation data
+      - 合成数据
+      - synthetic data
+      - 真实数据
+      - real-world data
+      - sim-to-real
+      - teleoperation
+      - 遥操作
+      - 数据采集
+      - 数据引擎
+      - data engine
+      - 数据闭环
+      - data loop
+      - data flywheel
+      - 数据飞轮
+      - digital twin
+      - 物理智能体闭环
+    entities:
+      company:
+        # 英伟达过于泛在（3D/具身/Agent 各处都出现），不做实体种子以免产生伪重叠
+        - 极佳科技
+
+  spatial_intelligence:
+    label: "空间智能（Spatial Intelligence）"
+    short_description: "让 AI 感知、重建、推理并生成三维物理空间，涵盖 3D 视觉、NeRF、Gaussian Splatting 与 SLAM。"
+    terms:
+      - 空间智能
+      - spatial intelligence
+      - 空间感知
+      - 空间重建
+      - 空间生成
+      - 3D 视觉
+      - 3D vision
+      - NeRF
+      - Gaussian Splatting
+      - 三维重建
+      - 3D reconstruction
+      - 3D generation
+      - depth estimation
+      - SLAM
+      - point cloud
+      - scene understanding
+    entities:
+      product:
+        - VGGT
+        - DINOv3
+        - DINOv2
+        - PAGE-4D
+      company:
+        - World Labs
+
+  agent_engineering:
+    label: "Agent 观测、可靠与自进化（Agent OER & Self-Evolution）"
+    short_description: "观测、评估并保障 Agent 的推理与决策质量，并让模型与脚手架在部署后持续自进化；涵盖可观测性、可靠性、评测、harness engineering、后训练与 agent 数据轨迹。"
+    terms:
+      # --- 观测与可靠（原 agent_observability）---
+      - agent observability
+      - 可观测性
+      - observability
+      - 可解释性
+      - explainability
+      - 可靠性
+      - reliability
+      - robustness
+      - alignment
+      - 对齐
+      - tracing
+      - evaluation
+      - benchmark
+      - harness
+      - 评测
+      - 安全
+      - guardrails
+      - SLO
+      - 审计
+      # --- 自进化（原 self_evolution）---
+      - 自进化
+      - self-evolution
+      - self-evolving
+      - 后训练
+      - post-training
+      - meta-learning
+      - continual learning
+      - lifelong learning
+      - autonomous improvement
+      - self-improvement
+      - recursive self-improvement
+      - model evolution
+      - harness evolution
+      - harness engineering
+      - 元学习
+      - 持续学习
+      - 终身学习
+      - source-level rewriting
+      # --- agent 数据与轨迹（原 data_loop 拆分）---
+      - agent data
+      - agent 数据
+      - 轨迹
+      - trajectory
+      - trajectories
+      - agent trajectory
+      - 数字智能体闭环
+    entities:
+      product:
+        # MetaClaw 是 agent 侧产品的精确种子；蚂蚁灵波过于泛（LingBot 属具身模型），不做种子
+        - MetaClaw
+      company:
+        - Arthur AI
+        - Epsilla

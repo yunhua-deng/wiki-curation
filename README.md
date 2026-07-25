@@ -1,24 +1,60 @@
 # wiki-curation
 
-Turn fragmented clues (URLs, keywords, names) into a structured, searchable, linkable personal knowledge base — automatically.
+A knowledge-curation skill for AI agents. Turn fragmented clues (URLs, keywords, names) into a structured, searchable, linkable personal knowledge base.
 
-`wiki-curation` is a personal knowledge-curation pipeline for AI agents (Claude Code, OpenClaw, or any agent harness that can run shell commands). You throw a URL or a name at it; it sniffs related links, extracts a structured record (link graph + TL;DR + tags + entities), and files it into a queryable store with deterministic recall and a lightweight static site.
+The agent does the reading; the system does the linking. **Not an article generator.**
 
-**Not an article generator.** It produces structured *records*, not prose. Long-form interpretation is a separate concern.
+## How agents install this skill
 
-## What it does
+### Claude Code
 
-```
-you:  "看看这个 https://github.com/octo-models/octo"
-agent:
-  add      → classify source (github) + recall similar past entries
-  pop      → dequeue the task
-  run      → fetch README + drill into arxiv/hf/homepage links (3 levels)
-           → extraction agent writes record.json
-  publish  → validate, store links/entities/relations in SQLite, rebuild site
+Place the skill directory at `skills/wiki-curation/` in your project root, alongside a `CLAUDE.md` that routes wiki requests to it:
+
+```markdown
+# CLAUDE.md (excerpt)
+- wiki / 知识 / 记录 / 检索 / 分析 → `AGENTS_WIKI.md` + `skills/wiki-curation/SKILL.md`
 ```
 
-Each record:
+Create `AGENTS_WIKI.md`:
+
+```markdown
+# AGENTS_WIKI.md — Wiki routing
+- Any wiki/knowledge request → activate `wiki-curation` skill.
+- Workflow: `add → pop → run → publish` (record.json).
+- Extraction agent: write record.json only; no git, no publish.
+- `python skills/wiki-curation/scripts/cli.py site --serve --pid-file wiki/.site-serve.pid`
+```
+
+The agent discovers the skill by reading `SKILL.md`'s `name:` and `description:` frontmatter. No registration needed.
+
+### OpenClaw
+
+Same directory convention (`skills/wiki-curation/`). OpenClaw's agent loader reads `SKILL.md` frontmatter for routing. `sessions_spawn` can dispatch extraction sub-agents automatically if the harness is configured.
+
+### Manual install
+
+```bash
+git clone https://github.com/yunhua-deng/wiki-curation.git skills/wiki-curation
+cd skills/wiki-curation
+pip install -e .          # Python ≥ 3.11, dependency: pyyaml only
+```
+
+## Quick start
+
+```bash
+export WIKI_WORKSPACE=/path/to/wiki
+
+python scripts/cli.py --json add --input "https://arxiv.org/abs/2405.12213"
+python scripts/cli.py --json pop --limit 3
+python scripts/cli.py --json run --id <slug>     # emits extraction task
+# agent writes wiki/artifacts/<slug>/record.json, then:
+python scripts/cli.py --json publish --id <slug>
+
+python scripts/cli.py site --serve --pid-file wiki/.site-serve.pid
+# → http://localhost:8123/site/
+```
+
+## What a record looks like
 
 ```json
 {
@@ -26,9 +62,9 @@ Each record:
   "title": "Octo: An Open-Source Generalist Robot Policy",
   "topic_type": "project",
   "tldr": "one-sentence summary",
-  "summary": "X/LinkedIn-style digest, 2-4 short paragraphs",
+  "summary": "X-style digest, 2-4 short paragraphs",
   "tags": ["robotics", "VLA", "diffusion-policy"],
-  "entities": {"company": ["UC Berkeley"], "author": ["..."], "product": ["Octo"], "series": []},
+  "entities": {"company": ["UC Berkeley"], "author": ["..."], "product": ["Octo"]},
   "links": [
     {"url": "https://github.com/octo-models/octo", "kind": "github", "role": "canonical", "origin": "explicit"},
     {"url": "https://arxiv.org/abs/2405.12213", "kind": "arxiv", "role": "canonical", "origin": "inferred"}
@@ -36,116 +72,65 @@ Each record:
 }
 ```
 
-Design principle: **extraction by agent, linking by system.** The LLM only reads materials and writes `record.json`. Similarity scoring, relation edges, URL normalization/verification are all deterministic SQL/regex — no hallucination can pollute the graph.
-
-## Install
-
-```bash
-git clone <repo>
-cd wiki-curation
-pip install -e .          # Python ≥ 3.11, only dependency: pyyaml (+ pytest for dev)
-# curl required for fetching; that's it.
-```
-
-Point the CLI at a workspace (created on first use):
-
-```bash
-export WIKI_WORKSPACE=/path/to/wiki
-python scripts/cli.py --json add --input "https://arxiv.org/abs/2405.12213"
-python scripts/cli.py --json pop
-python scripts/cli.py --json run --id <slug>     # prints an extraction task payload
-# run the payload with any capable agent, then:
-python scripts/cli.py --json publish --id <slug>
-```
-
-Browse the result:
-
-```bash
-python scripts/cli.py site --serve --pid-file wiki/.site-serve.pid
-# → http://localhost:8123  (auto-redirects to /site/)
-python scripts/cli.py site --stop --pid-file wiki/.site-serve.pid
-```
+Design principle: **extraction by agent, linking by system.** Similarity scoring, relation edges, URL canonilization, and record validation are all deterministic code — hallucinations can't poison the graph.
 
 ## Command reference
 
+All commands support `--json` for agent consumption.
+
 | Command | Purpose |
 |---|---|
-| `add --input X [--no-recall]` | Enqueue a clue; auto-recalls similar past entries |
-| `pop --limit N` | Dequeue pending tasks (max 3 recommended) |
+| `add --input X [--no-recall]` | Enqueue; auto-recalls similar past entries |
+| `pop --limit N` | Dequeue pending → running |
 | `run --id <slug>` | Classify + collect + emit extraction task payload |
-| `publish --id <slug>` | Validate record.json, store links/relations, rebuild site |
-| `recall --input X` | 4-layer deterministic similarity recall with reasons |
-| `search "query"` | FTS5 full-text search |
-| `list [--status S]` | List entries (JSON: has_record/links_count) |
-| `verify-links --id <slug>` | Lazy curl-HEAD reachability check for links |
-| `doctor [--quick] [--fix-plan]` | Health checks (queue/db/record-tier/entities/git) |
-| `stats`, `sync`, `requeue`, `delete`, `update`, `events`, `manifest` | Store utilities |
-
-All commands support `--json` for agent consumption.
+| `publish --id <slug>` | Validate record, store links/relations, rebuild site |
+| `recall --input X` | 4-layer similarity recall with reasons |
+| `analyze --topic "..." [--emit-task]` | Evidence cluster + optional trend article task |
+| `analyze --dedup` | Duplicate candidate pairs |
+| `analyze --discover [--days N]` | Emerging hot topics (alias-aware) |
+| `verify-links --id <slug>` | curl-HEAD reachability check |
+| `star --id <slug>` | Star canonical GitHub repos (needs `GITHUB_TOKEN`) |
+| `doctor [--quick]` | Health: queue/db/files/git/record-tier/entities |
+| `stats` / `list` / `search` / `sync` / `requeue` / `manifest` | Store utilities |
 
 ## Workspace layout
 
 ```
 wiki/
-├── data/wiki.db          # SQLite: entries + links + relations + FTS5 (single source of truth)
+├── data/wiki.db             # SQLite: entries + links + relations + FTS5
 ├── artifacts/{id}/
-│   ├── record.json       # THE record (only artifact the agent writes)
-│   └── raw/              # fetched source materials (kept for evidence/analysis)
-├── trends/               # optional long-form trend articles (markdown, auto-listed on site)
-├── site/                 # built static site (served at /site/)
-└── wiki.html             # static semantic index
+│   ├── record.json          # THE record
+│   └── raw/                 # fetched source materials
+├── trends/                  # trend articles (auto-listed on site)
+└── site/                    # built static site
 ```
 
 ## Optional integrations (graceful degradation)
 
-Everything below is **optional**; the pipeline degrades cleanly without them:
-
 | Integration | Used for | Fallback |
 |---|---|---|
-| `sessions_spawn` (OpenClaw) | Dispatching extraction sub-agents | Run the emitted task payload with any agent manually |
-| `opencli` | WeChat (`mp.weixin.qq.com`) & LinkedIn fetching | Generic HTML extraction |
-| `~/.openclaw/openclaw.json` | Model routing inheritance | `WIKI_MODEL_RECORD` env var or `references/models.yaml` defaults |
-| `references/entity_aliases.yaml` | Entity canonicalization + cross-lingual recall (李飞飞 ↔ Fei-Fei Li) | Entities stored as-is |
+| `sessions_spawn` (OpenClaw) | Dispatching extraction sub-agents | Run task payload manually |
+| `opencli` | WeChat & LinkedIn fetching | Generic HTML extraction |
+| `GITHUB_TOKEN` | Auto-starring repos after publish | `star` command silently skips |
+| `entity_aliases.yaml` | Entity canonicalization + cross-lingual recall | Entities stored as-is |
 
 ## Configuration
 
-- `references/sources.yaml` — source-type classification rules, fetch handlers, drill-down policy
-- `references/models.yaml` — model routing for extraction (`WIKI_MODEL_RECORD` env overrides)
-- `references/record_schema.json` — record.json constraints (validator consumes)
+- `references/sources.yaml` — source-type classification, fetch handlers, drill policy
+- `references/models.yaml` — model routing (`WIKI_MODEL_RECORD` env overrides)
+- `references/record_schema.json` — record.json constraints
 - `references/entity_aliases.yaml` — entity canonical/alias map
-
-## Tests
-
-```bash
-cd wiki-curation
-python -m pytest scripts/ -q          # 146 contract tests (requires pytest)
-python eval/run_eval.py --deterministic   # 8 CLI-contract graders
-```
-
-Optional dev-only site check (verifies the rendered table end-to-end via a
-Node VM browser shim; **Node.js is NOT a runtime dependency** — the site
-itself is pre-rendered static files served by Python's `http.server`):
-
-```bash
-node scripts/site/verify_site.js http://localhost:8123
-```
 
 ## Verification design
 
-The test suite is deliberately layered — each layer answers a different
-question at a different cost:
-
-| Layer | Command | Question it answers | Cost |
+| Layer | Command | Question | Cost |
 |---|---|---|---|
-| **pytest (146)** | `python -m pytest scripts/ -q` | Are module behaviors correct? (validator, recall scoring, links/relations store, publish flow, site build) | free, ~60s, offline |
-| **Deterministic CLI graders (8)** | `python eval/run_eval.py --deterministic` | Is the CLI contract agents depend on still intact? (JSON envelope fields, command exit codes, output shapes) | free, seconds, offline — wired into the pre-commit hook |
-| **LLM rubric (2, opt-in)** | `python eval/run_eval.py --llm` | Is the generated payload *good*? (LLM-as-a-judge with a scoring rubric) | model cost, non-deterministic — quality spot-check, never a gate |
-| **Site render check (opt-in)** | `node scripts/site/verify_site.js <url>` | Does the site actually render rows in a browser-like VM? | free, requires Node.js (dev-only, NOT a runtime dep) |
+| **pytest (168)** | `python -m pytest scripts/ -q` | Are module behaviors correct? | free, ~60s, offline |
+| **CLI graders (8)** | `python eval/run_eval.py --deterministic` | Is the agent's JSON contract intact? | free, seconds, offline |
+| **LLM rubric (2, opt-in)** | `python eval/run_eval.py --llm` | Is the generated payload *good*? (LLM-as-a-judge) | model cost, spot-check |
+| **Site render (opt-in)** | `node scripts/site/verify_site.js <url>` | Does the table render in a browser VM? | Node.js (dev-only) |
 
-Why the split: the pipeline's consumers are **agents** that parse JSON
-contracts, so the deterministic graders guard the machine interface on every
-commit (zero model cost, zero network). Content quality is a different axis —
-that's what the optional LLM rubric is for, run on demand, never blocking.
+The deterministic graders guard the machine interface on every commit. Content quality is a separate axis — periodic spot-check with the LLM rubric, never blocking.
 
 ## License
 

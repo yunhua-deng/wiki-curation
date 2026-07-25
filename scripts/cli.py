@@ -431,6 +431,56 @@ def cmd_verify_links(args) -> int:
         return 1
 
 
+def cmd_analyze(args) -> int:
+    """analyze：主题聚簇 / 去重候选 / 趋势综述任务生成。"""
+    try:
+        from scripts.records import analyze as AZ
+        db = paths.db_path(paths.get_workspace())
+        if getattr(args, "dedup", False):
+            result = AZ.dedup_candidates(db, min_score=args.min_score, limit=args.limit)
+            _print_result({"ok": True, "data": {"candidates": result, "count": len(result)}}, args.json)
+            return 0
+        if not args.topic:
+            _print_result({"ok": False, "error": "MISSING_TOPIC",
+                           "message": "analyze 需要 --topic，或使用 --dedup"}, args.json)
+            return 1
+        result = AZ.cluster(db, args.topic, limit=args.limit)
+        if getattr(args, "emit_task", False):
+            result = {"cluster": result, "trend_task": AZ.emit_trend_task(result)}
+        _print_result({"ok": True, "data": result}, args.json)
+        return 0
+    except Exception as e:
+        _print_result({"ok": False, "error": "ANALYZE_FAILED", "message": str(e)}, args.json)
+        return 1
+
+
+def cmd_star(args) -> int:
+    try:
+        from scripts.records.star_github import star_entry
+        from scripts.records import schema as RS
+        ws = paths.get_workspace()
+        db = paths.db_path(ws)
+        record = RS.load_record(args.id, ws) or {}
+        result = star_entry(db, args.id, record)
+        if args.json:
+            _print_result({"ok": True, "data": result}, args.json)
+        else:
+            if result.get("skipped") == "no_github":
+                print(f"⭐ {args.id}: 无 canonical GitHub 仓库，跳过")
+            elif result.get("skipped") == "no_token":
+                print(f"⭐ {args.id}: GITHUB_TOKEN 未设置，跳过 (repos={result.get('repos')})")
+            else:
+                print(f"⭐ {args.id}: starred={len(result['starred'])} "
+                      f"already={len(result['already'])} failed={len(result['failed'])}")
+                for r in result["starred"]: print(f"  ⭐ {r}")
+                for r in result["already"]: print(f"  ✓ {r} (已标星)")
+                for f in result["failed"]: print(f"  ❌ {f['repo']}: {f['error']}")
+        return 0
+    except Exception as e:
+        _print_result({"ok": False, "error": "STAR_FAILED", "message": str(e)}, args.json)
+        return 1
+
+
 def cmd_backfill_records(args) -> int:
     _print_result({"ok": True, "data": {"message": "backfill completed, no-op"}}, args.json)
     return 0
@@ -478,6 +528,8 @@ def cmd_manifest(args) -> int:
             {"name": "publish", "args": ["--id"], "description": "记录发布：validate record.json + links/relations 入库"},
             {"name": "recall", "args": ["--input", "--limit"], "description": "四层确定性相似召回"},
             {"name": "verify-links", "args": ["--id", "--limit"], "description": "验证条目链接可达性（curl HEAD）"},
+            {"name": "analyze", "args": ["--topic", "--dedup", "--emit-task", "--limit"], "description": "主题聚簇 / 去重候选 / 趋势综述任务"},
+            {"name": "star", "args": ["--id"], "description": "publish 后标星 canonical GitHub 仓库（需 GITHUB_TOKEN）"},
             {"name": "list", "args": ["--limit", "--status", "--all"], "description": "列出 entries"},
             {"name": "search", "args": ["query", "--limit"], "description": "FTS5 搜索"},
             {"name": "classify", "args": ["--input"], "description": "输入源分类"},
@@ -642,6 +694,17 @@ def main():
     p_vlinks.add_argument("--id", required=True)
     p_vlinks.add_argument("--limit", "-n", type=int, default=20)
 
+    p_star = sub.add_parser("star", help="标星 canonical GitHub 仓库（需 GITHUB_TOKEN）")
+    p_star.add_argument("--id", required=True)
+
+    # analyze
+    p_analyze = sub.add_parser("analyze", help="主题聚簇 / 去重候选 / 趋势综述任务")
+    p_analyze.add_argument("--topic", help="分析主题（关键词或实体名）")
+    p_analyze.add_argument("--dedup", action="store_true", help="输出去重候选对")
+    p_analyze.add_argument("--emit-task", action="store_true", help="同时生成趋势综述 agent 任务")
+    p_analyze.add_argument("--limit", "-n", type=int, default=30)
+    p_analyze.add_argument("--min-score", type=float, default=40)
+
     p_backfill = sub.add_parser("backfill-records", help="links/entities 回填")
     p_backfill.add_argument("--id")
 
@@ -667,6 +730,8 @@ def main():
         "delete": cmd_delete, "update": cmd_update, "status": cmd_status,
         "events": cmd_events, "record-event": cmd_record_event,
         "dedup": cmd_dedup, "recall": cmd_recall, "verify-links": cmd_verify_links,
+        "star": cmd_star,
+        "analyze": cmd_analyze,
         "backfill-records": cmd_backfill_records, "doctor": cmd_doctor, "manifest": cmd_manifest,
     }
     if args.command in handlers: return handlers[args.command](args)

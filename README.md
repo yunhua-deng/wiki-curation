@@ -130,6 +130,23 @@ itself is pre-rendered static files served by Python's `http.server`):
 node scripts/site/verify_site.js http://localhost:8123
 ```
 
+## Verification design
+
+The test suite is deliberately layered — each layer answers a different
+question at a different cost:
+
+| Layer | Command | Question it answers | Cost |
+|---|---|---|---|
+| **pytest (146)** | `python -m pytest scripts/ -q` | Are module behaviors correct? (validator, recall scoring, links/relations store, publish flow, site build) | free, ~60s, offline |
+| **Deterministic CLI graders (8)** | `python eval/run_eval.py --deterministic` | Is the CLI contract agents depend on still intact? (JSON envelope fields, command exit codes, output shapes) | free, seconds, offline — wired into the pre-commit hook |
+| **LLM rubric (2, opt-in)** | `python eval/run_eval.py --llm` | Is the generated payload *good*? (LLM-as-a-judge with a scoring rubric) | model cost, non-deterministic — quality spot-check, never a gate |
+| **Site render check (opt-in)** | `node scripts/site/verify_site.js <url>` | Does the site actually render rows in a browser-like VM? | free, requires Node.js (dev-only, NOT a runtime dep) |
+
+Why the split: the pipeline's consumers are **agents** that parse JSON
+contracts, so the deterministic graders guard the machine interface on every
+commit (zero model cost, zero network). Content quality is a different axis —
+that's what the optional LLM rubric is for, run on demand, never blocking.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

@@ -34,6 +34,7 @@ Project-level routing (`AGENTS_WIKI.md`) also mandates this skill for all wiki-r
 - Python 3.11+
 - `curl` (general HTTP downloads)
 - `opencli` (optional; only for WeChat/LinkedIn handlers)
+- `GITHUB_TOKEN` (optional; classic PAT + `public_repo` scope — publish 后自动标星 GitHub 仓库用。fine-grained PAT 不支持 starring API；未设置则 `star` 自动跳过)
 - A consumer `wiki/` workspace (see below)
 
 ## Workspace setup
@@ -72,13 +73,14 @@ If omitted, the CLI defaults to `cwd/wiki`.
 After sub-agents complete their work, the orchestrator must:
 
 1. Run `publish --id <slug>` for records (or `publish --id <slug> --depth <depth>` for articles). This updates `wiki/data/wiki.db`, `wiki/wiki.html`, and `wiki/site/`.
-2. Stage all related changes together:
+2. Run `star --id <slug>`（可选但推荐）：标星该记录的 canonical GitHub 仓库（`direct_source` + `role=canonical` 的 github links）。需要 `GITHUB_TOKEN`，未设置自动跳过；单个 repo 失败只告警，不阻塞提交流程。
+3. Stage all related changes together:
    - New/updated `wiki/artifacts/<slug>/` directories (record.json, article `.md`, audit JSON, raw materials)
    - `wiki/data/wiki.db`
    - `wiki/site/` index files
    - `wiki/wiki.html`
-3. Commit with a message such as `wiki: publish record for <slug> and refresh index`.
-4. Do not leave `wiki/data/wiki.db` or `wiki/site/` changes unstaged while the artifact files are already committed.
+4. Commit with a message such as `wiki: publish record for <slug> and refresh index`.
+5. Do not leave `wiki/data/wiki.db` or `wiki/site/` changes unstaged while the artifact files are already committed.
 
 Rationale: `publish` rewrites the runtime index. Splitting the artifact commit from the index commit creates an inconsistent state where the artifact exists but the index does not point to it.
 
@@ -170,13 +172,13 @@ All commands support `--json` and `--quiet`. `--workspace PATH` overrides `$WIKI
 |---------|---------|
 | `add --input "..." [--no-recall]` | Enqueue a new entry（add 后自动召回相似历史条目） |
 | `pop --limit N` | Dequeue pending entries and mark them `running` |
-| `run --id <slug> [--mode record\|article] [--depth brief\|deep]` | Generate a portable task payload（默认 record；显式 --depth 等价 --mode article） |
-| `article --id <slug> --depth brief\|deep` | 按需写作路径 = `run --mode article` |
+| `run --id <slug>` | Generate a record extraction task payload（record 唯一模式；`--depth`/`--mode article` 已废除） |
 | `publish --id <slug>` | 记录发布：校验 record.json、links/relations/entities 入库、刷新索引 |
-| `publish --id <slug> --depth brief\|deep` | 文章发布：verify_output 校验并标记 done |
 | `recall --input "..." [--limit N]` | 四层确定性相似召回（url_exact/shared_link/entity/fts） |
+| `analyze --topic "..." [--limit N] [--emit-task]` | 主题聚簇（FTS+relations）+ 可选趋势综述 agent 任务 |
+| `analyze --dedup [--min-score S]` | 输出同来源/强共享链接的去重候选对 |
 | `verify-links --id <slug>` | curl HEAD 懒式验证链接可达性 |
-| `backfill-records [--id <slug>]` | 老条目 links/entities 回填（从 metadata.json） |
+| `star --id <slug>` | 标星 canonical GitHub 仓库（publish 后调用；需 `GITHUB_TOKEN`） |
 | `index [--output PATH]` | Regenerate `wiki/wiki.html` semantic index |
 | `doctor [--quick] [--fix-plan]` | Health check + remediation plan |
 | `stats` | Queue statistics |

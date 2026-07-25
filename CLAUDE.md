@@ -1,6 +1,6 @@
 # wiki-curation 维护守则
 
-`skills/wiki-curation/` 是 OpenClaw `AGENTS_WIKI` 路由调用的知识工作流 skill。每次修改本 skill 后，必须先通过契约测试，再汇报完成。
+`skills/wiki-curation/` 是 OpenClaw `AGENTS_WIKI` 路由调用的知识策展 skill。每次修改本 skill 后，必须先通过契约测试，再汇报完成。
 
 ## 本地契约测试（每次提交前必跑）
 
@@ -25,21 +25,18 @@ python eval/run_eval.py --llm
 
 ## 关键约束
 
-- 不要破坏 `cli.py --json manifest` / `run` / `doctor` / `stats` / `classify` 的 JSON 契约。
-- 仅允许 `cli.py` 和 `test_runner.py` 包含 `sys.path.insert` 条件引导。
+- 不要破坏 `cli.py --json manifest` / `run` / `doctor` / `stats` / `classify` / `recall` / `analyze` 的 JSON 契约。
+- 仅允许 `cli.py` 包含 `sys.path.insert` 条件引导。
 - 不要提交 `__pycache__`、`.pytest_cache`、`*.egg-info`。
 - 新增依赖必须写入 `pyproject.toml`。
 
 ## publish 与标识符约定
 
-- `publish` 是 wiki 写入流程的**唯一收口点**：验证输出、刷新元数据、生成可读索引都在 `publish/commands.py` 内完成。
-- v3.0 分发规则：`publish --id X`（无 --depth）→ 记录发布（`records/publish_record.py`：record.json 校验 + links/relations/entities 入库）；`publish --id X --depth brief|deep` → 文章发布（verify_output 校验）。
-- `orchestrate.py`（`run` 命令）**不执行 rename**，它只负责输出 `sessions_spawn` JSON；默认 record 模式，显式 `--depth` 等价 `--mode article`。
-- `publish` 内部通过 `wiki/.publish.lock` 文件锁串行化；外部 agent 不应并发调用多个 `publish`。
-- 若 `publish` 返回 `BUSY`，应等待后重试，而不是新开进程。
-- **entry ID 不可变**：hash-based slug 在 `add` 时生成，`publish` 成功后不会变为语义 slug；后续命令始终使用同一个 ID。
-- `publish` 会刷新 `wiki.db` 的 `title`/`overview`、metadata.json，并在成功后刷新 `wiki/wiki.html` 可读索引与 `wiki/site/`。
-- 人类读者通过 `wiki/wiki.html` 查看语义标题并跳转到 `artifacts/{id}/` 子目录；机器与外部 agent 仍使用原始 ID 跟踪任务。
+- `publish` 是 wiki 写入流程的**唯一收口点**（`publish/commands.py` → `records/publish_record.py`）：校验 record.json、fetched 回填、links/relations/entities 入库、站点刷新。
+- v3.3：`publish --id X` = 记录发布；`publish --id X --depth brief|deep` = 历史文章标记 done（不做 verify_output）。
+- `orchestrate.py`（`run` 命令）不执行 rename，只输出 spawn JSON（record 唯一模式；`--depth`/`--mode article` 返回 DEPRECATED_MODE）。
+- `publish` 内部通过 `wiki/.publish.lock` 文件锁串行化；返回 `BUSY` 应等待重试。
+- **entry ID 不可变**：hash-based slug 在 `add` 时生成，后续命令始终使用同一个 ID（历史异常 id 除外，见 `wiki/failures/` 修复记录）。
 
 ## 目录结构约定
 
@@ -47,12 +44,11 @@ python eval/run_eval.py --llm
 
 - `references/` —— agent 需要读取的知识/规则：
   - `sources.yaml`（来源类型、分类规则）
-  - `models.yaml`（模型路由：brief / deep / record 三档）
-  - `audit_spec.json`（审计 schema）
+  - `models.yaml`（模型路由：record 档）
   - `record_schema.json`（record.json 约束常量，records/schema.py 消费）
-- `assets/` —— agent 需要遵循/填充的输出模板：
-  - `output_spec_brief.yaml`
-  - `output_spec_deep.yaml`
+  - `entity_aliases.yaml`（实体 canonical/别名映射）
+- `assets/` —— 前端静态资源：
+  - `assets/site/`（site.js / site.css / marked.min.js）
 
 > 不再维护 `wiki/configs/` 运行时覆盖目录，避免双源头。
 
@@ -64,7 +60,6 @@ python eval/run_eval.py --llm
 - `tests/`：pytest fixtures。
 
 在未引入官方 skillgrade CLI 前保留它们。
-
 
 ## Git Hook 说明
 
@@ -81,8 +76,6 @@ git config core.hooksPath .githooks
 如果你用的 coding agent 没有读到这个配置，导致它去 `.git/hooks/` 找不到 hook，告诉它 hook 在 `.githooks/pre-commit`，或者先执行上面的配置命令。
 
 ### 一次性安装脚本（可选）
-
-如果你希望 hook 直接装进 `.git/hooks/`（兼容性最好，但不随仓库版本化），可以运行：
 
 ```powershell
 # Windows
@@ -107,4 +100,3 @@ chmod +x ../../.git/hooks/pre-commit
   3. 契约测试脚本（`run_contract_tests.ps1` / `.sh`）每次运行前也会清理缓存，确保测试的是当前源码。
 
 相关回归记录：`wiki/failures/2026-07-09_005_linkedin-handler-invalid-command.md`
-

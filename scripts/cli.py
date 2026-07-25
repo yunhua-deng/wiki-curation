@@ -436,6 +436,10 @@ def cmd_analyze(args) -> int:
     try:
         from scripts.records import analyze as AZ
         db = paths.db_path(paths.get_workspace())
+        if getattr(args, "discover", False):
+            result = AZ.discover_topics(db, recent_days=args.days, top_n=args.limit)
+            _print_result({"ok": True, "data": {"topics": result, "days": args.days}}, args.json)
+            return 0
         if getattr(args, "dedup", False):
             result = AZ.dedup_candidates(db, min_score=args.min_score, limit=args.limit)
             _print_result({"ok": True, "data": {"candidates": result, "count": len(result)}}, args.json)
@@ -701,6 +705,8 @@ def main():
     p_analyze = sub.add_parser("analyze", help="主题聚簇 / 去重候选 / 趋势综述任务")
     p_analyze.add_argument("--topic", help="分析主题（关键词或实体名）")
     p_analyze.add_argument("--dedup", action="store_true", help="输出去重候选对")
+    p_analyze.add_argument("--discover", action="store_true", help="自动发现近期热点主题")
+    p_analyze.add_argument("--days", type=int, default=14, help="discover 的近 N 天窗口")
     p_analyze.add_argument("--emit-task", action="store_true", help="同时生成趋势综述 agent 任务")
     p_analyze.add_argument("--limit", "-n", type=int, default=30)
     p_analyze.add_argument("--min-score", type=float, default=40)

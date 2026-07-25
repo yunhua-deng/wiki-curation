@@ -128,6 +128,82 @@ def cluster(db_path, topic: str, limit: int = 30, variant_map: dict = None) -> d
     }
 
 
+def discover_topics(db_path, recent_days: int = 14, min_recent: int = 5,
+                    top_n: int = 8) -> list[dict]:
+    """自动发现值得写 trends 的主题：近 N 天高频 tag/实体 vs 全库基线。
+
+    打分：recent_count * (1 + log(1 + recency_ratio))，过滤掉全库都热的低判别力项。
+    """
+    from collections import Counter
+    from datetime import datetime, timedelta, timezone
+    import math
+
+    db_path = Path(db_path)
+    entries = wiki_store.list_entries(db_path)
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=recent_days)).strftime("%Y-%m-%d")
+
+    def _recent(e):
+        return (e.get("completed_at") or e.get("queued_at") or e.get("date") or "") >= cutoff
+
+    recent_tag, base_tag = Counter(), Counter()
+    recent_ent, base_ent = Counter(), Counter()
+    ents_map = L.all_entry_entities(db_path)
+
+    for e in entries:
+        tags = e.get("tags") if isinstance(e.get("tags"), list) else (e.get("tags") or "").split(",")
+        tags = [t.strip() for t in tags if t and t.strip()]
+        ents = {v for vals in ents_map.get(e["id"], {}).values() for v in vals}
+        for t in tags:
+            base_tag[t] += 1
+            if _recent(e):
+                recent_tag[t] += 1
+        for v in ents:
+            base_ent[v] += 1
+            if _recent(e):
+                recent_ent[v] += 1
+
+    existing_trends = set()
+    trends_dir = Path(paths.get_workspace()) / "trends"
+    if trends_dir.exists():
+        for md in trends_dir.glob("*.md"):
+            existing_trends.add(md.stem.lower())
+
+    # 用 alias map 扩展名字的所有变体（仿真 ↔ simulation 等）
+    variant_map = _default_variant_map()
+
+    def _name_variants(name: str) -> set:
+        nl = name.lower()
+        out = {nl, nl.replace(" ", "-")}
+        canon = variant_map.get(nl)
+        if canon:
+            out.add(canon.lower())
+            out.add(canon.lower().replace(" ", "-"))
+        for variant, c in variant_map.items():
+            if c.lower() == nl:
+                out.add(variant)
+                out.add(variant.replace(" ", "-"))
+        return out
+
+    candidates = []
+    for kind, recent, base in (("tag", recent_tag, base_tag), ("entity", recent_ent, base_ent)):
+        for name, cnt in recent.items():
+            if cnt < min_recent:
+                continue
+            ratio = cnt / base.get(name, 1)
+            score = round(cnt * (1 + math.log1p(ratio)), 1)
+            variants = _name_variants(name)
+            covered = any(v in t or t in v for v in variants for t in existing_trends)
+            candidates.append({
+                "kind": kind, "name": name,
+                "recent_count": cnt, "base_count": base.get(name, 0),
+                "recency_ratio": round(ratio, 2), "score": score,
+                "trend_covered": covered,
+            })
+
+    candidates.sort(key=lambda c: (-c["score"], c["name"]))
+    return candidates[:top_n]
+
+
 def dedup_candidates(db_path, min_score: float = 40, limit: int = 50) -> list[dict]:
     """去重候选：same_url（同来源重复收录）或强 shared_link 边。"""
     db_path = Path(db_path)

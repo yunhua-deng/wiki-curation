@@ -177,6 +177,7 @@ All commands support `--json` and `--quiet`. `--workspace PATH` overrides `$WIKI
 | `recall --input "..." [--limit N]` | 四层确定性相似召回（url_exact/shared_link/entity/fts） |
 | `analyze --topic "..." [--limit N] [--emit-task]` | 主题聚簇（FTS+relations）+ 可选趋势综述 agent 任务 |
 | `analyze --dedup [--min-score S]` | 输出同来源/强共享链接的去重候选对 |
+| `analyze --discover [--days N]` | 自动发现近 N 天热点 tag/实体（alias 感知，标记已有 trends 覆盖） |
 | `verify-links --id <slug>` | curl HEAD 懒式验证链接可达性 |
 | `star --id <slug>` | 标星 canonical GitHub 仓库（publish 后调用；需 `GITHUB_TOKEN`） |
 | `index [--output PATH]` | Regenerate `wiki/wiki.html` semantic index |

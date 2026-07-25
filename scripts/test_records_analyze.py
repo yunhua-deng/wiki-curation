@@ -71,3 +71,18 @@ def test_emit_trend_task_envelope(kb):
     assert "Helix" in task["task"]
     assert "禁止编造" in task["task"]
     assert isinstance(task["fallback"], list)
+
+
+def test_discover_topics(kb, monkeypatch):
+    """discover：近窗口热点排序 + 已覆盖主题标记。"""
+    from scripts import paths as _paths
+    monkeypatch.setattr(_paths, "get_workspace", lambda _=None: _paths.Path(kb.parent))
+    out = AZ.discover_topics(kb, recent_days=3650, min_recent=1, top_n=10)
+    assert out, "discover should find topics"
+    kinds = {c["kind"] for c in out}
+    assert "tag" in kinds or "entity" in kinds
+    scores = [c["score"] for c in out]
+    assert scores == sorted(scores, reverse=True)
+    # VLA / Figure AI 应该在列（fixture 中各出现 2 次）
+    names = {c["name"] for c in out}
+    assert "VLA" in names or "Figure AI" in names

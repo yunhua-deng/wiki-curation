@@ -223,6 +223,23 @@ def _build_sources(entries):
     return {k: dict(v) for k, v in sorted(sources.items())}
 
 
+def _build_related_map(db_path) -> dict[str, list[dict]]:
+    """v3.4：relations 表 → entry → top related（交给站点展示）。"""
+    from scripts.records.links import get_all_relations
+    rels = get_all_relations(db_path)
+    m: dict[str, dict[str, float]] = {}
+    for r in rels:
+        for eid in (r["entry_a"], r["entry_b"]):
+            other = r["entry_b"] if eid == r["entry_a"] else r["entry_a"]
+            d = m.setdefault(eid, {})
+            d[other] = d.get(other, 0) + (r.get("score") or 0)
+    out = {}
+    for eid, others in m.items():
+        ranked = sorted(others.items(), key=lambda kv: -kv[1])[:6]
+        out[eid] = [{"id": oid, "score": round(s, 1)} for oid, s in ranked]
+    return out
+
+
 def _slim_entry(e: dict) -> dict:
     """v3.3：前端展示所需字段（去掉 raw_files/article_url/raw/sources 等大体量字段）。"""
     src = e.get("source") or {}
@@ -355,8 +372,13 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
     from scripts.site.graph import build_graph
     graph = build_graph(entries, wiki_dir, relation_edges=get_all_relations(db_path))
 
+    # v3.4：关联条目（relations 表 top N）注入 entries.json 供详情展示
+    related_map = _build_related_map(db_path)
+
     # v3.3：entries.json 瘦身——只写前端表格/详情消费字段
     display_entries = [_slim_entry(e) for e in entries]
+    for de in display_entries:
+        de["_related"] = related_map.get(de["id"], [])
     (data_dir / "entries.json").write_text(
         json.dumps(display_entries, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )

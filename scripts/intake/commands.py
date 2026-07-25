@@ -65,6 +65,10 @@ def cmd_add(args, db_path):
     input_type = args.input_type if args.input_type != 'unknown' else intake_result['primary_input_type']
     source_type = args.source_type if args.source_type != 'unknown' else intake_result['primary_source_type']
 
+    # v3.4: 队列 owner 归属（来自 WIKI_OWNER 环境变量，避免跨 session 互取条目）
+    import os as _os
+    owner = (_os.environ.get("WIKI_OWNER") or "").strip() or "claude-code"
+
     entry = wiki_index.upsert_task(
         db_path, slug,
         source_input=new_source_input,
@@ -74,6 +78,7 @@ def cmd_add(args, db_path):
         depth=args.depth or 'brief',
         status='pending',
         title=title,
+        owner=owner,
     )
 
     wiki_index.record_event(db_path, slug, 'ENQUEUE', {

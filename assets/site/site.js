@@ -147,6 +147,14 @@ async function init() {
           const ds = String(e.source.direct_source);
           html += `<p><strong>Source</strong> <a href="${escapeHtml(ds)}" target="_blank" rel="noopener">${escapeHtml(ds.substring(0,80))}</a></p>`;
         }
+        // v3.4: related entries from relations table
+        if ((e._related||[]).length) {
+          html += '<p><strong>Related</strong> ';
+          html += e._related.map(r =>
+            `<span class="badge badge-tag" style="cursor:pointer" data-relid="${escapeHtml(r.id)}">${escapeHtml(r.id)}</span>`
+          ).join(' ');
+          html += '</p>';
+        }
         html += `<p><a href="/site/raw.html?id=${encodeURIComponent(e.id)}">📁 Raw materials</a></p>`;
         html += '</div></td></tr>';
       }
@@ -170,6 +178,28 @@ async function init() {
         const row = a.closest('tr');
         const detail = document.getElementById('detail-' + row.dataset.id);
         if (detail) detail.style.display = detail.style.display === 'none' ? '' : 'none';
+      });
+    });
+
+    // v3.4: related-entry badges — scroll to and expand the target row
+    container.querySelectorAll('[data-relid]').forEach(badge => {
+      badge.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const targetId = badge.dataset.relid;
+        const targetRow = container.querySelector(`tr[data-id="${targetId}"]`);
+        if (targetRow) {
+          // expand the target's detail
+          const detail = document.getElementById('detail-' + targetId);
+          if (detail) detail.style.display = '';
+          // open collapsed month if needed
+          const monthGroup = targetRow.closest('.month-group');
+          if (monthGroup && monthGroup.classList.contains('collapsed')) {
+            monthGroup.classList.remove('collapsed');
+            const h = monthGroup.querySelector('.month-header');
+            if (h) h.textContent = h.textContent.replace('▸', '▾');
+          }
+          targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
       });
     });
   }

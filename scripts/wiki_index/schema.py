@@ -383,6 +383,19 @@ def _migrate_v5_records(conn):
     _record_schema_version(conn, 'v5_records')
 
 
+def _migrate_v6_owner(conn):
+    """v6：entries.owner 列（队列归属隔离）。"""
+    applied = _get_applied_versions(conn)
+    if 'v6_owner' in applied:
+        return
+
+    cols = _table_columns(conn, 'entries')
+    if 'owner' not in cols:
+        conn.execute("ALTER TABLE entries ADD COLUMN owner TEXT DEFAULT ''")
+
+    _record_schema_version(conn, 'v6_owner')
+
+
 def ensure_schema(db_path):
     """确保 wiki.db 表结构、FTS5 索引、辅助索引存在，并执行迁移。"""
     db_path = Path(db_path)
@@ -417,6 +430,9 @@ def ensure_schema(db_path):
 
     # v5 record-first：entities 列 + links/relations 索引
     _migrate_v5_records(conn)
+
+    # v6：队列 owner 隔离
+    _migrate_v6_owner(conn)
 
     conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_topic_type ON entries(topic_type)")

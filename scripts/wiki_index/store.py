@@ -107,7 +107,7 @@ COLUMNS = [
     'id', 'date', 'ver', 'depth', 'sources', 'topic_type', 'title', 'overview', 'tags',
     'raw', 'file', 'source_input', 'source_prompt', 'input_type', 'source_type', 'status',
     'error', 'materials_ready', 'queued_at', 'started_at', 'completed_at',
-    'spec_version', 'verified_depths', 'entities'
+    'spec_version', 'verified_depths', 'entities', 'owner'
 ]
 
 
@@ -127,6 +127,8 @@ def _entry_to_row(entry):
             if isinstance(v, dict):
                 return json.dumps(v, ensure_ascii=False)
             return v or ''
+        if col == 'owner':
+            return entry.get('owner') or ''
         return entry.get(col)
     return tuple(_get(c) for c in COLUMNS)
 
@@ -197,8 +199,10 @@ def get_entry_by_file(db_path, filename):
 
 def upsert_task(db_path, slug, source_input=None, source_prompt=None, input_type=None,
                 source_type=None, topic_type=None, depth=None, status=None, title=None,
-                error=None, **kwargs):
-    """创建或更新一个任务/条目。用于 add/requeue/orchestrate 初始写入。"""
+                error=None, owner=None, **kwargs):
+    """创建或更新一个任务/条目。用于 add/requeue/orchestrate 初始写入。
+    owner: 队列归属标识（如 'claude-code' / 'openclaw'），pop 时过滤用。
+    """
     db_path = Path(db_path)
     ensure_schema(db_path)
     conn = sqlite3.connect(str(db_path))
@@ -223,8 +227,11 @@ def upsert_task(db_path, slug, source_input=None, source_prompt=None, input_type
             'file': '',
             'spec_version': '1.0',
             'verified_depths': '',
+            'owner': owner or '',
         }
 
+    if owner is not None:
+        entry['owner'] = owner
     if source_input is not None:
         entry['source_input'] = source_input
     if source_prompt is not None:
@@ -277,18 +284,33 @@ def update_status(db_path, slug, status, error=None, title=None, **kwargs):
     return upsert_task(db_path, slug, status=status, error=error, title=title, **kwargs)
 
 
-def pop_pending(db_path, limit=3):
-    """取出最多 N 个 pending 任务，设为 running，返回 entry 列表。"""
+def pop_pending(db_path, limit=3, owner: str = ""):
+    """取出最多 N 个 pending 任务，设为 running，返回 entry 列表。
+    owner: 若设置，只取该 owner 的条目（队列隔离）；
+           若为空且 WIKI_OWNER 环境变量有值则使用之；
+           若 WIKI_OWNER 也未设置，取全部（向后兼容旧条目）。
+    """
+    import os
+    if not owner:
+        owner = (os.environ.get("WIKI_OWNER") or "").strip()
     db_path = Path(db_path)
     ensure_schema(db_path)
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
-    rows = conn.execute('''
-        SELECT * FROM entries
-        WHERE status = 'pending'
-        ORDER BY COALESCE(queued_at, '9999') ASC, id ASC
-        LIMIT ?
-    ''', (limit,)).fetchall()
+    if owner:
+        rows = conn.execute('''
+            SELECT * FROM entries
+            WHERE status = 'pending' AND (owner = ? OR owner = '')
+            ORDER BY COALESCE(queued_at, '9999') ASC, id ASC
+            LIMIT ?
+        ''', (owner, limit)).fetchall()
+    else:
+        rows = conn.execute('''
+            SELECT * FROM entries
+            WHERE status = 'pending'
+            ORDER BY COALESCE(queued_at, '9999') ASC, id ASC
+            LIMIT ?
+        ''', (limit,)).fetchall()
 
     now = _now_iso()
     result = []

@@ -118,11 +118,13 @@ Everything below is **optional**; the pipeline degrades cleanly without them:
 
 ```bash
 cd wiki-curation
-python -m pytest scripts/ -q          # 146 contract tests
+python -m pytest scripts/ -q          # 146 contract tests (requires pytest)
 python eval/run_eval.py --deterministic   # 8 CLI-contract graders
 ```
 
-Site end-to-end check (requires node):
+Optional dev-only site check (verifies the rendered table end-to-end via a
+Node VM browser shim; **Node.js is NOT a runtime dependency** — the site
+itself is pre-rendered static files served by Python's `http.server`):
 
 ```bash
 node scripts/site/verify_site.js http://localhost:8123

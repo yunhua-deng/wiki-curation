@@ -278,7 +278,22 @@ def _build_trends(wiki_dir: Path) -> list[dict]:
     if not trends_dir.exists():
         return []
     items = []
-    for md in sorted(trends_dir.glob("*.md"), reverse=True):
+    # sort: newest date first, within same date numeric prefix ascending (01<02<...)
+    def _trend_key(p):
+        s = p.stem
+        date = s[:10]  # YYYY-MM-DD
+        # extract leading numeric prefix if present (e.g. 2026-07-25_01-xxx -> 1)
+        rest = s[11:] if len(s) > 11 and s[10] == '_' else ''
+        order = 99
+        if rest and rest[:2].isdigit():
+            order = int(rest[:2])
+        return (-_date_ordinal(date), order)
+
+    def _date_ordinal(d):
+        try: return int(d.replace('-', ''))
+        except: return 0
+
+    for md in sorted(trends_dir.glob("*.md"), key=_trend_key):
         try:
             text = md.read_text(encoding="utf-8", errors="replace")
         except Exception:

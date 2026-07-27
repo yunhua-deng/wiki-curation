@@ -261,38 +261,6 @@ async function init() {
     document.getElementById('trend-list').style.display = '';
   });
 }
-      <div class="trend-card" data-slug="${escapeHtml(t.slug)}">
-        <h3>${escapeHtml(t.title)}</h3>
-        <div class="trend-meta">${escapeHtml(t.date || '')}</div>
-        <p class="muted">${escapeHtml(t.excerpt || '')}</p>
-      </div>
-    `).join('');
-    list.querySelectorAll('.trend-card').forEach(card => {
-      card.addEventListener('click', () => openTrend(card.dataset.slug));
-    });
-  }
-
-  async function openTrend(slug) {
-    const t = (trendsData || []).find(x => x.slug === slug);
-    if (!t) return;
-    document.getElementById('trend-list').style.display = 'none';
-    document.getElementById('trend-article').style.display = '';
-    const body = document.getElementById('trend-body');
-    body.innerHTML = '<p class="muted">Loading...</p>';
-    try {
-      const md = await (await fetch('/' + t.file)).text();
-      body.innerHTML = window.marked ? marked.parse(md) : `<pre>${escapeHtml(md)}</pre>`;
-    } catch (e) {
-      body.innerHTML = `<p class="muted">Load failed: ${escapeHtml(e.message)}</p>`;
-    }
-    window.scrollTo(0, 0);
-  }
-
-  document.getElementById('trend-back').addEventListener('click', () => {
-    document.getElementById('trend-article').style.display = 'none';
-    document.getElementById('trend-list').style.display = '';
-  });
-}
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);

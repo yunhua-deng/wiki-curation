@@ -125,9 +125,9 @@ wiki/
 
 | Layer | Command | Question | Cost |
 |---|---|---|---|
-| **pytest (168)** | `python -m pytest scripts/ -q` | Are module behaviors correct? | free, ~60s, offline |
-| **CLI graders (8)** | `python eval/run_eval.py --deterministic` | Is the agent's JSON contract intact? | free, seconds, offline |
-| **LLM rubric (2, opt-in)** | `python eval/run_eval.py --llm` | Is the generated payload *good*? (LLM-as-a-judge) | model cost, spot-check |
+| **pytest** | `python -m pytest scripts/ -q` | Are module behaviors correct? | free, ~60s, offline |
+| **CLI graders** | `python eval/run_eval.py --deterministic` | Is the agent's JSON contract intact? | free, seconds, offline |
+| **LLM rubric (opt-in)** | `python eval/run_eval.py --llm` | Is the generated payload *good*? (LLM-as-a-judge) | model cost, spot-check |
 | **Site render (opt-in)** | `node scripts/site/verify_site.js <url>` | Does the table render in a browser VM? | Node.js (dev-only) |
 
 The deterministic graders guard the machine interface on every commit. Content quality is a separate axis — periodic spot-check with the LLM rubric, never blocking.

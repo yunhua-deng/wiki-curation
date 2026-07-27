@@ -74,6 +74,13 @@ def cmd_publish(args, db_path, wiki_dir, scripts_dir):
     """publish 分发：无 --depth → 记录发布；显式 --depth → 历史文章标记 done。"""
     try:
         with PublishLock(timeout=30):
+            if getattr(args, 'site_only', False):
+                _refresh_site(db_path, wiki_dir, json_mode=args.json)
+                if args.json:
+                    _out_json({"ok": True, "mode": "site-only"})
+                else:
+                    print("✅ site rebuilt")
+                return
             if getattr(args, 'depth', None) is None:
                 from scripts.records.publish_record import publish_record
                 publish_record(args, db_path, wiki_dir, scripts_dir)

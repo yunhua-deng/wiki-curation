@@ -125,6 +125,8 @@ def main():
 
     p_publish = sub.add_parser('publish', help='Verify output and mark entry as done')
     p_publish.add_argument('--id', required=True, help='Entry slug')
+    p_publish.add_argument('--site-only', action='store_true',
+                           help='只重建站点，跳过 record 校验/入库（用于 trends 更新后）')
     p_publish.add_argument('--depth', choices=['brief', 'deep'], default=None,
                            help='显式指定走文章校验；缺省为记录发布（record.json）')
     p_publish.add_argument('--spec', help='Path to output spec YAML')

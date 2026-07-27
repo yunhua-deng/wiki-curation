@@ -338,6 +338,7 @@ def cmd_publish(args) -> int:
     if getattr(args, "depth", None): extra += ["--depth", args.depth]
     if getattr(args, "spec", None): extra += ["--spec", args.spec]
     if getattr(args, "title", None): extra += ["--title", args.title]
+    if getattr(args, "site_only", False): extra.append("--site-only")
     r = _wiki_db_cmd("publish", args, extra, timeout=60)
     _print_result(r, args.json)
     return 0 if r.get("ok") else 1
@@ -529,7 +530,7 @@ def cmd_manifest(args) -> int:
             {"name": "add", "args": ["--input", "--input-type", "--source-type", "--id", "--no-recall"],
              "description": "添加 pending 任务（add 后自动召回相似历史条目）"},
             {"name": "pop", "args": ["--limit"], "description": "取出 pending 任务"},
-            {"name": "publish", "args": ["--id"], "description": "记录发布：validate record.json + links/relations 入库"},
+            {"name": "publish", "args": ["--id", "--site-only"], "description": "记录发布：validate record.json + links/relations 入库（--site-only 仅重建站点）"},
             {"name": "recall", "args": ["--input", "--limit"], "description": "四层确定性相似召回"},
             {"name": "verify-links", "args": ["--id", "--limit"], "description": "验证条目链接可达性（curl HEAD）"},
             {"name": "analyze", "args": ["--topic", "--dedup", "--emit-task", "--limit"], "description": "主题聚簇 / 去重候选 / 趋势综述任务"},
@@ -607,8 +608,10 @@ def main():
     p_vo = sub.add_parser("verify-output", help="（已废除 v3.1）→ cli.py publish --id <slug>")
     p_vo.add_argument("--file")
 
-    p_pub = sub.add_parser("publish", help="验证并发布记录（v3.1 record-only）")
+    p_pub = sub.add_parser("publish", help="验证并发布记录（或 --site-only 只重建站点）")
     p_pub.add_argument("--id", required=True)
+    p_pub.add_argument("--site-only", action="store_true",
+                       help="只重建站点（entries/timeline/trends JSON），跳过 record 校验/入库")
     p_pub.add_argument("--depth", choices=["brief", "deep"], default=None, help="（保留用于历史文章发布）")
 
     p_index = sub.add_parser("index", help="刷新 wiki/wiki.html 索引")

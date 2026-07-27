@@ -37,19 +37,22 @@ function getParam(name) {
 
 // ================= init =================
 async function init() {
-  const [entries, tags] = await Promise.all([
+  const [entries, tags, trends] = await Promise.all([
     loadJSON('/site/data/entries.json'),
     loadJSON('/site/data/tags.json').catch(() => ({})),
+    loadJSON('/site/data/trends.json').catch(() => []),
   ]);
 
   // stats
   const total = entries.length;
   const done = entries.filter(e => e.status === 'done').length;
   const withRec = entries.filter(e => e.has_record).length;
+  const trendCount = (trends || []).length;
   document.getElementById('stats').innerHTML = `
     <div class="stat"><b>${total}</b> entries</div>
     <div class="stat"><b>${done}</b> done</div>
     <div class="stat"><b>${withRec}</b> records</div>
+    <div class="stat"><b>${trendCount}</b> trends</div>
   `;
 
   // type filter
@@ -210,7 +213,18 @@ async function init() {
   render();
 
   // ============ v3.4: Trends 视图 ============
-  let trendsData = null;
+  const trendList = document.getElementById('trend-list');
+  if (trends.length) {
+    trendList.innerHTML = trends.map(t => `
+      <div class="trend-card" data-slug="${escapeHtml(t.slug)}">
+        <h3>${escapeHtml(t.title)}</h3>
+        <div class="trend-meta">${escapeHtml(t.date || '')}</div>
+        <p class="muted">${escapeHtml(t.excerpt || '')}</p>
+      </div>
+    `).join('');
+  } else {
+    trendList.innerHTML = '<p class="empty">No trend articles yet</p>';
+  }
 
   document.getElementById('nav-records').addEventListener('click', () => switchView('records'));
   document.getElementById('nav-trends').addEventListener('click', () => switchView('trends'));
@@ -220,15 +234,33 @@ async function init() {
     document.getElementById('nav-trends').classList.toggle('active', view === 'trends');
     document.getElementById('records-view').style.display = view === 'records' ? '' : 'none';
     document.getElementById('trends-view').style.display = view === 'trends' ? '' : 'none';
-    if (view === 'trends') loadTrends();
   }
 
-  async function loadTrends() {
-    if (trendsData) return;
-    trendsData = await loadJSON('/site/data/trends.json').catch(() => []);
-    const list = document.getElementById('trend-list');
-    if (!trendsData.length) { list.innerHTML = '<p class="empty">No trend articles yet</p>'; return; }
-    list.innerHTML = trendsData.map(t => `
+  trendList.querySelectorAll('.trend-card').forEach(card => {
+    card.addEventListener('click', () => openTrend(card.dataset.slug));
+  });
+
+  async function openTrend(slug) {
+    const t = (trends || []).find(x => x.slug === slug);
+    if (!t) return;
+    document.getElementById('trend-list').style.display = 'none';
+    document.getElementById('trend-article').style.display = '';
+    const body = document.getElementById('trend-body');
+    body.innerHTML = '<p class="muted">Loading...</p>';
+    try {
+      const md = await (await fetch('/' + t.file)).text();
+      body.innerHTML = window.marked ? marked.parse(md) : `<pre>${escapeHtml(md)}</pre>`;
+    } catch (e) {
+      body.innerHTML = `<p class="muted">Load failed: ${escapeHtml(e.message)}</p>`;
+    }
+    window.scrollTo(0, 0);
+  }
+
+  document.getElementById('trend-back').addEventListener('click', () => {
+    document.getElementById('trend-article').style.display = 'none';
+    document.getElementById('trend-list').style.display = '';
+  });
+}
       <div class="trend-card" data-slug="${escapeHtml(t.slug)}">
         <h3>${escapeHtml(t.title)}</h3>
         <div class="trend-meta">${escapeHtml(t.date || '')}</div>

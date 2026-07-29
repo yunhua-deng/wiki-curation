@@ -6,6 +6,7 @@ scripts/site/serve.py — 本地 HTTP 服务包装器。
 """
 import argparse
 import atexit
+import json
 import os
 import platform
 import signal
@@ -22,6 +23,14 @@ class SPAHandler(SimpleHTTPRequestHandler):
     """处理目录根路径自动补全 index.html，并为文本响应添加 UTF-8 charset。"""
 
     def do_GET(self):
+        # v3.5：dive 状态 API
+        if self.path.startswith("/api/dive/status"):
+            from urllib.parse import urlparse, parse_qs
+            q = parse_qs(urlparse(self.path).query)
+            from scripts.site import api as site_api
+            code, data = site_api.handle_dive_status(self.directory, (q.get("id") or [""])[0])
+            self._send_json(code, data)
+            return
         # v3.3：根路径与 /index.html 直接跳到站点首页（用户只记端口即可）
         if self.path in ("/", "/index.html"):
             self.send_response(301)
@@ -29,6 +38,32 @@ class SPAHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             return
         super().do_GET()
+
+    def do_POST(self):
+        # v3.5：dive 发起 API（仅 loopback；api 层再校验）
+        if self.path.split("?")[0] == "/api/dive":
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = 0
+            try:
+                payload = json.loads(self.rfile.read(length) or b"{}")
+            except Exception:
+                payload = {}
+            from scripts.site import api as site_api
+            code, data = site_api.handle_dive_request(
+                self.directory, payload, client_ip=self.client_address[0])
+            self._send_json(code, data)
+            return
+        self.send_error(404)
+
+    def _send_json(self, code: int, data: dict):
+        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def send_header(self, keyword, value):
         if keyword.lower() == "content-type" and value.startswith("text/") and "charset" not in value:

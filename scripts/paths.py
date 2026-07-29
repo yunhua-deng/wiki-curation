@@ -100,6 +100,39 @@ def audit_md_path(slug: str, depth: str, ws=None) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# dive（记录深度解读）产物路径（wiki/artifacts/{slug}/dive/...）
+# ---------------------------------------------------------------------------
+def dive_dir(slug: str, ws=None) -> Path:
+    """dive 产物目录：wiki/artifacts/{slug}/dive"""
+    return entry_dir(slug, ws) / "dive"
+
+
+def dive_raw_dir(slug: str, ws=None) -> Path:
+    """dive 采集材料目录：wiki/artifacts/{slug}/dive/raw"""
+    return dive_dir(slug, ws) / "raw"
+
+
+def dive_md_path(slug: str, ws=None) -> Path:
+    """dive 页面路径：wiki/artifacts/{slug}/dive/dive.md"""
+    return dive_dir(slug, ws) / "dive.md"
+
+
+def dive_json_path(slug: str, ws=None) -> Path:
+    """dive 元数据路径：wiki/artifacts/{slug}/dive/dive.json"""
+    return dive_dir(slug, ws) / "dive.json"
+
+
+def dive_status_path(slug: str, ws=None) -> Path:
+    """dive 状态机路径：wiki/artifacts/{slug}/dive/status.json"""
+    return dive_dir(slug, ws) / "status.json"
+
+
+def dive_task_path(slug: str, ws=None) -> Path:
+    """dive 任务 payload 路径：wiki/artifacts/{slug}/dive/task.json"""
+    return dive_dir(slug, ws) / "task.json"
+
+
+# ---------------------------------------------------------------------------
 # 相对路径字符串（仅用于 task prompt / Markdown 文档内链接）
 # ⚠️ 禁止用于文件写入——写入操作必须使用上面的 article_path / raw_dir / audit_dir 等绝对路径
 # ---------------------------------------------------------------------------

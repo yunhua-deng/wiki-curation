@@ -526,13 +526,14 @@ def collect_materials(slug: str, input_type: str, source_type: str,
 
 
 def collect_sources(slug: str, sources: list[dict], max_depth: int = None,
-                    download_zip: bool = False, prefix: str = "") -> dict:
-    """多源收集入口：每个 source 放入 raw/{slug}/{prefix}s{i}/，仅主源启用下钻。
+                    download_zip: bool = False, prefix: str = "", dest_base=None) -> dict:
+    """多源收集入口：每个 source 放入 {dest_base}/{prefix}s{i}/，仅主源启用下钻。
 
     sources 元素格式（兼容旧键）：
       {"input_type": "url", "source_type": "arxiv", "input": "..."}
       或旧 {"type": "url", "subtype": "arxiv_paper", "input": "..."}
     prefix 用于追加模式，如 "append_1/"。
+    dest_base 默认 paths.raw_dir(slug, WORKSPACE)；dive 等场景可显式覆盖。
     """
     config = sc.load_config()
     settings = sc.get_settings(config)
@@ -541,7 +542,7 @@ def collect_sources(slug: str, sources: list[dict], max_depth: int = None,
     max_l3_per_parent = settings.get('max_l3_children_per_parent', 2)
 
     started_at = datetime.now(timezone.utc).isoformat()
-    dest_base = paths.raw_dir(slug, WORKSPACE)
+    dest_base = Path(dest_base) if dest_base is not None else paths.raw_dir(slug, WORKSPACE)
     dest_base.mkdir(parents=True, exist_ok=True)
 
     drill_log = {

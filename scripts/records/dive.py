@@ -322,3 +322,135 @@ def spawn_dive_agent_if_possible(slug: str, ws=None) -> dict:
            "--mode", "run", "--task", task["task"]]
     r = run_cmd(cmd, timeout=60)
     return {"spawned": bool(r["ok"]), "reason": "" if r["ok"] else (r.get("stderr") or "spawn failed")[:200]}
+
+
+# ============================================================
+# 校验 + 发布
+# ============================================================
+
+def validate_dive_md(text: str) -> tuple:
+    """校验 dive.md 结构契约，返回 (ok, errors)。"""
+    import re
+    errors = []
+    if not text or not text.strip():
+        return False, ["dive.md 为空"]
+    size = len(text.encode("utf-8"))
+    if size > DIVE_MD_MAX_BYTES:
+        errors.append(f"dive.md 过大（{size} > {DIVE_MD_MAX_BYTES} bytes，即 {DIVE_MD_MAX_BYTES // 1024}KB）")
+    if not re.search(r"^#\s+\S", text, re.M):
+        errors.append("missing H1 title（# ...）")
+    for h2 in REQUIRED_H2:
+        if not re.search(rf"^##\s+{re.escape(h2)}", text, re.M):
+            errors.append(f"missing section: ## {h2}")
+    if not re.search(r"https?://[^\s)\]]+", text):
+        errors.append("no source URL found（原始出处/正文必须含 http(s) 链接）")
+    return (len(errors) == 0), errors
+
+
+def _collect_dive_fetch_sources(slug: str, ws) -> list:
+    """从 dive/raw/**/_fetch_results.json 汇总抓取来源（url + status）。"""
+    raw = paths.dive_raw_dir(slug, ws)
+    sources = []
+    seen = set()
+    if not raw.exists():
+        return sources
+    for fr in sorted(raw.rglob("_fetch_results.json")):
+        try:
+            data = json.loads(fr.read_text(encoding="utf-8", errors="replace"))
+        except Exception:
+            continue
+        for r in data.get("results", []):
+            url = r.get("url")
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            sources.append({"url": url, "status": r.get("status") or "unknown"})
+    return sources
+
+
+def publish_dive(slug: str, ws=None, db_path=None) -> dict:
+    """发布 dive：结构校验 → dive.json（revision 自增）→ 重建站点 → status=done。"""
+    from scripts.publish.lock import PublishLock
+    from scripts.site.build import build_site
+    from scripts import wiki_index
+
+    ws = Path(ws) if ws is not None else paths.get_workspace()
+    db_path = Path(db_path) if db_path is not None else paths.db_path(ws)
+    md_path = paths.dive_md_path(slug, ws)
+
+    if not md_path.exists():
+        raise DiveError("DIVE_MD_MISSING",
+                        f"dive.md missing: {md_path}（先执行 dive task 写页面）")
+    text = md_path.read_text(encoding="utf-8", errors="replace")
+    ok, errors = validate_dive_md(text)
+    if not ok:
+        write_status(slug, ws, "failed", error="; ".join(errors)[:300])
+        raise DiveError("DIVE_VERIFY_FAILED", f"dive.md 校验失败: {'; '.join(errors)}")
+
+    with PublishLock(timeout=30):
+        record = RS.load_record(slug, ws) or {}
+        meta_path = paths.dive_json_path(slug, ws)
+        prev = {}
+        if meta_path.exists():
+            try:
+                prev = json.loads(meta_path.read_text(encoding="utf-8"))
+            except Exception:
+                prev = {}
+        now = _now_iso()
+        meta = {
+            "slug": slug,
+            "title": record.get("title") or slug,
+            "created_at": prev.get("created_at") or now,
+            "updated_at": now,
+            "revision": int(prev.get("revision") or 0) + 1,
+            "sources": _collect_dive_fetch_sources(slug, ws),
+            "md_bytes": md_path.stat().st_size,
+        }
+        meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        try:
+            wiki_index.record_event(db_path, slug, "DIVE", {"revision": meta["revision"]})
+        except Exception:
+            pass
+        build_site(db_path, ws)
+        write_status(slug, ws, "done", detail={"revision": meta["revision"]})
+    return {"ok": True, "id": slug, "revision": meta["revision"],
+            "dive": f"artifacts/{slug}/dive/dive.md"}
+
+
+def _read_dive_meta(slug: str, ws) -> dict:
+    path = paths.dive_json_path(slug, ws)
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def dive_status(slug: str, ws=None) -> dict:
+    """CLI/API 共用的状态视图。"""
+    ws = Path(ws) if ws is not None else paths.get_workspace()
+    return {
+        "id": slug,
+        "status": read_status(slug, ws),
+        "has_dive": paths.dive_md_path(slug, ws).exists(),
+        "dive": _read_dive_meta(slug, ws),
+    }
+
+
+def list_dive_queue(ws=None) -> list:
+    """全部 awaiting_agent 的 dive（agent 的工作清单）。"""
+    ws = Path(ws) if ws is not None else paths.get_workspace()
+    adir = paths.artifacts_dir(ws)
+    items = []
+    if not adir.exists():
+        return items
+    for d in sorted(adir.iterdir()):
+        if not d.is_dir():
+            continue
+        st = read_status(d.name, ws)
+        if st.get("state") == "awaiting_agent":
+            items.append({"id": d.name, "updated_at": st.get("updated_at"),
+                          "detail": st.get("detail")})
+    return items

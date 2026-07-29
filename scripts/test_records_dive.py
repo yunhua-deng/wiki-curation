@@ -183,3 +183,102 @@ def test_generate_dive_task_contract(tmp_path, monkeypatch):
                    "更多内容请看", "禁止", "dive/raw"]:
         assert needle in body, needle
     assert task["model"]  # 非空
+
+
+# ---------- Task 4: validate + publish + status/queue ----------
+
+GOOD_DIVE_MD = """# Helix — 深度解读
+> 生成：2026-07-29 · 基于 2 个来源 · 记录：rec1
+
+## TL;DR
+Helix 是 Figure 的 VLA 项目。
+
+## 核心内容
+### 架构
+双系统架构。[来源](https://github.com/figure/helix)
+
+## 分来源摘要
+### github.com
+仓库 README 描述了模型结构。更多内容请看：https://github.com/figure/helix
+
+## 原始出处
+- https://github.com/figure/helix
+- https://arxiv.org/abs/2501.0001
+"""
+
+
+def test_validate_dive_md(tmp_path):
+    from scripts.records import dive as DV
+    ok, errors = DV.validate_dive_md(GOOD_DIVE_MD)
+    assert ok, errors
+    for bad, needle in [
+        ("", "空"),
+        ("# t\n\n## TL;DR\nx\n\n## 核心内容\nx\n\n## 分来源摘要\nx", "原始出处"),
+        ("## TL;DR\nx\n\n## 核心内容\nx\n\n## 分来源摘要\nx\n\n## 原始出处\n- https://a.b", "H1"),
+        ("# t\n\n## TL;DR\nx\n\n## 核心内容\nx\n\n## 分来源摘要\nx\n\n## 原始出处\n无链接", "URL"),
+    ]:
+        ok, errors = DV.validate_dive_md(bad)
+        assert not ok
+        assert any(needle in e for e in errors), (needle, errors)
+    big = GOOD_DIVE_MD + "x" * (DV.DIVE_MD_MAX_BYTES + 10)
+    ok, errors = DV.validate_dive_md(big)
+    assert not ok and any("过大" in e or "KB" in e for e in errors)
+
+
+def test_publish_dive_happy_path(tmp_path, monkeypatch):
+    _patch_ws(tmp_path, monkeypatch)
+    _seed_record(tmp_path)
+    conftest.seed_entry(paths.db_path(tmp_path), "rec1", status="done")
+    from scripts.records import dive as DV
+
+    dive_dir = paths.dive_dir("rec1", tmp_path)
+    dive_dir.mkdir(parents=True, exist_ok=True)
+    (dive_dir / "dive.md").write_text(GOOD_DIVE_MD, encoding="utf-8")
+    raw = paths.dive_raw_dir("rec1", tmp_path)
+    conftest.write_fetch_results(raw / "s0", [
+        {"url": "https://github.com/figure/helix", "status": "success"}])
+
+    result = DV.publish_dive("rec1", tmp_path, paths.db_path(tmp_path))
+    assert result["ok"] and result["revision"] == 1
+    meta = json.loads(paths.dive_json_path("rec1", tmp_path).read_text(encoding="utf-8"))
+    assert meta["title"] == "Helix VLA Project"
+    assert meta["sources"] == [{"url": "https://github.com/figure/helix", "status": "success"}]
+    assert DV.read_status("rec1", tmp_path)["state"] == "done"
+    # 站点索引
+    dives = json.loads((tmp_path / "site" / "data" / "dives.json").read_text(encoding="utf-8"))
+    assert dives and dives[0]["slug"] == "rec1"
+    entries = json.loads((tmp_path / "site" / "data" / "entries.json").read_text(encoding="utf-8"))
+    rec1 = [e for e in entries if e["id"] == "rec1"][0]
+    assert rec1["has_dive"] is True and rec1["dive"]["date"]
+    # 再发布 → revision 自增、created_at 保留
+    result2 = DV.publish_dive("rec1", tmp_path, paths.db_path(tmp_path))
+    assert result2["revision"] == 2
+    meta2 = json.loads(paths.dive_json_path("rec1", tmp_path).read_text(encoding="utf-8"))
+    assert meta2["created_at"] == meta["created_at"]
+
+
+def test_publish_dive_verify_failed(tmp_path, monkeypatch):
+    _patch_ws(tmp_path, monkeypatch)
+    _seed_record(tmp_path)
+    conftest.seed_entry(paths.db_path(tmp_path), "rec1", status="done")
+    from scripts.records import dive as DV
+    dive_dir = paths.dive_dir("rec1", tmp_path)
+    dive_dir.mkdir(parents=True, exist_ok=True)
+    (dive_dir / "dive.md").write_text("# too short", encoding="utf-8")
+    with pytest.raises(DV.DiveError) as ei:
+        DV.publish_dive("rec1", tmp_path, paths.db_path(tmp_path))
+    assert ei.value.code == "DIVE_VERIFY_FAILED"
+    assert DV.read_status("rec1", tmp_path)["state"] == "failed"
+
+
+def test_dive_status_and_queue(tmp_path, monkeypatch):
+    _patch_ws(tmp_path, monkeypatch)
+    from scripts.records import dive as DV
+    DV.write_status("a1", tmp_path, "awaiting_agent", detail={"collected": 2})
+    DV.write_status("a2", tmp_path, "done")
+    (tmp_path / "artifacts" / "a1").mkdir(exist_ok=True)
+    (tmp_path / "artifacts" / "a2").mkdir(exist_ok=True)
+    queue = DV.list_dive_queue(tmp_path)
+    assert [q["id"] for q in queue] == ["a1"]
+    st = DV.dive_status("a1", tmp_path)
+    assert st["status"]["state"] == "awaiting_agent" and st["has_dive"] is False

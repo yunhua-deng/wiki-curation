@@ -316,6 +316,43 @@ def _build_trends(wiki_dir: Path) -> list[dict]:
     return items
 
 
+def _build_dives(wiki_dir: Path) -> list[dict]:
+    """v3.5：扫描 artifacts/*/dive/dive.md，生成深度解读索引。"""
+    artifacts = Path(wiki_dir) / "artifacts"
+    if not artifacts.exists():
+        return []
+    items = []
+    for entry_dir in sorted(artifacts.iterdir()):
+        md = entry_dir / "dive" / "dive.md"
+        if not md.is_file():
+            continue
+        meta = {}
+        meta_path = entry_dir / "dive" / "dive.json"
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8", errors="replace")) or {}
+            except Exception:
+                meta = {}
+        try:
+            text = md.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+        excerpt = ""
+        for line in text.splitlines():
+            s = line.strip()
+            if s and not s.startswith(("#", ">", "|", "-", "```")):
+                excerpt = s[:200]
+                break
+        items.append({
+            "slug": entry_dir.name,
+            "title": meta.get("title") or entry_dir.name,
+            "date": str(meta.get("updated_at") or meta.get("created_at") or "")[:10],
+            "excerpt": excerpt,
+            "bytes": md.stat().st_size,
+        })
+    return items
+
+
 def _write_html_index(entries: list[dict], wiki_dir: Path) -> Path:
     """v3.3：重新生成 wiki/wiki.html 静态语义索引（id/date/type/title/tldr/tags）。"""
     rows = []
@@ -394,6 +431,14 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
     display_entries = [_slim_entry(e) for e in entries]
     for de in display_entries:
         de["_related"] = related_map.get(de["id"], [])
+    # v3.5：深度解读索引 + has_dive 注入（须先于 entries.json 落盘）
+    dives = _build_dives(wiki_dir)
+    dive_map = {d["slug"]: d for d in dives}
+    for de in display_entries:
+        dv = dive_map.get(de["id"])
+        de["has_dive"] = bool(dv)
+        if dv:
+            de["dive"] = {"date": dv["date"], "excerpt": dv["excerpt"]}
     (data_dir / "entries.json").write_text(
         json.dumps(display_entries, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )
@@ -435,7 +480,7 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
 
     # v3.3：清理陈旧 data 产物（search_index/themes 等已废弃文件）
     current_data = {"entries.json", "tags.json", "sources.json", "entities.json",
-                    "graph.json", "timeline.json", "trends.json"}
+                    "graph.json", "timeline.json", "trends.json", "dives.json"}
     for f in data_dir.glob("*.json"):
         if f.name not in current_data:
             f.unlink()
@@ -444,6 +489,11 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
     trends = _build_trends(wiki_dir)
     (data_dir / "trends.json").write_text(
         json.dumps(trends, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
+    )
+
+    # v3.5：深度解读索引（dives 已在 entries.json 落盘前扫描）
+    (data_dir / "dives.json").write_text(
+        json.dumps(dives, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )
 
     # v3.3：重新生成 wiki/wiki.html 静态语义索引

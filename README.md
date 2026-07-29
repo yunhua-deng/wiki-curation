@@ -74,6 +74,21 @@ python scripts/cli.py site --serve --pid-file wiki/.site-serve.pid
 
 Design principle: **extraction by agent, linking by system.** Similarity scoring, relation edges, URL canonilization, and record validation are all deterministic code — hallucinations can't poison the graph.
 
+## Deep-diving a record
+
+From the site: open a record's detail and click **🔍 深度解读** — the local server fetches the record's links in the background and queues the dive for an agent (`awaiting_agent`). When the page is written and published, the button becomes **查看深度解读** linking to a standalone page.
+
+From CLI / agents:
+
+```bash
+python scripts/cli.py --json dive --id <slug>            # collect + emit dive task
+python scripts/cli.py --json dive --queue                # agent worklist
+# agent writes wiki/artifacts/<slug>/dive/dive.md, then:
+python scripts/cli.py --json dive --id <slug> --publish  # validate + index into site
+```
+
+The dive page summarizes and integrates the fetched sources (no commentary, no wholesale copying); each source section ends with `更多内容请看：<url>` back to the original.
+
 ## Command reference
 
 All commands support `--json` for agent consumption.
@@ -88,6 +103,7 @@ All commands support `--json` for agent consumption.
 | `analyze --topic "..." [--emit-task]` | Evidence cluster + optional trend article task |
 | `analyze --dedup` | Duplicate candidate pairs |
 | `analyze --discover [--days N]` | Emerging hot topics (alias-aware) |
+| `dive --id X [--force] [--task\|--publish\|--status] [--queue]` | Deep-dive a record: fetch links + emit dive task / publish / status / queue |
 | `verify-links --id <slug>` | curl-HEAD reachability check |
 | `star --id <slug>` | Star canonical GitHub repos (needs `GITHUB_TOKEN`) |
 | `doctor [--quick]` | Health: queue/db/files/git/record-tier/entities |
@@ -100,7 +116,8 @@ wiki/
 ├── data/wiki.db             # SQLite: entries + links + relations + FTS5
 ├── artifacts/{id}/
 │   ├── record.json          # THE record
-│   └── raw/                 # fetched source materials
+│   ├── raw/                 # fetched source materials
+│   └── dive/                # deep-dive page: dive.md + dive.json + status.json + raw/
 ├── trends/                  # trend articles (auto-listed on site)
 └── site/                    # built static site
 ```

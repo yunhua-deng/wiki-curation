@@ -94,3 +94,92 @@ def test_status_roundtrip(tmp_path, monkeypatch):
     DV.write_status("rec1", None, "failed", error="boom")
     st = DV.read_status("rec1")
     assert st["state"] == "failed" and st["error"] == "boom"
+
+
+# ---------- Task 3: collect_dive + generate_dive_task ----------
+
+VALID_RECORD = {
+    "version": "3.0", "id": "rec1", "title": "Helix VLA Project", "date": "2026-07-20",
+    "topic_type": "project", "tldr": "Figure 的人形机器人 VLA 项目。",
+    "tags": ["robotics", "VLA"],
+    "entities": {"company": ["Figure AI"], "author": [], "product": ["Helix"], "series": []},
+    "links": [
+        {"url": "https://github.com/figure/helix", "kind": "github", "role": "canonical",
+         "origin": "explicit", "fetched": 0, "verified": None},
+        {"url": "https://arxiv.org/abs/2501.0001", "kind": "arxiv", "role": "related",
+         "origin": "inferred", "fetched": 1, "verified": None},
+    ],
+    "source": {"input_type": "url", "source_type": "weixin",
+               "direct_source": "https://mp.weixin.qq.com/s/aaa", "original_source": ""},
+}
+
+
+def _seed_record(tmp: Path, record=None):
+    RS.save_record("rec1", tmp, record or VALID_RECORD)
+
+
+def test_collect_dive_happy_path(tmp_path, monkeypatch):
+    _patch_ws(tmp_path, monkeypatch)
+    _seed_record(tmp_path)
+    from scripts.records import dive as DV
+
+    calls = {}
+
+    def fake_collect(slug, sources, max_depth=None, dest_base=None):
+        calls["sources"] = sources
+        calls["dest_base"] = dest_base
+        Path(dest_base).mkdir(parents=True, exist_ok=True)
+        (Path(dest_base) / "s0").mkdir(exist_ok=True)
+        (Path(dest_base) / "s0" / "readme.html").write_text("x", encoding="utf-8")
+        return {"levels": [], "summary": {"total_files": 1, "success": 1, "failed": 0, "needs_manual": 0}}
+
+    monkeypatch.setattr("scripts.records.dive._collect_sources", fake_collect)
+
+    task = DV.collect_dive("rec1")
+    # fetched==1 的 arxiv 被跳过，只抓 github canonical
+    assert [s["input"] for s in calls["sources"]] == ["https://github.com/figure/helix"]
+    assert Path(calls["dest_base"]) == paths.dive_raw_dir("rec1", tmp_path)
+    assert task["task_mode"] == "dive" and task["slug"] == "rec1"
+    assert "深度解读" in task["task"] and "更多内容请看" in task["task"]
+    assert paths.dive_task_path("rec1", tmp_path).exists()
+    st = DV.read_status("rec1", tmp_path)
+    assert st["state"] == "awaiting_agent"
+    assert st["detail"]["collected"] == 1
+
+
+def test_collect_dive_errors(tmp_path, monkeypatch):
+    _patch_ws(tmp_path, monkeypatch)
+    from scripts.records import dive as DV
+    # RECORD_MISSING
+    with pytest.raises(DV.DiveError) as ei:
+        DV.collect_dive("rec1")
+    assert ei.value.code == "RECORD_MISSING"
+    # NO_MATERIAL：record 无 links 且无 raw
+    rec = dict(VALID_RECORD); rec["links"] = []
+    _seed_record(tmp_path, rec)
+    with pytest.raises(DV.DiveError) as ei:
+        DV.collect_dive("rec1")
+    assert ei.value.code == "NO_MATERIAL"
+    assert DV.read_status("rec1", tmp_path)["state"] == "failed"
+    # DIVE_EXISTS
+    _seed_record(tmp_path)
+    paths.dive_md_path("rec1", tmp_path).parent.mkdir(parents=True, exist_ok=True)
+    paths.dive_md_path("rec1", tmp_path).write_text("# x", encoding="utf-8")
+    with pytest.raises(DV.DiveError) as ei:
+        DV.collect_dive("rec1")
+    assert ei.value.code == "DIVE_EXISTS"
+
+
+def test_generate_dive_task_contract(tmp_path, monkeypatch):
+    _patch_ws(tmp_path, monkeypatch)
+    _seed_record(tmp_path)
+    from scripts.records import dive as DV
+    task = DV.generate_dive_task("rec1")
+    assert task["task_mode"] == "dive"
+    assert task["taskName"] == "dive-rec1"
+    assert task["output_path"] == str(paths.dive_md_path("rec1", tmp_path).resolve())
+    body = task["task"]
+    for needle in ["record.json", "TL;DR", "核心内容", "分来源摘要", "原始出处",
+                   "更多内容请看", "禁止", "dive/raw"]:
+        assert needle in body, needle
+    assert task["model"]  # 非空

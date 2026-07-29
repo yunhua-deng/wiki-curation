@@ -63,6 +63,9 @@ async function init() {
   const searchInput = document.getElementById('search');
   const statusSel = document.getElementById('filter-status');
   const container = document.getElementById('table-container');
+  // v3.5：支持 /site/?q=<kw> 预填搜索（dive.html 的 "View record" 回跳用）
+  const q0 = getParam('q');
+  if (q0) searchInput.value = q0;
 
   // group by month
   function monthKey(e) {
@@ -158,6 +161,12 @@ async function init() {
           ).join(' ');
           html += '</p>';
         }
+        // v3.5: deep-dive button / link
+        if (e.has_dive) {
+          html += `<p><a class="dive-btn" href="/site/dive.html?id=${encodeURIComponent(e.id)}">🔍 查看深度解读</a></p>`;
+        } else if (e.has_record) {
+          html += `<p><button class="dive-btn" data-diveid="${escapeHtml(e.id)}">🔍 深度解读</button> <span class="dive-status muted" data-divestatus="${escapeHtml(e.id)}"></span></p>`;
+        }
         html += `<p><a href="/site/raw.html?id=${encodeURIComponent(e.id)}">📁 Raw materials</a></p>`;
         html += '</div></td></tr>';
       }
@@ -181,6 +190,52 @@ async function init() {
         const row = a.closest('tr');
         const detail = document.getElementById('detail-' + row.dataset.id);
         if (detail) detail.style.display = detail.style.display === 'none' ? '' : 'none';
+      });
+    });
+
+    // v3.5: dive trigger — POST /api/dive, poll status, graceful CLI fallback
+    container.querySelectorAll('[data-diveid]').forEach(btn => {
+      btn.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        const id = btn.dataset.diveid;
+        const statusEl = container.querySelector(`[data-divestatus="${id}"]`);
+        const cliCmd = `python skills/wiki-curation/scripts/cli.py --json dive --id ${id}`;
+        const showFallback = (prefix) => {
+          if (statusEl) statusEl.innerHTML = `${prefix || ''}请在终端执行：<code>${escapeHtml(cliCmd)}</code>`;
+          btn.disabled = false;
+        };
+        btn.disabled = true;
+        try {
+          const res = await fetch('/api/dive', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id }),
+          });
+          if (res.status === 409) { showFallback('解读已存在或进行中。'); return; }
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          if (statusEl) statusEl.textContent = '已发起解读，正在采集材料…';
+          const t0 = Date.now();
+          const timer = setInterval(async () => {
+            try {
+              const st = await (await fetch('/api/dive/status?id=' + encodeURIComponent(id))).json();
+              if (st.has_dive) {
+                clearInterval(timer);
+                const a = document.createElement('a');
+                a.className = 'dive-btn';
+                a.href = '/site/dive.html?id=' + encodeURIComponent(id);
+                a.textContent = '🔍 查看深度解读';
+                btn.replaceWith(a);
+                if (statusEl) statusEl.textContent = '';
+                return;
+              }
+              const state = st.status && st.status.state;
+              if (state === 'awaiting_agent') { clearInterval(timer); showFallback('材料已就绪，等待 agent 执行。'); return; }
+              if (state === 'failed') { clearInterval(timer); showFallback('采集失败。'); return; }
+              if (Date.now() - t0 > 120000) { clearInterval(timer); showFallback('仍在进行，可稍后刷新查看。'); }
+            } catch (_) { /* 单次轮询失败忽略 */ }
+          }, 5000);
+        } catch (err) {
+          showFallback('本地服务不支持在线发起。');
+        }
       });
     });
 

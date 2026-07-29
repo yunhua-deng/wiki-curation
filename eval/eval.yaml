@@ -41,6 +41,11 @@ tasks:
         path: data.commands
         item: stats
         key: name
+      - name: has dive command
+        type: json_contains
+        path: data.commands
+        item: dive
+        key: name
 
   - id: doctor-quick
     name: CLI doctor --quick returns grade

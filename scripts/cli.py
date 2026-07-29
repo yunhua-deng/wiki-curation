@@ -491,6 +491,48 @@ def cmd_backfill_records(args) -> int:
     return 0
 
 
+def cmd_dive(args) -> int:
+    """dive：记录深度解读——采集 links + 生成 task / 发布 / 状态 / 队列。"""
+    try:
+        from scripts.records import dive as DV
+        ws = paths.get_workspace()
+        if getattr(args, "queue", False):
+            items = DV.list_dive_queue(ws)
+            _print_result({"ok": True, "data": {"queue": items, "count": len(items)}}, args.json)
+            return 0
+        if not getattr(args, "id", None):
+            _print_result({"ok": False, "error": "MISSING_ID",
+                           "message": "dive 需要 --id（或用 --queue）"}, args.json)
+            return 1
+        if getattr(args, "status", False):
+            _print_result({"ok": True, "data": DV.dive_status(args.id, ws)}, args.json)
+            return 0
+        if getattr(args, "publish", False):
+            result = DV.publish_dive(args.id, ws, paths.db_path(ws))
+            _print_result({"ok": True, "data": result}, args.json)
+            return 0
+        if getattr(args, "task", False):
+            _print_result({"ok": True, "data": DV.generate_dive_task(args.id, ws)}, args.json)
+            return 0
+        task = DV.collect_dive(args.id, ws, max_links=args.max_links, force=args.force)
+        data = {"task": task, "status": DV.read_status(args.id, ws)}
+        if getattr(args, "spawn_if_possible", False):
+            data["spawn"] = DV.spawn_dive_agent_if_possible(args.id, ws)
+        _print_result({"ok": True, "data": data}, args.json)
+        if not args.json:
+            print(f"\n  dive task 已就绪: {args.id}（status=awaiting_agent）")
+            print(f"  执行后发布: {sys.executable} {SCRIPT_DIR / 'cli.py'} dive --id {args.id} --publish")
+        return 0
+    except Exception as e:
+        from scripts.records.dive import DiveError
+        if isinstance(e, DiveError):
+            _print_result({"ok": False, "error": e.code, "message": str(e),
+                           "next_cmd": e.next_cmd}, args.json)
+        else:
+            _print_result({"ok": False, "error": "DIVE_FAILED", "message": str(e)}, args.json)
+        return 1
+
+
 def cmd_doctor(args) -> int:
     script_args = []
     if args.quick: script_args.append("--quick")
@@ -521,7 +563,7 @@ def cmd_doctor(args) -> int:
 
 def cmd_manifest(args) -> int:
     manifest = {
-        "version": "3.1",
+        "version": "3.5",
         "entry": "python skills/wiki-curation/scripts/cli.py",
         "global_flags": ["--json", "--quiet", "--workspace PATH"],
         "commands": [
@@ -534,6 +576,8 @@ def cmd_manifest(args) -> int:
             {"name": "recall", "args": ["--input", "--limit"], "description": "四层确定性相似召回"},
             {"name": "verify-links", "args": ["--id", "--limit"], "description": "验证条目链接可达性（curl HEAD）"},
             {"name": "analyze", "args": ["--topic", "--dedup", "--emit-task", "--limit"], "description": "主题聚簇 / 去重候选 / 趋势综述任务"},
+            {"name": "dive", "args": ["--id", "--force", "--max-links", "--task", "--publish", "--status", "--queue", "--spawn-if-possible"],
+             "description": "记录深度解读：采集 links + 生成 dive task / 发布 / 状态 / 队列"},
             {"name": "star", "args": ["--id"], "description": "publish 后标星 canonical GitHub 仓库（需 GITHUB_TOKEN）"},
             {"name": "list", "args": ["--limit", "--status", "--all"], "description": "列出 entries"},
             {"name": "search", "args": ["query", "--limit"], "description": "FTS5 搜索"},
@@ -717,6 +761,17 @@ def main():
     p_backfill = sub.add_parser("backfill-records", help="links/entities 回填")
     p_backfill.add_argument("--id")
 
+    p_dive = sub.add_parser("dive", help="记录深度解读：采集 links + 生成 dive task / 发布 / 状态 / 队列")
+    p_dive.add_argument("--id")
+    p_dive.add_argument("--force", action="store_true", help="已有 dive.md 或 collecting 状态时强制重跑")
+    p_dive.add_argument("--max-links", type=int, default=5, help="本次最多抓取的 links 数")
+    p_dive.add_argument("--task", action="store_true", help="仅重发 task payload（不重采集）")
+    p_dive.add_argument("--publish", action="store_true", help="校验 dive.md + 写 dive.json + 重建站点")
+    p_dive.add_argument("--status", action="store_true", help="查看 dive 状态")
+    p_dive.add_argument("--queue", action="store_true", help="列出全部 awaiting_agent 的 dive")
+    p_dive.add_argument("--spawn-if-possible", action="store_true",
+                        help="采集后若 sessions_spawn 可用则自动派发 agent")
+
     p_doc = sub.add_parser("doctor", help="健康检查")
     p_doc.add_argument("--quick", action="store_true")
     p_doc.add_argument("--since")
@@ -740,7 +795,7 @@ def main():
         "events": cmd_events, "record-event": cmd_record_event,
         "dedup": cmd_dedup, "recall": cmd_recall, "verify-links": cmd_verify_links,
         "star": cmd_star,
-        "analyze": cmd_analyze,
+        "analyze": cmd_analyze, "dive": cmd_dive,
         "backfill-records": cmd_backfill_records, "doctor": cmd_doctor, "manifest": cmd_manifest,
     }
     if args.command in handlers: return handlers[args.command](args)

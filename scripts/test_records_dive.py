@@ -282,3 +282,51 @@ def test_dive_status_and_queue(tmp_path, monkeypatch):
     assert [q["id"] for q in queue] == ["a1"]
     st = DV.dive_status("a1", tmp_path)
     assert st["status"]["state"] == "awaiting_agent" and st["has_dive"] is False
+
+
+# ---------- Task 5: CLI ----------
+
+def _dive_args(ws, **over):
+    base = {"json": True, "quiet": True, "workspace": str(ws),
+            "id": None, "status": False, "queue": False, "task": False,
+            "publish": False, "force": False, "max_links": 5,
+            "spawn_if_possible": False}
+    base.update(over)
+    return type("A", (), base)()
+
+
+def test_cli_dive_status_and_queue(tmp_path, monkeypatch, capsys):
+    _patch_ws(tmp_path, monkeypatch)
+    from scripts.records import dive as DV
+    DV.write_status("rec1", tmp_path, "awaiting_agent", detail={"collected": 1})
+    (tmp_path / "artifacts" / "rec1").mkdir(exist_ok=True)
+
+    from scripts import cli
+    args = _dive_args(tmp_path, id="rec1", status=True)
+    assert cli.cmd_dive(args) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["ok"] and out["data"]["status"]["state"] == "awaiting_agent"
+
+    args = _dive_args(tmp_path, queue=True)
+    assert cli.cmd_dive(args) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["data"]["count"] == 1 and out["data"]["queue"][0]["id"] == "rec1"
+
+
+def test_cli_dive_error_shape(tmp_path, monkeypatch, capsys):
+    _patch_ws(tmp_path, monkeypatch)
+    from scripts import cli
+    args = _dive_args(tmp_path, id="ghost")
+    assert cli.cmd_dive(args) == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out["ok"] is False and out["error"] == "RECORD_MISSING"
+
+
+def test_manifest_has_dive(capsys):
+    from scripts import cli
+    args = type("A", (), {"json": True})()
+    assert cli.cmd_manifest(args) == 0
+    out = json.loads(capsys.readouterr().out)
+    names = [c["name"] for c in out["data"]["commands"]]
+    assert "dive" in names
+    assert out["data"]["version"] == "3.5"

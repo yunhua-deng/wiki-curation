@@ -43,17 +43,18 @@ def test_handle_dive_request_conflicts_and_accept(tmp_path, monkeypatch):
     from scripts.records import dive as DV
     from scripts.site import api
     spawned = []
-    spawner = lambda ws, slug: spawned.append((ws, slug))
+    spawner = lambda ws, slug, force=False: spawned.append((ws, slug, force))
     # collecting → 409 DIVE_RUNNING
     DV.write_status("rec1", tmp_path, "collecting")
     code, data = api.handle_dive_request(tmp_path, {"id": "rec1"}, spawner=spawner)
     assert code == 409 and data["error"] == "DIVE_RUNNING"
-    # awaiting_agent → 409 DIVE_RUNNING；force → 受理
+    # awaiting_agent → 409 DIVE_RUNNING；force → 受理且 force 透传
     DV.write_status("rec1", tmp_path, "awaiting_agent")
     code, _ = api.handle_dive_request(tmp_path, {"id": "rec1"}, spawner=spawner)
     assert code == 409
     code, data = api.handle_dive_request(tmp_path, {"id": "rec1", "force": True}, spawner=spawner)
     assert code == 202 and data["ok"] and spawned, data
+    assert spawned[-1][2] is True  # force 必须透传给 spawner（E2E 回归：否则子进程 DIVE_EXISTS）
     # 已有 dive.md → 409 DIVE_EXISTS
     paths.dive_md_path("rec1", tmp_path).parent.mkdir(parents=True, exist_ok=True)
     paths.dive_md_path("rec1", tmp_path).write_text("# x", encoding="utf-8")
@@ -72,3 +73,21 @@ def test_handle_dive_status(tmp_path, monkeypatch):
     DV.write_status("rec1", tmp_path, "awaiting_agent")
     code, data = api.handle_dive_status(tmp_path, "rec1")
     assert data["status"]["state"] == "awaiting_agent"
+
+
+def test_default_spawner_force_flag(tmp_path, monkeypatch):
+    """_default_spawner 必须在 force=True 时给子进程命令追加 --force。"""
+    from scripts.site import api
+    popen_calls = []
+
+    class FakePopen:
+        def __init__(self, cmd, **kwargs):
+            popen_calls.append(cmd)
+
+    monkeypatch.setattr("scripts.site.api.subprocess.Popen", FakePopen)
+    api._default_spawner(tmp_path, "rec1", force=True)
+    assert "--force" in popen_calls[0]
+    popen_calls.clear()
+    api._default_spawner(tmp_path, "rec1", force=False)
+    assert "--force" not in popen_calls[0]
+    assert "--spawn-if-possible" in popen_calls[0]

@@ -19,7 +19,7 @@ ID_RE = re.compile(r"^[\w-]+$")
 LOOPBACK_IPS = {"127.0.0.1", "::1"}
 
 
-def _default_spawner(wiki_dir: Path, slug: str) -> None:
+def _default_spawner(wiki_dir: Path, slug: str, force: bool = False) -> None:
     """分离子进程执行 `cli.py --json dive --id <slug> --spawn-if-possible`。"""
     wiki_dir = Path(wiki_dir)
     cli = Path(__file__).resolve().parent.parent / "cli.py"
@@ -30,6 +30,8 @@ def _default_spawner(wiki_dir: Path, slug: str) -> None:
     env["WIKI_WORKSPACE"] = str(wiki_dir)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     cmd = [sys.executable, str(cli), "--json", "dive", "--id", slug, "--spawn-if-possible"]
+    if force:
+        cmd.append("--force")
     kwargs = dict(stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                   env=env, cwd=str(wiki_dir.parent), close_fds=True)
     if os.name == "nt":
@@ -64,7 +66,7 @@ def handle_dive_request(wiki_dir, payload: dict, client_ip: str = "127.0.0.1", s
     if state == "awaiting_agent" and not force:
         return 409, {"ok": False, "error": "DIVE_RUNNING", "state": state,
                      "message": "dive is queued for an agent"}
-    (spawner or _default_spawner)(ws, slug)
+    (spawner or _default_spawner)(ws, slug, force=force)
     return 202, {"ok": True, "id": slug, "state": "collecting"}
 
 

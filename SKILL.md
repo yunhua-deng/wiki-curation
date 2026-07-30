@@ -114,7 +114,9 @@ run --id <slug>
    ├─ collect_materials    ← fetch + recursive drill (3 levels)
    ├─ interpret_record     ← generate extraction task prompt
    │
-extraction agent           ← writes record.json
+[orchestrator writes raw/agent_notes.md]  ← optional: pre-reading analysis notes
+   │
+extraction agent           ← reads raw/ + agent_notes.md → writes record.json
    │
 publish --id <slug>
    ├─ schema.validate      ← deterministic record validation
@@ -133,6 +135,20 @@ survey agent                 ← hand-writes survey.md (TL;DR/核心内容/分�
    │
 survey --id X --publish      ← structure validation + survey.json + site surveys.json
 ```
+
+## Orchestrator notes (agent_notes.md)
+
+When the orchestrating agent reads raw materials before spawning the extraction agent
+(e.g., giving the user a quick interpretation of a WeChat article), it should save
+its analysis notes as `raw/agent_notes.md` in the artifact directory. The extraction
+task generator (`interpret_record.py`) auto-detects this file and includes a
+"补充参考" section in the extraction task prompt, allowing the extraction agent to
+use the orchestrator's analytical framing as reference.
+
+- The orchestrator writes `raw/agent_notes.md` **after** `run` (which creates the
+  artifact directory) and **before** spawning the extraction agent.
+- The extraction agent reads `agent_notes.md` as **analysis reference only**;
+  all factual claims in record.json must still be anchored in raw source materials.
 
 ## Model routing
 

@@ -19,8 +19,9 @@ from scripts.records import schema as record_schema
 MAX_RAW_LIST = 30
 
 
-def _summarize_raw_files(raw_dir: Path, slug: str, max_entries: int = MAX_RAW_LIST) -> tuple[list[str], str]:
-    """返回 raw 文件列表与分类摘要（与 interpret.py 同款截断策略）。"""
+def _summarize_raw_files(raw_dir: Path, slug: str, max_entries: int = MAX_RAW_LIST) -> tuple[list[str], str, bool]:
+    """返回 raw 文件列表、分类摘要（与 interpret.py 同款截断策略）与 agent_notes 标记。"""
+    has_agent_notes = (raw_dir / "agent_notes.md").is_file()
     files = []
     if raw_dir.exists():
         for f in sorted(raw_dir.rglob("*")):
@@ -39,10 +40,14 @@ def _summarize_raw_files(raw_dir: Path, slug: str, max_entries: int = MAX_RAW_LI
 
     summary = {}
     for rel, _ in files:
+        if has_agent_notes and rel.name == "agent_notes.md":
+            continue  # agent_notes 单独标注，不计入常规后缀统计
         ext = Path(rel).suffix.lower() or "(无后缀)"
         summary[ext] = summary.get(ext, 0) + 1
     summary_str = ", ".join(f"{cnt}×{ext}" for ext, cnt in sorted(summary.items(), key=lambda x: -x[1])[:6])
-    return lines, summary_str
+    if has_agent_notes:
+        summary_str = f"{summary_str}, 1×.agent_notes" if summary_str else "1×.agent_notes"
+    return lines, summary_str, has_agent_notes
 
 
 def _read_drill_targets(raw_dir: Path) -> list[str]:
@@ -70,7 +75,7 @@ def _read_drill_targets(raw_dir: Path) -> list[str]:
 
 
 def build_record_task(slug: str, source_type: str, raw_files: list[str], raw_summary: str,
-                      drill_urls: list[str], append_to: str = None) -> str:
+                      drill_urls: list[str], append_to: str = None, has_agent_notes: bool = False) -> str:
     """构造提取 agent 的 task prompt。"""
     c = record_schema._load_constraints()
     record_out = str(paths.record_path(slug).resolve())
@@ -156,7 +161,24 @@ def build_record_task(slug: str, source_type: str, raw_files: list[str], raw_sum
 {raw_summary}
 
 {chr(10).join(raw_files) if raw_files else "  (raw/ 目录为空或不存在)"}
+
+{_agent_notes_section(has_agent_notes)}
 """
+
+
+def _agent_notes_section(has_agent_notes: bool) -> str:
+    """当 agent_notes.md 存在时，在 task prompt 末尾追加参考说明。"""
+    if not has_agent_notes:
+        return ""
+    return (
+        """
+## 补充参考：agent_notes.md
+
+`agent_notes.md` 是主 agent 在阅读 raw 材料后编写的初步解读笔记，包含分析角度、结构化对比和关联定位。
+**建议同时阅读以辅助分析**，但 record.json 中的事实信息仍需以 raw 材料正文为唯一依据，
+agent_notes.md 仅作思路参考，禁止直接复制其表述。
+"""
+    )
 
 
 def generate_record_task(slug: str, source_type: str, append_to: str = None) -> dict:
@@ -167,9 +189,9 @@ def generate_record_task(slug: str, source_type: str, append_to: str = None) -> 
     if not raw_dir.is_dir():
         raise FileNotFoundError(f"raw/ 目录不存在: {raw_dir}")
 
-    raw_files, raw_summary = _summarize_raw_files(raw_dir, slug)
+    raw_files, raw_summary, has_agent_notes = _summarize_raw_files(raw_dir, slug)
     drill_urls = _read_drill_targets(raw_dir)
-    task = build_record_task(slug, source_type, raw_files, raw_summary, drill_urls, append_to=append_to)
+    task = build_record_task(slug, source_type, raw_files, raw_summary, drill_urls, append_to=append_to, has_agent_notes=has_agent_notes)
 
     model_info = select_model("record")
     return {

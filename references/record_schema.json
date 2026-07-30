@@ -6,7 +6,7 @@
   "entity_buckets": ["company", "author", "product", "series"],
   "link_kinds": ["github", "arxiv", "huggingface", "homepage", "weixin", "linkedin", "docs", "other"],
   "link_roles": ["canonical", "related"],
-  "link_origins": ["explicit", "inferred"],
+  "link_origins": ["explicit", "inferred", "manual"],
   "tags_min": 1,
   "tags_max": 8,
   "tldr_max_chars": 200,
@@ -16,6 +16,7 @@
     "topic_type 必须能归一化到 VALID_TOPIC_TYPES",
     "entities 必须含 company/author/product/series 四键（可为空数组）",
     "links 每项 url 必须以 http(s):// 开头且去重",
+    "links origin：explicit=材料正文显式出现；inferred=agent 解析；manual=用户手动添加",
     "同一 kind 的 role=canonical 至多一个",
     "tags 数量 1-8",
     "links 允许为空数组（提取失败合法）"

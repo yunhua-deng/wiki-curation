@@ -79,3 +79,35 @@ def handle_survey_status(wiki_dir, slug: str):
     data = DV.survey_status(slug, ws)
     data["ok"] = True
     return 200, data
+
+
+def handle_add_link(wiki_dir, payload: dict, client_ip: str = "127.0.0.1", spawner=None):
+    """POST /api/record-links：手动添加链接到 record 图谱，可选联动更新综述。
+
+    update_survey=true 时复用 survey 端到端管线：已有 survey.md → force 重生成；
+    否则首次自动综述。返回 (http_code, json_dict)。
+    """
+    from scripts.records import link_ops
+
+    if client_ip not in LOOPBACK_IPS:
+        return 403, {"ok": False, "error": "FORBIDDEN",
+                     "message": "only loopback clients may add links"}
+    payload = payload or {}
+    slug = str(payload.get("id") or "")
+    if not ID_RE.match(slug):
+        return 400, {"ok": False, "error": "INVALID_ID", "message": "id must match ^[\w-]+$"}
+    url = str(payload.get("url") or "").strip()
+    role = str(payload.get("role") or "related")
+    update_survey = bool(payload.get("update_survey"))
+    ws = Path(wiki_dir)
+    try:
+        result = link_ops.add_manual_link(slug, url, role=role, ws=ws, db_path=paths.db_path(ws))
+    except link_ops.LinkOpError as e:
+        http = 404 if e.code == "RECORD_MISSING" else (409 if e.code in ("LINK_EXISTS", "CANONICAL_CONFLICT") else 400)
+        return http, {"ok": False, "error": e.code, "message": str(e)}
+    data = {"ok": True, **result}
+    if update_survey:
+        has_md = paths.survey_md_path(slug, ws).exists()
+        (spawner or _default_spawner)(ws, slug, force=has_md)
+        data["survey"] = {"state": "collecting", "force": has_md}
+    return 200, data

@@ -105,6 +105,7 @@ All commands support `--json` for agent consumption.
 | `analyze --dedup` | Duplicate candidate pairs |
 | `analyze --discover [--days N]` | Emerging hot topics (alias-aware) |
 | `survey --id X [--force] [--task\|--publish\|--status] [--queue]` | Deep-survey a record: fetch links + emit survey task / publish / status / queue |
+| `add-link --id X --url U [--role R] [--update-survey]` | Add a manually-found link to a record's link graph (origin=manual); optionally regenerate its survey |
 | `verify-links --id <slug>` | curl-HEAD reachability check |
 | `star --id <slug>` | Star canonical GitHub repos (needs `GITHUB_TOKEN`) |
 | `doctor [--quick]` | Health: queue/db/files/git/record-tier/entities |

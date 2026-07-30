@@ -159,6 +159,10 @@ async function init() {
           lh += '</p>';
           html += lh;
         }
+        // v3.7: manual add-link (records only) — POST /api/record-links
+        if (e.has_record) {
+          html += `<p class="link-add" data-linkadd="${escapeHtml(e.id)}"><button class="link-add-toggle" title="把新发现的链接加入该记录的链接图谱">＋ 添加链接</button></p>`;
+        }
         if ((e.tags||[]).length) html += `<p><strong>Tags</strong> ${e.tags.map(t=>`<span class="badge badge-tag">${escapeHtml(t)}</span>`).join(' ')}</p>`;
         if (e.entities) {
           const entBits = [];
@@ -260,6 +264,88 @@ async function init() {
         } catch (err) {
           showFallback('当前 wiki 服务不含在线发起接口（若刚升级，请重启 site --serve）。');
         }
+      });
+    });
+
+    // v3.7: manual add-link — inline form, POST /api/record-links, optional survey regen
+    container.querySelectorAll('[data-linkadd]').forEach(wrap => {
+      const id = wrap.dataset.linkadd;
+      const toggle = wrap.querySelector('.link-add-toggle');
+      toggle.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        if (wrap.querySelector('input')) return;
+        const form = document.createElement('span');
+        form.className = 'link-add-form';
+        form.innerHTML = ` <input type="url" placeholder="https://…" size="44">` +
+          ` <select><option value="related">related</option><option value="canonical">canonical</option></select>` +
+          ` <button data-act="add">添加</button>` +
+          ` <button data-act="addsurvey" title="添加链接并自动重新生成综述">添加并更新综述</button>` +
+          ` <span class="link-add-status muted"></span>`;
+        toggle.after(form);
+        const input = form.querySelector('input');
+        const statusEl = form.querySelector('.link-add-status');
+        input.focus();
+        const injectBadge = (url, kind) => {
+          const badge = document.createElement('a');
+          badge.className = 'link-badge';
+          badge.href = url; badge.target = '_blank'; badge.rel = 'noopener'; badge.title = url + '（manual）';
+          badge.textContent = (LINK_ICONS[kind] || LINK_ICONS.other);
+          const detail = wrap.closest('.detail-card');
+          const domainSpan = detail && detail.querySelector('.link-domain');
+          if (domainSpan && domainSpan.parentElement) {
+            domainSpan.parentElement.appendChild(badge);
+          } else {
+            const p = document.createElement('p');
+            p.innerHTML = '<strong>Links</strong> ';
+            p.appendChild(badge);
+            wrap.before(p);
+          }
+        };
+        const submit = async (updateSurvey) => {
+          const url = input.value.trim();
+          const role = form.querySelector('select').value;
+          if (!/^https?:\/\/\S+$/.test(url)) { statusEl.textContent = ' URL 需以 http(s):// 开头'; return; }
+          // 记录综述基线 revision（regen 完成 = revision 自增；区分旧 survey.md 造成的 has_survey 恒真）
+          let baseRev = 0;
+          if (updateSurvey) {
+            try {
+              const cur = await (await fetch('/api/survey/status?id=' + encodeURIComponent(id))).json();
+              baseRev = (cur.survey && cur.survey.revision) || 0;
+            } catch (_) {}
+          }
+          statusEl.textContent = ' 添加中…';
+          try {
+            const res = await fetch('/api/record-links', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id, url, role, update_survey: updateSurvey }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.ok) { statusEl.textContent = ' ' + ((data && data.message) || ('失败 HTTP ' + res.status)); return; }
+            injectBadge(url, (data.link && data.link.kind) || 'other');
+            if (!updateSurvey) { statusEl.textContent = ' ✓ 已添加（manual，站点已重建）'; return; }
+            statusEl.textContent = ' ✓ 已添加，综述更新中…';
+            const t0 = Date.now();
+            const timer = setInterval(async () => {
+              try {
+                const st = await (await fetch('/api/survey/status?id=' + encodeURIComponent(id))).json();
+                const rev = (st.survey && st.survey.revision) || 0;
+                const state = st.status && st.status.state;
+                if (rev > baseRev && state === 'done') {
+                  clearInterval(timer);
+                  statusEl.innerHTML = ` ✓ 综述已更新（rev ${rev}）：<a href="/site/survey.html?id=${encodeURIComponent(id)}" target="_blank" rel="noopener">🧭 查看</a>`;
+                  return;
+                }
+                if (state === 'failed') { clearInterval(timer); statusEl.textContent = ' 综述更新失败（链接已添加）'; return; }
+                if (Date.now() - t0 > 600000) { clearInterval(timer); statusEl.textContent = ' 综述仍在更新，可稍后刷新'; }
+              } catch (_) {}
+            }, 5000);
+          } catch (err) {
+            statusEl.textContent = ' 当前 wiki 服务不支持添加链接（若刚升级，请重启 site --serve）';
+          }
+        };
+        form.querySelector('[data-act="add"]').addEventListener('click', (e2) => { e2.stopPropagation(); submit(false); });
+        form.querySelector('[data-act="addsurvey"]').addEventListener('click', (e2) => { e2.stopPropagation(); submit(true); });
+        input.addEventListener('keydown', (e2) => { if (e2.key === 'Enter') { e2.stopPropagation(); submit(false); } });
       });
     });
 

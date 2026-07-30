@@ -538,6 +538,29 @@ def cmd_survey(args) -> int:
         return 1
 
 
+def cmd_add_link(args) -> int:
+    """add-link：手动添加链接到 record 图谱（可选 --update-survey 联动更新综述）。"""
+    try:
+        from scripts.records import link_ops
+        ws = paths.get_workspace()
+        result = link_ops.add_manual_link(args.id, args.url, role=args.role,
+                                          ws=ws, db_path=paths.db_path(ws))
+        data = dict(result)
+        if getattr(args, "update_survey", False):
+            from scripts.records import survey as SV
+            has_md = paths.survey_md_path(args.id, ws).exists()
+            data["survey"] = SV.auto_execute_survey(args.id, ws, force=has_md)
+        _print_result({"ok": True, "data": data}, args.json)
+        return 0
+    except Exception as e:
+        from scripts.records.link_ops import LinkOpError
+        if isinstance(e, LinkOpError):
+            _print_result({"ok": False, "error": e.code, "message": str(e)}, args.json)
+        else:
+            _print_result({"ok": False, "error": "ADD_LINK_FAILED", "message": str(e)}, args.json)
+        return 1
+
+
 def cmd_doctor(args) -> int:
     script_args = []
     if args.quick: script_args.append("--quick")
@@ -583,6 +606,8 @@ def cmd_manifest(args) -> int:
             {"name": "analyze", "args": ["--topic", "--dedup", "--emit-task", "--limit"], "description": "主题聚簇 / 去重候选 / 趋势综述任务"},
             {"name": "survey", "args": ["--id", "--force", "--max-links", "--task", "--publish", "--status", "--queue", "--auto", "--spawn-if-possible"],
              "description": "记录综述：采集 links + 生成 survey task / 发布 / 状态 / 队列（--auto 端到端自动写作发布）"},
+            {"name": "add-link", "args": ["--id", "--url", "--role", "--update-survey"],
+             "description": "手动添加链接到 record 图谱（origin=manual；--update-survey 联动重生成综述）"},
             {"name": "star", "args": ["--id"], "description": "publish 后标星 canonical GitHub 仓库（需 GITHUB_TOKEN）"},
             {"name": "list", "args": ["--limit", "--status", "--all"], "description": "列出 entries"},
             {"name": "search", "args": ["query", "--limit"], "description": "FTS5 搜索"},
@@ -779,6 +804,12 @@ def main():
     p_survey.add_argument("--spawn-if-possible", action="store_true",
                         help="采集后若 sessions_spawn 可用则自动派发 agent")
 
+    p_addlink = sub.add_parser("add-link", help="手动添加链接到 record 图谱（可选联动更新综述）")
+    p_addlink.add_argument("--id", required=True)
+    p_addlink.add_argument("--url", required=True)
+    p_addlink.add_argument("--role", choices=["canonical", "related"], default="related")
+    p_addlink.add_argument("--update-survey", action="store_true", help="添加后自动重新生成综述")
+
     p_doc = sub.add_parser("doctor", help="健康检查")
     p_doc.add_argument("--quick", action="store_true")
     p_doc.add_argument("--since")
@@ -803,6 +834,7 @@ def main():
         "dedup": cmd_dedup, "recall": cmd_recall, "verify-links": cmd_verify_links,
         "star": cmd_star,
         "analyze": cmd_analyze, "survey": cmd_survey,
+        "add-link": cmd_add_link,
         "backfill-records": cmd_backfill_records, "doctor": cmd_doctor, "manifest": cmd_manifest,
     }
     if args.command in handlers: return handlers[args.command](args)

@@ -91,3 +91,47 @@ def test_default_spawner_force_flag(tmp_path, monkeypatch):
     api._default_spawner(tmp_path, "rec1", force=False)
     assert "--force" not in popen_calls[0]
     assert "--auto" in popen_calls[0]  # 网页触发默认端到端（采集→写作→发布）
+
+
+RECORD2 = {
+    "version": "3.0", "id": "rec1", "title": "T", "date": "", "topic_type": "project",
+    "tldr": "t", "tags": ["a"],
+    "entities": {"company": [], "author": [], "product": [], "series": []},
+    "links": [{"url": "https://example.com/a", "kind": "other", "role": "canonical",
+               "origin": "explicit", "fetched": 1, "verified": None}],
+    "source": {"input_type": "url", "source_type": "generic_web"},
+}
+
+
+def test_handle_add_link_flow(tmp_path, monkeypatch):
+    _patch_ws(tmp_path, monkeypatch)
+    conftest.seed_entry(paths.db_path(tmp_path), "rec1", status="done")
+    RS.save_record("rec1", tmp_path, RECORD2)
+    from scripts.site import api
+    spawned = []
+    spawner = lambda ws, slug, force=False: spawned.append((ws, slug, force))
+    # 非 loopback
+    code, data = api.handle_add_link(tmp_path, {"id": "rec1", "url": "https://x.com/y"}, client_ip="10.0.0.2")
+    assert code == 403
+    # 非法 id / 缺 url / 非法 url
+    code, data = api.handle_add_link(tmp_path, {"id": "../x", "url": "https://x.com/y"})
+    assert code == 400
+    code, data = api.handle_add_link(tmp_path, {"id": "rec1"})
+    assert code == 400 and data["error"] == "INVALID_URL"
+    code, data = api.handle_add_link(tmp_path, {"id": "rec1", "url": "ftp://x"})
+    assert code == 400 and data["error"] == "INVALID_URL"
+    # 重复链接 → 409 LINK_EXISTS
+    code, data = api.handle_add_link(tmp_path, {"id": "rec1", "url": "https://example.com/a/"})
+    assert code == 409 and data["error"] == "LINK_EXISTS"
+    # 正常添加（不联动综述）→ 不触发 spawner
+    code, data = api.handle_add_link(tmp_path, {"id": "rec1", "url": "https://github.com/a/b"},
+                                     spawner=spawner)
+    assert code == 200 and data["ok"] and data["link"]["kind"] == "github"
+    assert not spawned
+    # 联动综述：已有 survey.md → spawner 带 force=True；没有则 force=False
+    paths.survey_md_path("rec1", tmp_path).parent.mkdir(parents=True, exist_ok=True)
+    paths.survey_md_path("rec1", tmp_path).write_text("# x", encoding="utf-8")
+    code, data = api.handle_add_link(tmp_path, {"id": "rec1", "url": "https://arxiv.org/abs/1.2",
+                                                "update_survey": True}, spawner=spawner)
+    assert code == 200 and data.get("survey", {}).get("state") == "collecting"
+    assert spawned and spawned[-1][2] is True

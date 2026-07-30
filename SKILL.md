@@ -98,6 +98,7 @@ All commands support `--json`. `--workspace PATH` overrides `$WIKI_WORKSPACE`.
 | `analyze --dedup` | Duplicate candidate pairs (same_url / shared_link) |
 | `analyze --discover [--days N]` | Emerging hot tags/entities (alias-aware, marks existing coverage) |
 | `survey --id X [--force] [--task\|--publish\|--status] [--queue]` | Deep-survey a record: fetch links + emit survey task / publish / status / agent queue |
+| `add-link --id X --url U [--role R] [--update-survey]` | Add a manually-found link to a record's link graph (origin=manual); optionally regenerate its survey |
 | `verify-links --id <slug>` | Lazy curl-HEAD link reachability |
 | `star --id <slug>` | Star canonical GitHub repos (needs `GITHUB_TOKEN`) |
 | `doctor [--quick] [--fix-plan]` | Health: queue/db/files/git/record-tier/entities |

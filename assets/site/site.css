@@ -139,3 +139,11 @@ a:hover{text-decoration:underline}
 .survey-cell-ghost:hover{opacity:1}
 .survey-cell-state{cursor:default;font-size:.95rem}
 .survey-cell code, .col-survey code{font-size:.65rem}
+
+/* Add-link form (v3.7) */
+.link-add-toggle{font-size:.75rem;padding:.05rem .45rem;border:1px dashed var(--border);border-radius:var(--radius);background:none;color:var(--muted);cursor:pointer}
+.link-add-toggle:hover{color:var(--accent);border-color:var(--accent)}
+.link-add-form input[type=url]{padding:.2rem .4rem;border:1px solid var(--border);border-radius:var(--radius);font-size:.8rem;background:var(--surface);color:var(--ink)}
+.link-add-form select,.link-add-form button{font-size:.78rem;padding:.15rem .45rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--ink);cursor:pointer}
+.link-add-form button:hover{border-color:var(--accent);color:var(--accent)}
+.link-add-status{font-size:.78rem}

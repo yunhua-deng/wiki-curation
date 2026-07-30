@@ -90,4 +90,4 @@ def test_default_spawner_force_flag(tmp_path, monkeypatch):
     popen_calls.clear()
     api._default_spawner(tmp_path, "rec1", force=False)
     assert "--force" not in popen_calls[0]
-    assert "--spawn-if-possible" in popen_calls[0]
+    assert "--auto" in popen_calls[0]  # 网页触发默认端到端（采集→写作→发布）

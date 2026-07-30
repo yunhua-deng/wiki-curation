@@ -14,7 +14,7 @@ Single tier, single path:
 - **Record**: `add → pop → run → publish` → `record.json` — link graph (explicit + inferred URLs), TL;DR, X-style summary, tags, entities. Every ingestion goes through this.
 - **Recall**: `add` auto-surfaces similar past entries; `recall --input "..."` queries anytime (4-layer: url_exact → shared_link → entity → fts).
 - **Analyze**: `analyze --topic "X"` clusters evidence across records; `--emit-task` generates trend article payloads; `--discover` finds emerging hot topics.
-- **Survey**: `survey --id X` deep-surveys a single record — the system fetches the record's links, an agent integrates the materials into `artifacts/{slug}/survey/survey.md`, and `survey --id X --publish` validates + indexes it. The site detail card has a one-click 🧭 button.
+- **Survey**: `survey --id X --auto` end-to-end — the system fetches the record's links, a headless agent writes `artifacts/{slug}/survey/survey.md`, and publish happens automatically; step-by-step also supported (`survey --id X` collect+queue → agent writes → `--publish`). The site records table has a 🧭 column: click to trigger (auto pipeline) / view (new tab), with live state icons.
 - **Site**: built static HTML served locally — compact table, timeline view, inline detail expansion, trends reader.
 
 Core principle: **extraction by agent, linking by system.** The LLM reads materials and writes `record.json`; similarity, relations, URL verification are deterministic code.

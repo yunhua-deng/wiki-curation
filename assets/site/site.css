@@ -131,3 +131,11 @@ a:hover{text-decoration:underline}
 .markdown-body h3{font-size:1rem;margin-top:1.2rem}
 .markdown-body blockquote{color:var(--muted);border-left:3px solid var(--border);margin:0;padding-left:.8rem}
 .markdown-body pre{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:.8rem;overflow-x:auto}
+
+/* Survey column (v3.6) */
+.wiki-table .col-survey{width:44px;text-align:center}
+.survey-cell{font-size:1rem;text-decoration:none;cursor:pointer;background:none;border:none;padding:0;line-height:1.4}
+.survey-cell-ghost{opacity:.4}
+.survey-cell-ghost:hover{opacity:1}
+.survey-cell-state{cursor:default;font-size:.95rem}
+.survey-cell code, .col-survey code{font-size:.65rem}

@@ -6,10 +6,13 @@ scripts/records/survey.py — record 综述（survey）的核心确定性逻辑�
 结构校验、发布与状态机；survey.md 由执行 task 的 agent 手写，脚本永不调 LLM。
 
 状态机（artifacts/{slug}/survey/status.json）：
-  collecting → awaiting_agent → done | failed
-  awaiting_agent 即队列（网页/CLI 触发统一表达）。
+  collecting → awaiting_agent → writing → done | failed
+  awaiting_agent 即队列（网页/CLI 触发统一表达）；
+  writing 由 --auto 端到端流程写入（headless agent 写作中）。
 """
 import json
+import os
+import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -454,3 +457,105 @@ def list_survey_queue(ws=None) -> list:
             items.append({"id": d.name, "updated_at": st.get("updated_at"),
                           "detail": st.get("detail")})
     return items
+
+
+# ============================================================
+# 端到端自动写作（--auto）
+# ============================================================
+
+AUTO_WRITE_TIMEOUT = 900  # headless 写作超时（秒）
+
+
+def _find_writer() -> str:
+    """选择写作执行器：sessions_spawn（OpenClaw）→ claude headless → None。"""
+    if shutil.which("sessions_spawn"):
+        return "sessions_spawn"
+    if shutil.which("claude"):
+        return "claude"
+    return ""
+
+
+def _claude_headless_runner(prompt: str, ws, timeout: int = AUTO_WRITE_TIMEOUT) -> dict:
+    """headless `claude -p` 执行写作：acceptEdits 权限，工作目录=wiki 工作区。
+
+    prompt 已约束 agent 只读材料、只写 survey.md；acceptEdits 放行读写，
+    其他需要授权的操作在 headless 下自动拒绝（无害失败）。
+    """
+    import subprocess
+    exe = shutil.which("claude")
+    if not exe:
+        return {"ok": False, "stderr": "claude CLI not found"}
+    cmd = [exe, "-p", prompt, "--permission-mode", "acceptEdits"]
+    env = os.environ.copy()
+    env["WIKI_WORKSPACE"] = str(ws)
+    try:
+        r = subprocess.run(cmd, cwd=str(ws), env=env, capture_output=True,
+                           text=True, encoding="utf-8", errors="replace", timeout=timeout)
+        return {"ok": r.returncode == 0, "stdout": r.stdout or "",
+                "stderr": r.stderr or "", "exit_code": r.returncode}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "stderr": f"timeout ({timeout}s)"}
+    except Exception as e:
+        return {"ok": False, "stderr": str(e)}
+
+
+def auto_write_survey(slug: str, ws=None, runner=None, timeout: int = AUTO_WRITE_TIMEOUT,
+                      force: bool = False) -> dict:
+    """headless agent 写 survey.md 并自动发布。
+
+    runner 可注入（测试）。状态：awaiting_agent → writing → done；
+    未产出 survey.md 时落回 awaiting_agent（可重试），校验失败落 failed。
+    force=True 时跳过「已有 survey.md 直接发布」捷径（强制重写）。
+    """
+    ws = Path(ws) if ws is not None else paths.get_workspace()
+    md_path = paths.survey_md_path(slug, ws)
+    if md_path.exists() and not force:
+        # 已写好（例如上次写作成功但发布失败）——直接发布，幂等
+        pub = publish_survey(slug, ws, paths.db_path(ws))
+        return {"ok": True, "written": False, "published": pub}
+    state = read_status(slug, ws).get("state")
+    if state == "writing":
+        raise SurveyError("SURVEY_RUNNING", f"survey is being written: {slug}")
+    task_path = paths.survey_task_path(slug, ws)
+    if not task_path.exists():
+        raise SurveyError("TASK_MISSING", f"task.json missing: {slug}",
+                          next_cmd=f"{CLI_CMD} survey --id {slug}")
+    task = json.loads(task_path.read_text(encoding="utf-8"))
+    write_status(slug, ws, "writing")
+    runner = runner or _claude_headless_runner
+    result = runner(task["task"], ws, timeout=timeout)
+    if not md_path.exists():
+        err = ((result or {}).get("stderr") or (result or {}).get("stdout") or "")[-300:]
+        write_status(slug, ws, "awaiting_agent",
+                     error=f"auto-write 未产出 survey.md: {err or 'no output'}")
+        return {"ok": False, "written": False, "reason": "no_survey_md", "detail": err}
+    pub = publish_survey(slug, ws, paths.db_path(ws))
+    return {"ok": True, "written": True, "published": pub}
+
+
+def auto_execute_survey(slug: str, ws=None, runner=None, force: bool = False) -> dict:
+    """端到端自动综述：必要时采集 → 写作（sessions_spawn/claude headless）→ 发布。
+
+    - survey.md 不存在（或 force）且状态非 awaiting_agent：先 collect（awaiting_agent 表示材料就绪，跳过）
+    - sessions_spawn 可用：异步派发，停在 awaiting_agent 由 OpenClaw 编排方收尾
+    - claude 可用：headless 同步写作 + 自动发布（真正端到端）
+    - 都不可用：停在 awaiting_agent（队列，等 agent 手动认领）
+    """
+    ws = Path(ws) if ws is not None else paths.get_workspace()
+    if force or not paths.survey_md_path(slug, ws).exists():
+        state = read_status(slug, ws).get("state")
+        if state == "writing" and not force:
+            raise SurveyError("SURVEY_RUNNING", f"survey is being written: {slug}")
+        if force or state != "awaiting_agent":
+            collect_survey(slug, ws, force=force)
+    writer = _find_writer()
+    if writer == "sessions_spawn":
+        spawn = spawn_survey_agent_if_possible(slug, ws)
+        return {"ok": True, "mode": "spawned", "spawn": spawn,
+                "note": "sessions_spawn 异步执行；完成后需 survey --publish 入站"}
+    if writer != "claude":
+        return {"ok": False, "mode": "queued",
+                "reason": "no writer available（sessions_spawn / claude 均未找到）"}
+    result = auto_write_survey(slug, ws, runner=runner, force=force)
+    result["mode"] = "headless-claude"
+    return result

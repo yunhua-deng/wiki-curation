@@ -31,6 +31,21 @@ function statusBadge(s) {
   return `<span class="badge badge-${cls}">${escapeHtml(s||'—')}</span>`;
 }
 
+// v3.6: survey column cell — view link (_blank) / state icon / ghost trigger
+function surveyCell(e) {
+  const id = escapeHtml(e.id);
+  if (e.has_survey) {
+    return `<a class="survey-cell" href="/site/survey.html?id=${encodeURIComponent(e.id)}" target="_blank" rel="noopener" title="查看综述">🧭</a>`;
+  }
+  const st = e.survey_state;
+  if (st === 'collecting') return '<span class="survey-cell-state" title="综述：采集中">⏳</span>';
+  if (st === 'writing') return '<span class="survey-cell-state" title="综述：写作中">✍️</span>';
+  if (st === 'awaiting_agent') return '<span class="survey-cell-state" title="综述：排队中（agent 待执行）">🕐</span>';
+  if (st === 'failed') return '<span class="survey-cell-state" title="综述：失败">⚠️</span>';
+  if (e.has_record) return `<button class="survey-cell survey-cell-ghost" data-surveyid="${id}" title="发起综述">🧭</button>`;
+  return '';
+}
+
 function getParam(name) {
   return new URLSearchParams(window.location.search).get(name);
 }
@@ -116,11 +131,12 @@ async function init() {
         html += `<td class="col-title">${escapeHtml(e.title||e.id)}</td>`;
         html += `<td class="col-tldr"><span class="tldr-trunc">${escapeHtml(tldr).substring(0,100)}</span></td>`;
         html += `<td class="col-links">${linksHtml}</td>`;
+        html += `<td class="col-survey">${surveyCell(e)}</td>`;
         html += `<td class="col-date">${escapeHtml(e.date||'—')}</td>`;
         html += '</tr>';
         // expandable detail row
         html += `<tr class="wiki-detail" id="detail-${escapeHtml(e.id)}" style="display:none">`;
-        html += `<td colspan="6"><div class="detail-card">`;
+        html += `<td colspan="7"><div class="detail-card">`;
         html += `<p><strong>TL;DR</strong> ${escapeHtml(tldr)}</p>`;
         const summaryText = (e.summary && e.summary.text) || '';
         if (summaryText) {
@@ -161,9 +177,9 @@ async function init() {
           ).join(' ');
           html += '</p>';
         }
-        // v3.5: survey（综述）button / link
+        // v3.5: survey（综述）button / link — v3.6: 新开 tab
         if (e.has_survey) {
-          html += `<p><a class="survey-btn" href="/site/survey.html?id=${encodeURIComponent(e.id)}">🧭 查看综述</a></p>`;
+          html += `<p><a class="survey-btn" href="/site/survey.html?id=${encodeURIComponent(e.id)}" target="_blank" rel="noopener">🧭 查看综述</a></p>`;
         } else if (e.has_record) {
           html += `<p><button class="survey-btn" data-surveyid="${escapeHtml(e.id)}">🧭 综述</button> <span class="survey-status muted" data-surveystatus="${escapeHtml(e.id)}"></span></p>`;
         }
@@ -194,15 +210,31 @@ async function init() {
     });
 
     // v3.5: survey trigger — POST /api/survey, poll status, graceful CLI fallback
+    // v3.6: works from both column ghost button (inline cell feedback) and detail card button
     container.querySelectorAll('[data-surveyid]').forEach(btn => {
       btn.addEventListener('click', async (ev) => {
         ev.stopPropagation();
         const id = btn.dataset.surveyid;
-        const statusEl = container.querySelector(`[data-surveystatus="${id}"]`);
+        const cell = btn.closest('td.col-survey');
+        const span = container.querySelector(`[data-surveystatus="${id}"]`);
         const cliCmd = `python skills/wiki-curation/scripts/cli.py --json survey --id ${id}`;
+        const setMsg = (msgHtml) => {
+          if (cell) cell.innerHTML = msgHtml;
+          else if (span) span.innerHTML = msgHtml;
+        };
         const showFallback = (prefix) => {
-          if (statusEl) statusEl.innerHTML = `${prefix || ''}请在终端执行：<code>${escapeHtml(cliCmd)}</code>`;
-          btn.disabled = false;
+          setMsg(`${prefix || ''}请在终端执行：<code>${escapeHtml(cliCmd)}</code>`);
+          if (!cell) btn.disabled = false;
+        };
+        const finish = () => {
+          const href = '/site/survey.html?id=' + encodeURIComponent(id);
+          if (cell) { cell.innerHTML = `<a class="survey-cell" href="${href}" target="_blank" rel="noopener" title="查看综述">🧭</a>`; return; }
+          const a = document.createElement('a');
+          a.className = 'survey-btn';
+          a.href = href; a.target = '_blank'; a.rel = 'noopener';
+          a.textContent = '🧭 查看综述';
+          btn.replaceWith(a);
+          if (span) span.textContent = '';
         };
         btn.disabled = true;
         try {
@@ -212,25 +244,17 @@ async function init() {
           });
           if (res.status === 409) { showFallback('综述已存在或进行中。'); return; }
           if (!res.ok) throw new Error('HTTP ' + res.status);
-          if (statusEl) statusEl.textContent = '已发起综述，正在采集材料…';
+          setMsg(cell ? '<span title="采集中">⏳</span>' : '已发起综述，正在采集材料…');
           const t0 = Date.now();
           const timer = setInterval(async () => {
             try {
               const st = await (await fetch('/api/survey/status?id=' + encodeURIComponent(id))).json();
-              if (st.has_survey) {
-                clearInterval(timer);
-                const a = document.createElement('a');
-                a.className = 'survey-btn';
-                a.href = '/site/survey.html?id=' + encodeURIComponent(id);
-                a.textContent = '🧭 查看综述';
-                btn.replaceWith(a);
-                if (statusEl) statusEl.textContent = '';
-                return;
-              }
+              if (st.has_survey) { clearInterval(timer); finish(); return; }
               const state = st.status && st.status.state;
-              if (state === 'awaiting_agent') { clearInterval(timer); showFallback('材料已就绪，等待 agent 执行。'); return; }
-              if (state === 'failed') { clearInterval(timer); showFallback('采集失败。'); return; }
-              if (Date.now() - t0 > 120000) { clearInterval(timer); showFallback('仍在进行，可稍后刷新查看。'); }
+              if (state === 'writing') { setMsg(cell ? '<span title="写作中">✍️</span>' : '材料就绪，正在写作…'); }
+              else if (state === 'awaiting_agent') { clearInterval(timer); showFallback('材料已就绪，等待 agent 执行。'); return; }
+              else if (state === 'failed') { clearInterval(timer); showFallback('处理失败。'); return; }
+              if (Date.now() - t0 > 600000) { clearInterval(timer); showFallback('仍在进行，可稍后刷新查看。'); }
             } catch (_) { /* 单次轮询失败忽略 */ }
           }, 5000);
         } catch (err) {

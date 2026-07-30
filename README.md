@@ -76,12 +76,13 @@ Design principle: **extraction by agent, linking by system.** Similarity scoring
 
 ## Deep-diving a record
 
-From the site: open a record's detail and click **🧭 综述** — the local server fetches the record's links in the background and queues the survey for an agent (`awaiting_agent`). When the page is written and published, the button becomes **查看综述** linking to a standalone page.
+From the site: the records table has a **🧭** column — click it on any record and the local server runs the whole pipeline in the background (collect links → headless agent writes `survey.md` → validate + publish); the cell shows live states (⏳ collecting / ✍️ writing) and becomes a link that opens the survey page in a new tab. If no writer is available (`sessions_spawn`/`claude` not on PATH), the survey stays queued (`awaiting_agent`) for an agent to drain.
 
 From CLI / agents:
 
 ```bash
-python scripts/cli.py --json survey --id <slug>            # collect + emit survey task
+python scripts/cli.py --json survey --id <slug> --auto     # end-to-end: collect → write → publish
+python scripts/cli.py --json survey --id <slug>            # collect + emit survey task only
 python scripts/cli.py --json survey --queue                # agent worklist
 # agent writes wiki/artifacts/<slug>/survey/survey.md, then:
 python scripts/cli.py --json survey --id <slug> --publish  # validate + index into site

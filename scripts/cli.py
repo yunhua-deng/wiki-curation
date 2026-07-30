@@ -514,6 +514,11 @@ def cmd_survey(args) -> int:
         if getattr(args, "task", False):
             _print_result({"ok": True, "data": DV.generate_survey_task(args.id, ws)}, args.json)
             return 0
+        if getattr(args, "auto", False):
+            # 端到端：必要时采集 → headless 写作 → 自动发布（网页触发的默认路径）
+            result = DV.auto_execute_survey(args.id, ws, force=args.force)
+            _print_result({"ok": bool(result.get("ok")), "data": result}, args.json)
+            return 0 if result.get("ok") else 1
         task = DV.collect_survey(args.id, ws, max_links=args.max_links, force=args.force)
         data = {"task": task, "status": DV.read_status(args.id, ws)}
         if getattr(args, "spawn_if_possible", False):
@@ -576,8 +581,8 @@ def cmd_manifest(args) -> int:
             {"name": "recall", "args": ["--input", "--limit"], "description": "四层确定性相似召回"},
             {"name": "verify-links", "args": ["--id", "--limit"], "description": "验证条目链接可达性（curl HEAD）"},
             {"name": "analyze", "args": ["--topic", "--dedup", "--emit-task", "--limit"], "description": "主题聚簇 / 去重候选 / 趋势综述任务"},
-            {"name": "survey", "args": ["--id", "--force", "--max-links", "--task", "--publish", "--status", "--queue", "--spawn-if-possible"],
-             "description": "记录综述：采集 links + 生成 survey task / 发布 / 状态 / 队列"},
+            {"name": "survey", "args": ["--id", "--force", "--max-links", "--task", "--publish", "--status", "--queue", "--auto", "--spawn-if-possible"],
+             "description": "记录综述：采集 links + 生成 survey task / 发布 / 状态 / 队列（--auto 端到端自动写作发布）"},
             {"name": "star", "args": ["--id"], "description": "publish 后标星 canonical GitHub 仓库（需 GITHUB_TOKEN）"},
             {"name": "list", "args": ["--limit", "--status", "--all"], "description": "列出 entries"},
             {"name": "search", "args": ["query", "--limit"], "description": "FTS5 搜索"},
@@ -769,6 +774,8 @@ def main():
     p_survey.add_argument("--publish", action="store_true", help="校验 survey.md + 写 survey.json + 重建站点")
     p_survey.add_argument("--status", action="store_true", help="查看 survey 状态")
     p_survey.add_argument("--queue", action="store_true", help="列出全部 awaiting_agent 的 survey")
+    p_survey.add_argument("--auto", action="store_true",
+                          help="端到端：采集（如需要）→ headless 写作 → 自动发布")
     p_survey.add_argument("--spawn-if-possible", action="store_true",
                         help="采集后若 sessions_spawn 可用则自动派发 agent")
 

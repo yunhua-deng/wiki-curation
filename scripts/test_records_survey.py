@@ -330,3 +330,114 @@ def test_manifest_has_survey(capsys):
     names = [c["name"] for c in out["data"]["commands"]]
     assert "survey" in names
     assert out["data"]["version"] == "3.5"
+
+
+# ---------- v3.6: auto end-to-end + survey_state ----------
+
+def _seed_task_json(tmp: Path):
+    task_path = paths.survey_task_path("rec1", tmp)
+    task_path.parent.mkdir(parents=True, exist_ok=True)
+    task_path.write_text(json.dumps({"task": "写综述", "taskName": "survey-rec1"}), encoding="utf-8")
+
+
+def _runner_writes_good(prompt, ws, timeout=900):
+    paths.survey_md_path("rec1", ws).parent.mkdir(parents=True, exist_ok=True)
+    paths.survey_md_path("rec1", ws).write_text(GOOD_SURVEY_MD, encoding="utf-8")
+    return {"ok": True, "stdout": "done", "stderr": ""}
+
+
+def test_auto_write_survey_happy(tmp_path, monkeypatch):
+    _patch_ws(tmp_path, monkeypatch)
+    _seed_record(tmp_path)
+    conftest.seed_entry(paths.db_path(tmp_path), "rec1", status="done")
+    _seed_task_json(tmp_path)
+    from scripts.records import survey as SV
+    SV.write_status("rec1", tmp_path, "awaiting_agent")
+
+    result = SV.auto_write_survey("rec1", tmp_path, runner=_runner_writes_good)
+    assert result["ok"] and result["written"] and result["published"]["revision"] == 1
+    assert SV.read_status("rec1", tmp_path)["state"] == "done"
+    surveys = json.loads((tmp_path / "site" / "data" / "surveys.json").read_text(encoding="utf-8"))
+    assert surveys and surveys[0]["slug"] == "rec1"
+
+
+def test_auto_write_survey_no_output(tmp_path, monkeypatch):
+    _patch_ws(tmp_path, monkeypatch)
+    _seed_record(tmp_path)
+    _seed_task_json(tmp_path)
+    from scripts.records import survey as SV
+    SV.write_status("rec1", tmp_path, "awaiting_agent")
+
+    result = SV.auto_write_survey("rec1", tmp_path,
+                                  runner=lambda p, ws, timeout=900: {"ok": True, "stdout": "", "stderr": "boom"})
+    assert result["ok"] is False and result["reason"] == "no_survey_md"
+    st = SV.read_status("rec1", tmp_path)
+    assert st["state"] == "awaiting_agent" and "boom" in st.get("error", "")
+
+
+def test_auto_write_survey_already_written_publishes(tmp_path, monkeypatch):
+    """survey.md 已存在（写作成功但发布失败场景）→ 幂等直接发布，不再调用 runner。"""
+    _patch_ws(tmp_path, monkeypatch)
+    _seed_record(tmp_path)
+    conftest.seed_entry(paths.db_path(tmp_path), "rec1", status="done")
+    from scripts.records import survey as SV
+    paths.survey_md_path("rec1", tmp_path).parent.mkdir(parents=True, exist_ok=True)
+    paths.survey_md_path("rec1", tmp_path).write_text(GOOD_SURVEY_MD, encoding="utf-8")
+
+    def _explode(*a, **kw):
+        raise AssertionError("runner 不应被调用")
+
+    result = SV.auto_write_survey("rec1", tmp_path, runner=_explode)
+    assert result["ok"] and result["written"] is False
+    assert SV.read_status("rec1", tmp_path)["state"] == "done"
+
+
+def test_auto_execute_skips_collect_when_queued(tmp_path, monkeypatch):
+    """状态 awaiting_agent（材料就绪）→ --auto 不重采集，直接写作发布。"""
+    _patch_ws(tmp_path, monkeypatch)
+    _seed_record(tmp_path)
+    conftest.seed_entry(paths.db_path(tmp_path), "rec1", status="done")
+    _seed_task_json(tmp_path)
+    from scripts.records import survey as SV
+    SV.write_status("rec1", tmp_path, "awaiting_agent")
+    monkeypatch.setattr(SV, "_find_writer", lambda: "claude")
+
+    def _collect_explode(*a, **kw):
+        raise AssertionError("awaiting_agent 状态不应重采集")
+
+    monkeypatch.setattr(SV, "collect_survey", _collect_explode)
+    result = SV.auto_execute_survey("rec1", tmp_path, runner=_runner_writes_good)
+    assert result["ok"] and result["mode"] == "headless-claude"
+    assert SV.read_status("rec1", tmp_path)["state"] == "done"
+
+
+def test_auto_execute_no_writer_stays_queued(tmp_path, monkeypatch):
+    _patch_ws(tmp_path, monkeypatch)
+    _seed_record(tmp_path)
+    _seed_task_json(tmp_path)
+    from scripts.records import survey as SV
+    SV.write_status("rec1", tmp_path, "awaiting_agent")
+    monkeypatch.setattr(SV, "_find_writer", lambda: "")
+    result = SV.auto_execute_survey("rec1", tmp_path)
+    assert result["ok"] is False and result["mode"] == "queued"
+    assert SV.read_status("rec1", tmp_path)["state"] == "awaiting_agent"
+
+
+def test_survey_state_in_entries_json(tmp_path, monkeypatch):
+    """build_site：无 survey.md 但有 status.json → survey_state 出现在 entries.json。"""
+    _patch_ws(tmp_path, monkeypatch)
+    _seed_record(tmp_path)
+    conftest.seed_entry(paths.db_path(tmp_path), "rec1", status="done")
+    from scripts.records import survey as SV
+    from scripts.site.build import build_site
+    SV.write_status("rec1", tmp_path, "awaiting_agent")
+    build_site(paths.db_path(tmp_path), tmp_path)
+    entries = json.loads((tmp_path / "site" / "data" / "entries.json").read_text(encoding="utf-8"))
+    rec1 = [e for e in entries if e["id"] == "rec1"][0]
+    assert rec1["has_survey"] is False
+    assert rec1["survey_state"] == "awaiting_agent"
+    # 写作中
+    SV.write_status("rec1", tmp_path, "writing")
+    build_site(paths.db_path(tmp_path), tmp_path)
+    entries = json.loads((tmp_path / "site" / "data" / "entries.json").read_text(encoding="utf-8"))
+    assert [e for e in entries if e["id"] == "rec1"][0]["survey_state"] == "writing"

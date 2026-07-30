@@ -20,7 +20,7 @@ LOOPBACK_IPS = {"127.0.0.1", "::1"}
 
 
 def _default_spawner(wiki_dir: Path, slug: str, force: bool = False) -> None:
-    """分离子进程执行 `cli.py --json survey --id <slug> --spawn-if-possible`。"""
+    """分离子进程执行 `cli.py --json survey --id <slug> --auto`（端到端）。"""
     wiki_dir = Path(wiki_dir)
     cli = Path(__file__).resolve().parent.parent / "cli.py"
     log_dir = paths.survey_dir(slug, wiki_dir)
@@ -29,7 +29,7 @@ def _default_spawner(wiki_dir: Path, slug: str, force: bool = False) -> None:
     env = os.environ.copy()
     env["WIKI_WORKSPACE"] = str(wiki_dir)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
-    cmd = [sys.executable, str(cli), "--json", "survey", "--id", slug, "--spawn-if-possible"]
+    cmd = [sys.executable, str(cli), "--json", "survey", "--id", slug, "--auto"]
     if force:
         cmd.append("--force")
     kwargs = dict(stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
@@ -57,9 +57,9 @@ def handle_survey_request(wiki_dir, payload: dict, client_ip: str = "127.0.0.1",
                      "message": f"record.json not found: {slug}"}
     state = (DV.read_status(slug, ws) or {}).get("state")
     # 冲突判定优先级：进行中的进程 > 已有 survey 页面 > 已排队任务
-    if state == "collecting" and not force:
+    if state in ("collecting", "writing") and not force:
         return 409, {"ok": False, "error": "SURVEY_RUNNING", "state": state,
-                     "message": "survey is collecting right now"}
+                     "message": f"survey is {state} right now"}
     if paths.survey_md_path(slug, ws).exists() and not force:
         return 409, {"ok": False, "error": "SURVEY_EXISTS",
                      "message": "survey already exists (pass force=true to regenerate)"}

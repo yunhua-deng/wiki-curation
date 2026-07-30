@@ -353,6 +353,26 @@ def _build_surveys(wiki_dir: Path) -> list[dict]:
     return items
 
 
+def _survey_states(wiki_dir: Path) -> dict:
+    """v3.6：扫描 artifacts/*/survey/status.json，返回 slug → 状态字符串。"""
+    states = {}
+    artifacts = Path(wiki_dir) / "artifacts"
+    if not artifacts.exists():
+        return states
+    for entry_dir in sorted(artifacts.iterdir()):
+        st_path = entry_dir / "survey" / "status.json"
+        if not st_path.is_file():
+            continue
+        try:
+            data = json.loads(st_path.read_text(encoding="utf-8", errors="replace")) or {}
+        except Exception:
+            continue
+        state = data.get("state") or ""
+        if state:
+            states[entry_dir.name] = state
+    return states
+
+
 def _write_html_index(entries: list[dict], wiki_dir: Path) -> Path:
     """v3.3：重新生成 wiki/wiki.html 静态语义索引（id/date/type/title/tldr/tags）。"""
     rows = []
@@ -432,13 +452,18 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
     for de in display_entries:
         de["_related"] = related_map.get(de["id"], [])
     # v3.5：综述索引 + has_survey 注入（须先于 entries.json 落盘）
+    # v3.6：survey_state 注入（collecting/writing/awaiting_agent/failed/done）
     surveys = _build_surveys(wiki_dir)
+    survey_states = _survey_states(wiki_dir)
     survey_map = {d["slug"]: d for d in surveys}
     for de in display_entries:
-        dv = survey_map.get(de["id"])
-        de["has_survey"] = bool(dv)
-        if dv:
-            de["survey"] = {"date": dv["date"], "excerpt": dv["excerpt"]}
+        sv = survey_map.get(de["id"])
+        de["has_survey"] = bool(sv)
+        if sv:
+            de["survey"] = {"date": sv["date"], "excerpt": sv["excerpt"]}
+        st = survey_states.get(de["id"]) or ("done" if sv else "")
+        if st:
+            de["survey_state"] = st
     (data_dir / "entries.json").write_text(
         json.dumps(display_entries, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )

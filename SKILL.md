@@ -14,7 +14,7 @@ Single tier, single path:
 - **Record**: `add → pop → run → publish` → `record.json` — link graph (explicit + inferred URLs), TL;DR, X-style summary, tags, entities. Every ingestion goes through this.
 - **Recall**: `add` auto-surfaces similar past entries; `recall --input "..."` queries anytime (4-layer: url_exact → shared_link → entity → fts).
 - **Analyze**: `analyze --topic "X"` clusters evidence across records; `--emit-task` generates trend article payloads; `--discover` finds emerging hot topics.
-- **Dive**: `dive --id X` deep-dives a single record — the system fetches the record's links, an agent integrates the materials into `artifacts/{slug}/dive/dive.md`, and `dive --id X --publish` validates + indexes it. The site detail card has a one-click 🔍 button.
+- **Survey**: `survey --id X` deep-surveys a single record — the system fetches the record's links, an agent integrates the materials into `artifacts/{slug}/survey/survey.md`, and `survey --id X --publish` validates + indexes it. The site detail card has a one-click 🧭 button.
 - **Site**: built static HTML served locally — compact table, timeline view, inline detail expansion, trends reader.
 
 Core principle: **extraction by agent, linking by system.** The LLM reads materials and writes `record.json`; similarity, relations, URL verification are deterministic code.
@@ -40,7 +40,7 @@ wiki/
 ├── artifacts/{id}/
 │   ├── record.json          # THE record (only artifact the agent writes)
 │   ├── raw/                 # fetched source materials
-│   └── dive/                # deep-dive: dive.md (agent) + dive.json/status.json/task.json (system) + raw/
+│   └── survey/                # deep-survey: survey.md (agent) + survey.json/status.json/task.json (system) + raw/
 ├── trends/                  # trend articles (markdown, auto-listed on site)
 ├── site/                    # built static site
 └── wiki.html                # semantic index
@@ -97,7 +97,7 @@ All commands support `--json`. `--workspace PATH` overrides `$WIKI_WORKSPACE`.
 | `analyze --topic "..." [--emit-task]` | Evidence cluster across records; optional trend task |
 | `analyze --dedup` | Duplicate candidate pairs (same_url / shared_link) |
 | `analyze --discover [--days N]` | Emerging hot tags/entities (alias-aware, marks existing coverage) |
-| `dive --id X [--force] [--task\|--publish\|--status] [--queue]` | Deep-dive a record: fetch links + emit dive task / publish / status / agent queue |
+| `survey --id X [--force] [--task\|--publish\|--status] [--queue]` | Deep-survey a record: fetch links + emit survey task / publish / status / agent queue |
 | `verify-links --id <slug>` | Lazy curl-HEAD link reachability |
 | `star --id <slug>` | Star canonical GitHub repos (needs `GITHUB_TOKEN`) |
 | `doctor [--quick] [--fix-plan]` | Health: queue/db/files/git/record-tier/entities |
@@ -124,14 +124,14 @@ publish --id <slug>
    ▼
 done: record + site + wiki.html refreshed
 
-dive --id X                ← record deep-dive (site button or CLI)
-   ├─ select_dive_links    ← canonical first, skip already-fetched
-   ├─ collect_sources      ← dive/raw/ (max_depth=1)
-   ├─ generate_dive_task   ← task_mode=dive, status=awaiting_agent
+survey --id X                ← record deep-survey (site button or CLI)
+   ├─ select_survey_links    ← canonical first, skip already-fetched
+   ├─ collect_sources      ← survey/raw/ (max_depth=1)
+   ├─ generate_survey_task   ← task_mode=survey, status=awaiting_agent
    │
-dive agent                 ← hand-writes dive.md (TL;DR/核心内容/分来源摘要/原始出处)
+survey agent                 ← hand-writes survey.md (TL;DR/核心内容/分来源摘要/原始出处)
    │
-dive --id X --publish      ← structure validation + dive.json + site dives.json
+survey --id X --publish      ← structure validation + survey.json + site surveys.json
 ```
 
 ## Model routing

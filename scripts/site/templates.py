@@ -95,35 +95,35 @@ if (document.readyState==='loading') document.addEventListener('DOMContentLoaded
 """
 
 
-_DIVE_CONTENT = r"""
-<div id="dive-loading" class="muted">Loading...</div>
-<div id="dive-view" style="display:none">
-  <p class="dive-nav"><a href="/site/">← Wiki</a> · <a id="dive-record-link" href="#">View record</a></p>
-  <article id="dive-body" class="markdown-body"></article>
-  <p class="muted" id="dive-meta"></p>
+_SURVEY_CONTENT = r"""
+<div id="survey-loading" class="muted">Loading...</div>
+<div id="survey-view" style="display:none">
+  <p class="survey-nav"><a href="/site/">← Wiki</a> · <a id="survey-record-link" href="#">View record</a></p>
+  <article id="survey-body" class="markdown-body"></article>
+  <p class="muted" id="survey-meta"></p>
 </div>
 <script>
-async function initDive() {
+async function initSurvey() {
   const id = new URLSearchParams(window.location.search).get('id');
-  if (!id) { document.getElementById('dive-loading').textContent = 'Missing id'; return; }
+  if (!id) { document.getElementById('survey-loading').textContent = 'Missing id'; return; }
   try {
-    const res = await fetch('/artifacts/' + encodeURIComponent(id) + '/dive/dive.md');
-    if (!res.ok) throw new Error('dive.md: HTTP ' + res.status);
+    const res = await fetch('/artifacts/' + encodeURIComponent(id) + '/survey/survey.md');
+    if (!res.ok) throw new Error('survey.md: HTTP ' + res.status);
     const md = await res.text();
-    document.getElementById('dive-loading').style.display = 'none';
-    document.getElementById('dive-view').style.display = '';
-    document.getElementById('dive-record-link').href = '/site/?q=' + encodeURIComponent(id);
-    const body = document.getElementById('dive-body');
+    document.getElementById('survey-loading').style.display = 'none';
+    document.getElementById('survey-view').style.display = '';
+    document.getElementById('survey-record-link').href = '/site/?q=' + encodeURIComponent(id);
+    const body = document.getElementById('survey-body');
     body.innerHTML = window.marked ? marked.parse(md) : '<pre>' + md.replace(/</g,'&lt;') + '</pre>';
     try {
-      const meta = await (await fetch('/artifacts/' + encodeURIComponent(id) + '/dive/dive.json')).json();
-      document.getElementById('dive-meta').textContent =
+      const meta = await (await fetch('/artifacts/' + encodeURIComponent(id) + '/survey/survey.json')).json();
+      document.getElementById('survey-meta').textContent =
         'revision ' + (meta.revision || 1) + ' · updated ' + String(meta.updated_at || '').slice(0, 10) +
         ' · sources ' + ((meta.sources || []).length);
     } catch (_) {}
-  } catch (err) { document.getElementById('dive-loading').textContent = 'Load failed: ' + err.message; }
+  } catch (err) { document.getElementById('survey-loading').textContent = 'Load failed: ' + err.message; }
 }
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initDive); else initDive();
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initSurvey); else initSurvey();
 </script>
 """
 
@@ -138,8 +138,8 @@ def render_pages(entries, tags, sources, out_dir):
     (out_dir / "raw.html").write_text(
         _render_page("Raw", _RAW_CONTENT, generated_at), encoding="utf-8"
     )
-    (out_dir / "dive.html").write_text(
-        _render_page("Dive", _DIVE_CONTENT, generated_at), encoding="utf-8"
+    (out_dir / "survey.html").write_text(
+        _render_page("Survey", _SURVEY_CONTENT, generated_at), encoding="utf-8"
     )
 
 

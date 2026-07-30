@@ -23,12 +23,12 @@ class SPAHandler(SimpleHTTPRequestHandler):
     """处理目录根路径自动补全 index.html，并为文本响应添加 UTF-8 charset。"""
 
     def do_GET(self):
-        # v3.5：dive 状态 API
-        if self.path.startswith("/api/dive/status"):
+        # v3.5：survey 状态 API
+        if self.path.startswith("/api/survey/status"):
             from urllib.parse import urlparse, parse_qs
             q = parse_qs(urlparse(self.path).query)
             from scripts.site import api as site_api
-            code, data = site_api.handle_dive_status(self.directory, (q.get("id") or [""])[0])
+            code, data = site_api.handle_survey_status(self.directory, (q.get("id") or [""])[0])
             self._send_json(code, data)
             return
         # v3.3：根路径与 /index.html 直接跳到站点首页（用户只记端口即可）
@@ -40,8 +40,8 @@ class SPAHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self):
-        # v3.5：dive 发起 API（仅 loopback；api 层再校验）
-        if self.path.split("?")[0] == "/api/dive":
+        # v3.5：survey 发起 API（仅 loopback；api 层再校验）
+        if self.path.split("?")[0] == "/api/survey":
             try:
                 length = int(self.headers.get("Content-Length") or 0)
             except ValueError:
@@ -51,7 +51,7 @@ class SPAHandler(SimpleHTTPRequestHandler):
             except Exception:
                 payload = {}
             from scripts.site import api as site_api
-            code, data = site_api.handle_dive_request(
+            code, data = site_api.handle_survey_request(
                 self.directory, payload, client_ip=self.client_address[0])
             self._send_json(code, data)
             return

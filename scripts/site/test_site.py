@@ -252,12 +252,12 @@ def test_serve_pid_file_lifecycle(sample_workspace, tmp_path):
         pid_file.unlink(missing_ok=True)
 
 
-def test_render_pages_includes_dive_html(tmp_path):
+def test_render_pages_includes_survey_html(tmp_path):
     from scripts.site.templates import render_pages
     out = tmp_path / "site"
     render_pages([], {}, {}, out)
-    dive_html = (out / "dive.html").read_text(encoding="utf-8")
-    assert "dive.md" in dive_html and "marked" in dive_html
+    survey_html = (out / "survey.html").read_text(encoding="utf-8")
+    assert "survey.md" in survey_html and "marked" in survey_html
     index_html = (out / "index.html").read_text(encoding="utf-8")
     assert "site.js" in index_html
 

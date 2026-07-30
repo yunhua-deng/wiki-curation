@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""test_site_api.py — wiki 本地服务 dive API 契约测试（不起真实 socket）。"""
+"""test_site_api.py — wiki 本地服务 survey API 契约测试（不起真实 socket）。"""
 import json
 from pathlib import Path
 
@@ -23,55 +23,55 @@ RECORD = {
 }
 
 
-def test_handle_dive_request_validation(tmp_path, monkeypatch):
+def test_handle_survey_request_validation(tmp_path, monkeypatch):
     _patch_ws(tmp_path, monkeypatch)
     from scripts.site import api
     # 非 loopback
-    code, data = api.handle_dive_request(tmp_path, {"id": "rec1"}, client_ip="10.0.0.5")
+    code, data = api.handle_survey_request(tmp_path, {"id": "rec1"}, client_ip="10.0.0.5")
     assert code == 403 and data["error"] == "FORBIDDEN"
     # 非法 id（路径穿越）
-    code, data = api.handle_dive_request(tmp_path, {"id": "../etc"})
+    code, data = api.handle_survey_request(tmp_path, {"id": "../etc"})
     assert code == 400 and data["error"] == "INVALID_ID"
     # record 不存在
-    code, data = api.handle_dive_request(tmp_path, {"id": "rec1"})
+    code, data = api.handle_survey_request(tmp_path, {"id": "rec1"})
     assert code == 404 and data["error"] == "RECORD_MISSING"
 
 
-def test_handle_dive_request_conflicts_and_accept(tmp_path, monkeypatch):
+def test_handle_survey_request_conflicts_and_accept(tmp_path, monkeypatch):
     _patch_ws(tmp_path, monkeypatch)
     RS.save_record("rec1", tmp_path, RECORD)
-    from scripts.records import dive as DV
+    from scripts.records import survey as DV
     from scripts.site import api
     spawned = []
     spawner = lambda ws, slug, force=False: spawned.append((ws, slug, force))
-    # collecting → 409 DIVE_RUNNING
+    # collecting → 409 SURVEY_RUNNING
     DV.write_status("rec1", tmp_path, "collecting")
-    code, data = api.handle_dive_request(tmp_path, {"id": "rec1"}, spawner=spawner)
-    assert code == 409 and data["error"] == "DIVE_RUNNING"
-    # awaiting_agent → 409 DIVE_RUNNING；force → 受理且 force 透传
+    code, data = api.handle_survey_request(tmp_path, {"id": "rec1"}, spawner=spawner)
+    assert code == 409 and data["error"] == "SURVEY_RUNNING"
+    # awaiting_agent → 409 SURVEY_RUNNING；force → 受理且 force 透传
     DV.write_status("rec1", tmp_path, "awaiting_agent")
-    code, _ = api.handle_dive_request(tmp_path, {"id": "rec1"}, spawner=spawner)
+    code, _ = api.handle_survey_request(tmp_path, {"id": "rec1"}, spawner=spawner)
     assert code == 409
-    code, data = api.handle_dive_request(tmp_path, {"id": "rec1", "force": True}, spawner=spawner)
+    code, data = api.handle_survey_request(tmp_path, {"id": "rec1", "force": True}, spawner=spawner)
     assert code == 202 and data["ok"] and spawned, data
-    assert spawned[-1][2] is True  # force 必须透传给 spawner（E2E 回归：否则子进程 DIVE_EXISTS）
-    # 已有 dive.md → 409 DIVE_EXISTS
-    paths.dive_md_path("rec1", tmp_path).parent.mkdir(parents=True, exist_ok=True)
-    paths.dive_md_path("rec1", tmp_path).write_text("# x", encoding="utf-8")
-    code, data = api.handle_dive_request(tmp_path, {"id": "rec1"}, spawner=spawner)
-    assert code == 409 and data["error"] == "DIVE_EXISTS"
+    assert spawned[-1][2] is True  # force 必须透传给 spawner（E2E 回归：否则子进程 SURVEY_EXISTS）
+    # 已有 survey.md → 409 SURVEY_EXISTS
+    paths.survey_md_path("rec1", tmp_path).parent.mkdir(parents=True, exist_ok=True)
+    paths.survey_md_path("rec1", tmp_path).write_text("# x", encoding="utf-8")
+    code, data = api.handle_survey_request(tmp_path, {"id": "rec1"}, spawner=spawner)
+    assert code == 409 and data["error"] == "SURVEY_EXISTS"
 
 
-def test_handle_dive_status(tmp_path, monkeypatch):
+def test_handle_survey_status(tmp_path, monkeypatch):
     _patch_ws(tmp_path, monkeypatch)
-    from scripts.records import dive as DV
+    from scripts.records import survey as DV
     from scripts.site import api
-    code, data = api.handle_dive_status(tmp_path, "../bad")
+    code, data = api.handle_survey_status(tmp_path, "../bad")
     assert code == 400
-    code, data = api.handle_dive_status(tmp_path, "rec1")
-    assert code == 200 and data["ok"] and data["has_dive"] is False and data["status"] == {}
+    code, data = api.handle_survey_status(tmp_path, "rec1")
+    assert code == 200 and data["ok"] and data["has_survey"] is False and data["status"] == {}
     DV.write_status("rec1", tmp_path, "awaiting_agent")
-    code, data = api.handle_dive_status(tmp_path, "rec1")
+    code, data = api.handle_survey_status(tmp_path, "rec1")
     assert data["status"]["state"] == "awaiting_agent"
 
 

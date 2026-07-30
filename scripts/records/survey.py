@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-scripts/records/dive.py — record 深度解读（dive）的核心确定性逻辑。
+scripts/records/survey.py — record 综述（survey）的核心确定性逻辑。
 
 职责边界（对齐 record 提取）：系统负责链接选择、素材采集、任务生成、
-结构校验、发布与状态机；dive.md 由执行 task 的 agent 手写，脚本永不调 LLM。
+结构校验、发布与状态机；survey.md 由执行 task 的 agent 手写，脚本永不调 LLM。
 
-状态机（artifacts/{slug}/dive/status.json）：
+状态机（artifacts/{slug}/survey/status.json）：
   collecting → awaiting_agent → done | failed
   awaiting_agent 即队列（网页/CLI 触发统一表达）。
 """
@@ -18,7 +18,7 @@ from scripts import paths
 from scripts.records import schema as RS
 from scripts.records.schema import normalize_url
 
-DIVE_MD_MAX_BYTES = 40 * 1024
+SURVEY_MD_MAX_BYTES = 40 * 1024
 REQUIRED_H2 = ["TL;DR", "核心内容", "分来源摘要", "原始出处"]
 DEFAULT_MAX_LINKS = 5
 
@@ -26,8 +26,8 @@ SKILL_SCRIPTS_DIR = Path(__file__).resolve().parent.parent
 CLI_CMD = f"{sys.executable} {SKILL_SCRIPTS_DIR / 'cli.py'}"
 
 
-class DiveError(Exception):
-    """带机器可读码的 dive 错误。code 供 CLI/API 输出；next_cmd 指引下一步。"""
+class SurveyError(Exception):
+    """带机器可读码的 survey 错误。code 供 CLI/API 输出；next_cmd 指引下一步。"""
 
     def __init__(self, code: str, message: str, next_cmd: str = None):
         super().__init__(message)
@@ -44,8 +44,8 @@ def _now_iso() -> str:
 # ============================================================
 
 def read_status(slug: str, ws=None) -> dict:
-    """读取 dive 状态；不存在/损坏返回 {}。"""
-    path = paths.dive_status_path(slug, ws)
+    """读取 survey 状态；不存在/损坏返回 {}。"""
+    path = paths.survey_status_path(slug, ws)
     if not path.exists():
         return {}
     try:
@@ -56,8 +56,8 @@ def read_status(slug: str, ws=None) -> dict:
 
 
 def write_status(slug: str, ws, state: str, detail: dict = None, error: str = None) -> None:
-    """写 dive 状态机。error 为 None 时清除旧 error 字段。"""
-    path = paths.dive_status_path(slug, ws)
+    """写 survey 状态机。error 为 None 时清除旧 error 字段。"""
+    path = paths.survey_status_path(slug, ws)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {"state": state, "updated_at": _now_iso()}
     if detail is not None:
@@ -71,8 +71,8 @@ def write_status(slug: str, ws, state: str, detail: dict = None, error: str = No
 # 链接选择
 # ============================================================
 
-def select_dive_links(record_links: list, max_links: int = DEFAULT_MAX_LINKS) -> list:
-    """从 record links 选出本次 dive 要抓的链接。
+def select_survey_links(record_links: list, max_links: int = DEFAULT_MAX_LINKS) -> list:
+    """从 record links 选出本次 survey 要抓的链接。
 
     canonical 优先、related 次之（各组内保持原顺序）；跳过 fetched==1
     （record 原 raw/ 已有材料，不重复抓取）；normalize_url 去重；封顶 max_links。
@@ -147,10 +147,10 @@ def _related_entries(db_path, slug: str, limit: int = 5) -> list:
     return [{"id": k, "score": round(s, 1)} for k, s in scored[:limit] if k]
 
 
-def build_dive_task(slug: str, record: dict, dive_files: list, dive_summary: str,
+def build_survey_task(slug: str, record: dict, survey_files: list, survey_summary: str,
                     raw_files: list, raw_summary: str, related: list, ws) -> str:
-    """构造 dive agent 的 task prompt。"""
-    dive_md_out = str(paths.dive_md_path(slug, ws).resolve())
+    """构造 survey agent 的 task prompt。"""
+    survey_md_out = str(paths.survey_md_path(slug, ws).resolve())
     record_abs = str(paths.record_path(slug, ws).resolve())
     title = record.get("title") or slug
     links_block = "\n".join(
@@ -158,11 +158,11 @@ def build_dive_task(slug: str, record: dict, dive_files: list, dive_summary: str
         for l in (record.get("links") or [])
     ) or "- （record 无 links）"
     related_block = "\n".join(f"- {r['id']} (score={r['score']})" for r in related) or "- （无）"
-    dive_listing = "\n".join(dive_files) if dive_files else "  (dive/raw/ 为空)"
+    survey_listing = "\n".join(survey_files) if survey_files else "  (survey/raw/ 为空)"
     raw_listing = "\n".join(raw_files) if raw_files else "  (record raw/ 为空或不存在)"
 
-    return f"""你是知识深度解读 agent。基于给定材料，为记录 {slug} 写一页**深度解读**，写入唯一输出文件：
-`{dive_md_out}`
+    return f"""你是知识综述 agent。基于给定材料，为记录 {slug} 写一页**综述**，写入唯一输出文件：
+`{survey_md_out}`
 
 ## 背景记录（已提取的结构化信息，作为骨架与链接来源）
 
@@ -175,17 +175,17 @@ record 已提取的 links：
 
 ## 可用材料
 
-1. dive 新采集材料（`artifacts/{slug}/dive/raw/`，{dive_summary or '空'}）：
-{dive_listing}
+1. survey 新采集材料（`artifacts/{slug}/survey/raw/`，{survey_summary or '空'}）：
+{survey_listing}
 2. record 原始材料（`artifacts/{slug}/raw/`，{raw_summary or '空'}）：
 {raw_listing}
 
-## 输出契约（dive.md）
+## 输出契约（survey.md）
 
 写一个 Markdown 文件，结构严格如下：
 
 ```markdown
-# {title} — 深度解读
+# {title} — 综述
 > 生成：YYYY-MM-DD · 基于 N 个来源 · 记录：{slug}
 
 ## TL;DR
@@ -209,7 +209,7 @@ record 已提取的 links：
 2. **不整段搬运**：单源连续引用 ≤ 80 字；总结为主，细节让读者跳原始出处。
 3. 「分来源摘要」每个来源小节必须以 `更多内容请看：<url>` 收尾。
 4. **可溯源**：所有内容必须来自上面列出的材料文件或 record.json；禁止联网检索补充；禁止编造 URL。
-5. **禁止执行任何 git 操作**；禁止运行 publish / cli 命令；不要修改 dive.md 以外的任何文件。
+5. **禁止执行任何 git 操作**；禁止运行 publish / cli 命令；不要修改 survey.md 以外的任何文件。
 6. 完成后只返回简洁摘要（引用了几个来源、总字数）。
 
 ## 相关记录（系统提供；如非空，可在文末加一行「相关记录」）
@@ -218,32 +218,32 @@ record 已提取的 links：
 """
 
 
-def generate_dive_task(slug: str, ws=None) -> dict:
-    """生成 dive 任务 envelope（与 record task envelope 对齐 + task_mode=dive）。"""
+def generate_survey_task(slug: str, ws=None) -> dict:
+    """生成 survey 任务 envelope（与 record task envelope 对齐 + task_mode=survey）。"""
     from scripts.route_model import select_model
 
     ws = Path(ws) if ws is not None else paths.get_workspace()
     record = RS.load_record(slug, ws)
     if not record:
-        raise DiveError("RECORD_MISSING", f"record.json not found: {slug}",
+        raise SurveyError("RECORD_MISSING", f"record.json not found: {slug}",
                         next_cmd=f"{CLI_CMD} run --id {slug}")
-    dive_files, dive_summary = _summarize_dir(paths.dive_raw_dir(slug, ws), f"artifacts/{slug}/dive/raw/")
+    survey_files, survey_summary = _summarize_dir(paths.survey_raw_dir(slug, ws), f"artifacts/{slug}/survey/raw/")
     raw_files, raw_summary = _summarize_dir(paths.raw_dir(slug, ws), f"artifacts/{slug}/raw/")
     related = _related_entries(paths.db_path(ws), slug)
-    task_text = build_dive_task(slug, record, dive_files, dive_summary,
+    task_text = build_survey_task(slug, record, survey_files, survey_summary,
                                 raw_files, raw_summary, related, ws)
-    model_info = select_model("dive")
+    model_info = select_model("survey")
     return {
         "task": task_text,
-        "taskName": f"dive-{slug}",
+        "taskName": f"survey-{slug}",
         "model": model_info["model"],
         "fallback": model_info.get("fallback", []),
         "mode": "run",
-        "task_mode": "dive",
+        "task_mode": "survey",
         "cleanup": "keep",
         "context": "isolated",
         "slug": slug,
-        "output_path": str(paths.dive_md_path(slug, ws).resolve()),
+        "output_path": str(paths.survey_md_path(slug, ws).resolve()),
     }
 
 
@@ -265,39 +265,39 @@ def _collect_sources(slug, sources, max_depth=None, dest_base=None):
     return collect_sources(slug, sources, max_depth=max_depth, dest_base=dest_base)
 
 
-def collect_dive(slug: str, ws=None, max_links: int = DEFAULT_MAX_LINKS, force: bool = False) -> dict:
-    """采集 dive 材料 + 生成任务 payload；状态推进到 awaiting_agent。"""
+def collect_survey(slug: str, ws=None, max_links: int = DEFAULT_MAX_LINKS, force: bool = False) -> dict:
+    """采集 survey 材料 + 生成任务 payload；状态推进到 awaiting_agent。"""
     ws = Path(ws) if ws is not None else paths.get_workspace()
     record = RS.load_record(slug, ws)
     if not record:
-        raise DiveError("RECORD_MISSING", f"record.json not found: {slug}",
+        raise SurveyError("RECORD_MISSING", f"record.json not found: {slug}",
                         next_cmd=f"{CLI_CMD} run --id {slug}")
-    if paths.dive_md_path(slug, ws).exists() and not force:
-        raise DiveError("DIVE_EXISTS", f"dive already exists: {slug}（--force 重新生成）")
+    if paths.survey_md_path(slug, ws).exists() and not force:
+        raise SurveyError("SURVEY_EXISTS", f"survey already exists: {slug}（--force 重新生成）")
     current = read_status(slug, ws)
     if current.get("state") == "collecting" and not force:
-        raise DiveError("DIVE_RUNNING", f"dive is collecting: {slug}（--force 强制重跑）")
+        raise SurveyError("SURVEY_RUNNING", f"survey is collecting: {slug}（--force 强制重跑）")
 
     write_status(slug, ws, "collecting")
     try:
-        links = select_dive_links(record.get("links"), max_links=max_links)
+        links = select_survey_links(record.get("links"), max_links=max_links)
         if not links and not _raw_has_material(slug, ws):
-            raise DiveError("NO_MATERIAL", "record 无可抓取的 links，且原 raw/ 无材料")
+            raise SurveyError("NO_MATERIAL", "record 无可抓取的 links，且原 raw/ 无材料")
         summary = {"selected": [l["url"] for l in links], "collected": 0, "failed": 0}
         if links:
             sources = [_classify_for_collect(l["url"]) for l in links]
             log = _collect_sources(slug, sources, max_depth=1,
-                                   dest_base=paths.dive_raw_dir(slug, ws))
+                                   dest_base=paths.survey_raw_dir(slug, ws))
             s = (log or {}).get("summary", {})
             summary["collected"] = s.get("success", 0)
             summary["failed"] = s.get("failed", 0)
-        task = generate_dive_task(slug, ws)
-        task_path = paths.dive_task_path(slug, ws)
+        task = generate_survey_task(slug, ws)
+        task_path = paths.survey_task_path(slug, ws)
         task_path.parent.mkdir(parents=True, exist_ok=True)
         task_path.write_text(json.dumps(task, ensure_ascii=False, indent=2), encoding="utf-8")
         write_status(slug, ws, "awaiting_agent", detail=summary)
         return task
-    except DiveError as e:
+    except SurveyError as e:
         write_status(slug, ws, "failed", error=str(e)[:200])
         raise
     except Exception as e:
@@ -305,8 +305,8 @@ def collect_dive(slug: str, ws=None, max_links: int = DEFAULT_MAX_LINKS, force: 
         raise
 
 
-def spawn_dive_agent_if_possible(slug: str, ws=None) -> dict:
-    """sessions_spawn 可用时自动派发 dive agent；否则保持 awaiting_agent。"""
+def spawn_survey_agent_if_possible(slug: str, ws=None) -> dict:
+    """sessions_spawn 可用时自动派发 survey agent；否则保持 awaiting_agent。"""
     import shutil
     from scripts.lib import run_cmd
 
@@ -314,7 +314,7 @@ def spawn_dive_agent_if_possible(slug: str, ws=None) -> dict:
     exe = shutil.which("sessions_spawn")
     if not exe:
         return {"spawned": False, "reason": "sessions_spawn not found"}
-    task_path = paths.dive_task_path(slug, ws)
+    task_path = paths.survey_task_path(slug, ws)
     if not task_path.exists():
         return {"spawned": False, "reason": "task.json missing"}
     task = json.loads(task_path.read_text(encoding="utf-8"))
@@ -328,15 +328,15 @@ def spawn_dive_agent_if_possible(slug: str, ws=None) -> dict:
 # 校验 + 发布
 # ============================================================
 
-def validate_dive_md(text: str) -> tuple:
-    """校验 dive.md 结构契约，返回 (ok, errors)。"""
+def validate_survey_md(text: str) -> tuple:
+    """校验 survey.md 结构契约，返回 (ok, errors)。"""
     import re
     errors = []
     if not text or not text.strip():
-        return False, ["dive.md 为空"]
+        return False, ["survey.md 为空"]
     size = len(text.encode("utf-8"))
-    if size > DIVE_MD_MAX_BYTES:
-        errors.append(f"dive.md 过大（{size} > {DIVE_MD_MAX_BYTES} bytes，即 {DIVE_MD_MAX_BYTES // 1024}KB）")
+    if size > SURVEY_MD_MAX_BYTES:
+        errors.append(f"survey.md 过大（{size} > {SURVEY_MD_MAX_BYTES} bytes，即 {SURVEY_MD_MAX_BYTES // 1024}KB）")
     if not re.search(r"^#\s+\S", text, re.M):
         errors.append("missing H1 title（# ...）")
     for h2 in REQUIRED_H2:
@@ -347,9 +347,9 @@ def validate_dive_md(text: str) -> tuple:
     return (len(errors) == 0), errors
 
 
-def _collect_dive_fetch_sources(slug: str, ws) -> list:
-    """从 dive/raw/**/_fetch_results.json 汇总抓取来源（url + status）。"""
-    raw = paths.dive_raw_dir(slug, ws)
+def _collect_survey_fetch_sources(slug: str, ws) -> list:
+    """从 survey/raw/**/_fetch_results.json 汇总抓取来源（url + status）。"""
+    raw = paths.survey_raw_dir(slug, ws)
     sources = []
     seen = set()
     if not raw.exists():
@@ -368,28 +368,28 @@ def _collect_dive_fetch_sources(slug: str, ws) -> list:
     return sources
 
 
-def publish_dive(slug: str, ws=None, db_path=None) -> dict:
-    """发布 dive：结构校验 → dive.json（revision 自增）→ 重建站点 → status=done。"""
+def publish_survey(slug: str, ws=None, db_path=None) -> dict:
+    """发布 survey：结构校验 → survey.json（revision 自增）→ 重建站点 → status=done。"""
     from scripts.publish.lock import PublishLock
     from scripts.site.build import build_site
     from scripts import wiki_index
 
     ws = Path(ws) if ws is not None else paths.get_workspace()
     db_path = Path(db_path) if db_path is not None else paths.db_path(ws)
-    md_path = paths.dive_md_path(slug, ws)
+    md_path = paths.survey_md_path(slug, ws)
 
     if not md_path.exists():
-        raise DiveError("DIVE_MD_MISSING",
-                        f"dive.md missing: {md_path}（先执行 dive task 写页面）")
+        raise SurveyError("SURVEY_MD_MISSING",
+                        f"survey.md missing: {md_path}（先执行 survey task 写页面）")
     text = md_path.read_text(encoding="utf-8", errors="replace")
-    ok, errors = validate_dive_md(text)
+    ok, errors = validate_survey_md(text)
     if not ok:
         write_status(slug, ws, "failed", error="; ".join(errors)[:300])
-        raise DiveError("DIVE_VERIFY_FAILED", f"dive.md 校验失败: {'; '.join(errors)}")
+        raise SurveyError("SURVEY_VERIFY_FAILED", f"survey.md 校验失败: {'; '.join(errors)}")
 
     with PublishLock(timeout=30):
         record = RS.load_record(slug, ws) or {}
-        meta_path = paths.dive_json_path(slug, ws)
+        meta_path = paths.survey_json_path(slug, ws)
         prev = {}
         if meta_path.exists():
             try:
@@ -403,22 +403,22 @@ def publish_dive(slug: str, ws=None, db_path=None) -> dict:
             "created_at": prev.get("created_at") or now,
             "updated_at": now,
             "revision": int(prev.get("revision") or 0) + 1,
-            "sources": _collect_dive_fetch_sources(slug, ws),
+            "sources": _collect_survey_fetch_sources(slug, ws),
             "md_bytes": md_path.stat().st_size,
         }
         meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
         try:
-            wiki_index.record_event(db_path, slug, "DIVE", {"revision": meta["revision"]})
+            wiki_index.record_event(db_path, slug, "SURVEY", {"revision": meta["revision"]})
         except Exception:
             pass
         build_site(db_path, ws)
         write_status(slug, ws, "done", detail={"revision": meta["revision"]})
     return {"ok": True, "id": slug, "revision": meta["revision"],
-            "dive": f"artifacts/{slug}/dive/dive.md"}
+            "survey": f"artifacts/{slug}/survey/survey.md"}
 
 
-def _read_dive_meta(slug: str, ws) -> dict:
-    path = paths.dive_json_path(slug, ws)
+def _read_survey_meta(slug: str, ws) -> dict:
+    path = paths.survey_json_path(slug, ws)
     if not path.exists():
         return {}
     try:
@@ -428,19 +428,19 @@ def _read_dive_meta(slug: str, ws) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def dive_status(slug: str, ws=None) -> dict:
+def survey_status(slug: str, ws=None) -> dict:
     """CLI/API 共用的状态视图。"""
     ws = Path(ws) if ws is not None else paths.get_workspace()
     return {
         "id": slug,
         "status": read_status(slug, ws),
-        "has_dive": paths.dive_md_path(slug, ws).exists(),
-        "dive": _read_dive_meta(slug, ws),
+        "has_survey": paths.survey_md_path(slug, ws).exists(),
+        "survey": _read_survey_meta(slug, ws),
     }
 
 
-def list_dive_queue(ws=None) -> list:
-    """全部 awaiting_agent 的 dive（agent 的工作清单）。"""
+def list_survey_queue(ws=None) -> list:
+    """全部 awaiting_agent 的 survey（agent 的工作清单）。"""
     ws = Path(ws) if ws is not None else paths.get_workspace()
     adir = paths.artifacts_dir(ws)
     items = []

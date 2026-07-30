@@ -533,7 +533,7 @@ def collect_sources(slug: str, sources: list[dict], max_depth: int = None,
       {"input_type": "url", "source_type": "arxiv", "input": "..."}
       或旧 {"type": "url", "subtype": "arxiv_paper", "input": "..."}
     prefix 用于追加模式，如 "append_1/"。
-    dest_base 默认 paths.raw_dir(slug, WORKSPACE)；dive 等场景可显式覆盖。
+    dest_base 默认 paths.raw_dir(slug, WORKSPACE)；survey 等场景可显式覆盖。
     """
     config = sc.load_config()
     settings = sc.get_settings(config)

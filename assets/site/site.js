@@ -63,7 +63,7 @@ async function init() {
   const searchInput = document.getElementById('search');
   const statusSel = document.getElementById('filter-status');
   const container = document.getElementById('table-container');
-  // v3.5：支持 /site/?q=<kw> 预填搜索（dive.html 的 "View record" 回跳用）
+  // v3.5：支持 /site/?q=<kw> 预填搜索（survey.html 的 "View record" 回跳用）
   const q0 = getParam('q');
   if (q0) searchInput.value = q0;
 
@@ -161,11 +161,11 @@ async function init() {
           ).join(' ');
           html += '</p>';
         }
-        // v3.5: deep-dive button / link
-        if (e.has_dive) {
-          html += `<p><a class="dive-btn" href="/site/dive.html?id=${encodeURIComponent(e.id)}">🔍 查看深度解读</a></p>`;
+        // v3.5: survey（综述）button / link
+        if (e.has_survey) {
+          html += `<p><a class="survey-btn" href="/site/survey.html?id=${encodeURIComponent(e.id)}">🧭 查看综述</a></p>`;
         } else if (e.has_record) {
-          html += `<p><button class="dive-btn" data-diveid="${escapeHtml(e.id)}">🔍 深度解读</button> <span class="dive-status muted" data-divestatus="${escapeHtml(e.id)}"></span></p>`;
+          html += `<p><button class="survey-btn" data-surveyid="${escapeHtml(e.id)}">🧭 综述</button> <span class="survey-status muted" data-surveystatus="${escapeHtml(e.id)}"></span></p>`;
         }
         html += `<p><a href="/site/raw.html?id=${encodeURIComponent(e.id)}">📁 Raw materials</a></p>`;
         html += '</div></td></tr>';
@@ -193,36 +193,36 @@ async function init() {
       });
     });
 
-    // v3.5: dive trigger — POST /api/dive, poll status, graceful CLI fallback
-    container.querySelectorAll('[data-diveid]').forEach(btn => {
+    // v3.5: survey trigger — POST /api/survey, poll status, graceful CLI fallback
+    container.querySelectorAll('[data-surveyid]').forEach(btn => {
       btn.addEventListener('click', async (ev) => {
         ev.stopPropagation();
-        const id = btn.dataset.diveid;
-        const statusEl = container.querySelector(`[data-divestatus="${id}"]`);
-        const cliCmd = `python skills/wiki-curation/scripts/cli.py --json dive --id ${id}`;
+        const id = btn.dataset.surveyid;
+        const statusEl = container.querySelector(`[data-surveystatus="${id}"]`);
+        const cliCmd = `python skills/wiki-curation/scripts/cli.py --json survey --id ${id}`;
         const showFallback = (prefix) => {
           if (statusEl) statusEl.innerHTML = `${prefix || ''}请在终端执行：<code>${escapeHtml(cliCmd)}</code>`;
           btn.disabled = false;
         };
         btn.disabled = true;
         try {
-          const res = await fetch('/api/dive', {
+          const res = await fetch('/api/survey', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id }),
           });
-          if (res.status === 409) { showFallback('解读已存在或进行中。'); return; }
+          if (res.status === 409) { showFallback('综述已存在或进行中。'); return; }
           if (!res.ok) throw new Error('HTTP ' + res.status);
-          if (statusEl) statusEl.textContent = '已发起解读，正在采集材料…';
+          if (statusEl) statusEl.textContent = '已发起综述，正在采集材料…';
           const t0 = Date.now();
           const timer = setInterval(async () => {
             try {
-              const st = await (await fetch('/api/dive/status?id=' + encodeURIComponent(id))).json();
-              if (st.has_dive) {
+              const st = await (await fetch('/api/survey/status?id=' + encodeURIComponent(id))).json();
+              if (st.has_survey) {
                 clearInterval(timer);
                 const a = document.createElement('a');
-                a.className = 'dive-btn';
-                a.href = '/site/dive.html?id=' + encodeURIComponent(id);
-                a.textContent = '🔍 查看深度解读';
+                a.className = 'survey-btn';
+                a.href = '/site/survey.html?id=' + encodeURIComponent(id);
+                a.textContent = '🧭 查看综述';
                 btn.replaceWith(a);
                 if (statusEl) statusEl.textContent = '';
                 return;
@@ -234,7 +234,7 @@ async function init() {
             } catch (_) { /* 单次轮询失败忽略 */ }
           }, 5000);
         } catch (err) {
-          showFallback('本地服务不支持在线发起。');
+          showFallback('当前 wiki 服务不含在线发起接口（若刚升级，请重启 site --serve）。');
         }
       });
     });

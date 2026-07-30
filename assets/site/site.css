@@ -119,12 +119,12 @@ a:hover{text-decoration:underline}
 .markdown-body blockquote { border-left: 3px solid var(--accent); margin: 0.5rem 0; padding-left: 0.75rem; color: var(--muted); }
 .markdown-body code { background: var(--accent-soft); padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.85em; }
 
-/* Dive (deep-dive) */
-.dive-btn{display:inline-block;padding:.15rem .55rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--ink);font-size:.8rem;cursor:pointer;text-decoration:none}
-.dive-btn:hover{border-color:var(--accent);color:var(--accent);text-decoration:none}
-.dive-btn:disabled{opacity:.5;cursor:default}
-.dive-status code{background:var(--surface);border:1px solid var(--border);padding:.05rem .3rem;border-radius:4px;font-size:.75rem}
-.dive-nav{margin-bottom:.5rem}
+/* Survey 综述 */
+.survey-btn{display:inline-block;padding:.15rem .55rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--ink);font-size:.8rem;cursor:pointer;text-decoration:none}
+.survey-btn:hover{border-color:var(--accent);color:var(--accent);text-decoration:none}
+.survey-btn:disabled{opacity:.5;cursor:default}
+.survey-status code{background:var(--surface);border:1px solid var(--border);padding:.05rem .3rem;border-radius:4px;font-size:.75rem}
+.survey-nav{margin-bottom:.5rem}
 .markdown-body{max-width:860px}
 .markdown-body h1{font-size:1.4rem}
 .markdown-body h2{font-size:1.15rem;margin-top:1.6rem;border-bottom:1px solid var(--border);padding-bottom:.2rem}

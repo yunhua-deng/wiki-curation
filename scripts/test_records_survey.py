@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""test_records_dive.py — record 深度解读（dive）契约测试。"""
+"""test_records_survey.py — record 综述（survey）契约测试。"""
 import json
 from pathlib import Path
 
@@ -18,15 +18,15 @@ def _patch_ws(tmp: Path, monkeypatch):
 
 # ---------- Task 1: paths + dest_base ----------
 
-def test_dive_paths(tmp_path, monkeypatch):
+def test_survey_paths(tmp_path, monkeypatch):
     _patch_ws(tmp_path, monkeypatch)
-    base = tmp_path / "artifacts" / "rec1" / "dive"
-    assert paths.dive_dir("rec1") == base
-    assert paths.dive_raw_dir("rec1") == base / "raw"
-    assert paths.dive_md_path("rec1") == base / "dive.md"
-    assert paths.dive_json_path("rec1") == base / "dive.json"
-    assert paths.dive_status_path("rec1") == base / "status.json"
-    assert paths.dive_task_path("rec1") == base / "task.json"
+    base = tmp_path / "artifacts" / "rec1" / "survey"
+    assert paths.survey_dir("rec1") == base
+    assert paths.survey_raw_dir("rec1") == base / "raw"
+    assert paths.survey_md_path("rec1") == base / "survey.md"
+    assert paths.survey_json_path("rec1") == base / "survey.json"
+    assert paths.survey_status_path("rec1") == base / "status.json"
+    assert paths.survey_task_path("rec1") == base / "task.json"
 
 
 def test_collect_sources_dest_base_override(tmp_path, monkeypatch):
@@ -42,7 +42,7 @@ def test_collect_sources_dest_base_override(tmp_path, monkeypatch):
     monkeypatch.setattr(CM, "_run_handler", fake_handler)
     sources = [{"input_type": "url", "source_type": "generic_web", "input": "https://example.com/a"}]
 
-    custom = tmp_path / "artifacts" / "rec1" / "dive" / "raw"
+    custom = tmp_path / "artifacts" / "rec1" / "survey" / "raw"
     log = CM.collect_sources("rec1", sources, max_depth=1, dest_base=custom)
     assert (custom / "s0" / "page.html").exists()
     assert (custom / "_drill_log.json").exists()
@@ -51,42 +51,42 @@ def test_collect_sources_dest_base_override(tmp_path, monkeypatch):
     assert not (paths.raw_dir("rec1") / "s0" / "page.html").exists()
 
 
-# ---------- Task 2: status + select_dive_links ----------
+# ---------- Task 2: status + select_survey_links ----------
 
 def _link(url, kind="other", role="related", fetched=None):
     return {"url": url, "kind": kind, "role": role, "origin": "explicit", "fetched": fetched}
 
 
-def test_select_dive_links_canonical_first_and_skip_fetched(tmp_path):
-    from scripts.records import dive as DV
+def test_select_survey_links_canonical_first_and_skip_fetched(tmp_path):
+    from scripts.records import survey as DV
     links = [
         _link("https://example.com/related1", role="related"),
         _link("https://github.com/a/b", kind="github", role="canonical"),
         _link("https://example.com/fetched", role="canonical", fetched=1),
         _link("https://arxiv.org/abs/2501.0001", kind="arxiv", role="related"),
     ]
-    out = DV.select_dive_links(links)
+    out = DV.select_survey_links(links)
     urls = [l["url"] for l in out]
     assert urls[0] == "https://github.com/a/b"          # canonical 优先
     assert "https://example.com/fetched" not in urls    # fetched==1 跳过
     assert urls[1:] == ["https://example.com/related1", "https://arxiv.org/abs/2501.0001"]
 
 
-def test_select_dive_links_dedup_and_cap(tmp_path):
-    from scripts.records import dive as DV
+def test_select_survey_links_dedup_and_cap(tmp_path):
+    from scripts.records import survey as DV
     links = [
         _link("https://example.com/a/?utm_source=x", role="canonical"),
         _link("https://example.com/a", role="related"),   # normalize 后重复
         _link("https://example.com/b"),
         _link("https://example.com/c"),
     ]
-    out = DV.select_dive_links(links, max_links=2)
+    out = DV.select_survey_links(links, max_links=2)
     assert [l["url"] for l in out] == ["https://example.com/a/?utm_source=x", "https://example.com/b"]
 
 
 def test_status_roundtrip(tmp_path, monkeypatch):
     _patch_ws(tmp_path, monkeypatch)
-    from scripts.records import dive as DV
+    from scripts.records import survey as DV
     assert DV.read_status("rec1") == {}
     DV.write_status("rec1", None, "collecting")
     st = DV.read_status("rec1")
@@ -96,7 +96,7 @@ def test_status_roundtrip(tmp_path, monkeypatch):
     assert st["state"] == "failed" and st["error"] == "boom"
 
 
-# ---------- Task 3: collect_dive + generate_dive_task ----------
+# ---------- Task 3: collect_survey + generate_survey_task ----------
 
 VALID_RECORD = {
     "version": "3.0", "id": "rec1", "title": "Helix VLA Project", "date": "2026-07-20",
@@ -118,10 +118,10 @@ def _seed_record(tmp: Path, record=None):
     RS.save_record("rec1", tmp, record or VALID_RECORD)
 
 
-def test_collect_dive_happy_path(tmp_path, monkeypatch):
+def test_collect_survey_happy_path(tmp_path, monkeypatch):
     _patch_ws(tmp_path, monkeypatch)
     _seed_record(tmp_path)
-    from scripts.records import dive as DV
+    from scripts.records import survey as DV
 
     calls = {}
 
@@ -133,61 +133,61 @@ def test_collect_dive_happy_path(tmp_path, monkeypatch):
         (Path(dest_base) / "s0" / "readme.html").write_text("x", encoding="utf-8")
         return {"levels": [], "summary": {"total_files": 1, "success": 1, "failed": 0, "needs_manual": 0}}
 
-    monkeypatch.setattr("scripts.records.dive._collect_sources", fake_collect)
+    monkeypatch.setattr("scripts.records.survey._collect_sources", fake_collect)
 
-    task = DV.collect_dive("rec1")
+    task = DV.collect_survey("rec1")
     # fetched==1 的 arxiv 被跳过，只抓 github canonical
     assert [s["input"] for s in calls["sources"]] == ["https://github.com/figure/helix"]
-    assert Path(calls["dest_base"]) == paths.dive_raw_dir("rec1", tmp_path)
-    assert task["task_mode"] == "dive" and task["slug"] == "rec1"
-    assert "深度解读" in task["task"] and "更多内容请看" in task["task"]
-    assert paths.dive_task_path("rec1", tmp_path).exists()
+    assert Path(calls["dest_base"]) == paths.survey_raw_dir("rec1", tmp_path)
+    assert task["task_mode"] == "survey" and task["slug"] == "rec1"
+    assert "综述" in task["task"] and "更多内容请看" in task["task"]
+    assert paths.survey_task_path("rec1", tmp_path).exists()
     st = DV.read_status("rec1", tmp_path)
     assert st["state"] == "awaiting_agent"
     assert st["detail"]["collected"] == 1
 
 
-def test_collect_dive_errors(tmp_path, monkeypatch):
+def test_collect_survey_errors(tmp_path, monkeypatch):
     _patch_ws(tmp_path, monkeypatch)
-    from scripts.records import dive as DV
+    from scripts.records import survey as DV
     # RECORD_MISSING
-    with pytest.raises(DV.DiveError) as ei:
-        DV.collect_dive("rec1")
+    with pytest.raises(DV.SurveyError) as ei:
+        DV.collect_survey("rec1")
     assert ei.value.code == "RECORD_MISSING"
     # NO_MATERIAL：record 无 links 且无 raw
     rec = dict(VALID_RECORD); rec["links"] = []
     _seed_record(tmp_path, rec)
-    with pytest.raises(DV.DiveError) as ei:
-        DV.collect_dive("rec1")
+    with pytest.raises(DV.SurveyError) as ei:
+        DV.collect_survey("rec1")
     assert ei.value.code == "NO_MATERIAL"
     assert DV.read_status("rec1", tmp_path)["state"] == "failed"
-    # DIVE_EXISTS
+    # SURVEY_EXISTS
     _seed_record(tmp_path)
-    paths.dive_md_path("rec1", tmp_path).parent.mkdir(parents=True, exist_ok=True)
-    paths.dive_md_path("rec1", tmp_path).write_text("# x", encoding="utf-8")
-    with pytest.raises(DV.DiveError) as ei:
-        DV.collect_dive("rec1")
-    assert ei.value.code == "DIVE_EXISTS"
+    paths.survey_md_path("rec1", tmp_path).parent.mkdir(parents=True, exist_ok=True)
+    paths.survey_md_path("rec1", tmp_path).write_text("# x", encoding="utf-8")
+    with pytest.raises(DV.SurveyError) as ei:
+        DV.collect_survey("rec1")
+    assert ei.value.code == "SURVEY_EXISTS"
 
 
-def test_generate_dive_task_contract(tmp_path, monkeypatch):
+def test_generate_survey_task_contract(tmp_path, monkeypatch):
     _patch_ws(tmp_path, monkeypatch)
     _seed_record(tmp_path)
-    from scripts.records import dive as DV
-    task = DV.generate_dive_task("rec1")
-    assert task["task_mode"] == "dive"
-    assert task["taskName"] == "dive-rec1"
-    assert task["output_path"] == str(paths.dive_md_path("rec1", tmp_path).resolve())
+    from scripts.records import survey as DV
+    task = DV.generate_survey_task("rec1")
+    assert task["task_mode"] == "survey"
+    assert task["taskName"] == "survey-rec1"
+    assert task["output_path"] == str(paths.survey_md_path("rec1", tmp_path).resolve())
     body = task["task"]
     for needle in ["record.json", "TL;DR", "核心内容", "分来源摘要", "原始出处",
-                   "更多内容请看", "禁止", "dive/raw"]:
+                   "更多内容请看", "禁止", "survey/raw"]:
         assert needle in body, needle
     assert task["model"]  # 非空
 
 
 # ---------- Task 4: validate + publish + status/queue ----------
 
-GOOD_DIVE_MD = """# Helix — 深度解读
+GOOD_SURVEY_MD = """# Helix — 综述
 > 生成：2026-07-29 · 基于 2 个来源 · 记录：rec1
 
 ## TL;DR
@@ -207,9 +207,9 @@ Helix 是 Figure 的 VLA 项目。
 """
 
 
-def test_validate_dive_md(tmp_path):
-    from scripts.records import dive as DV
-    ok, errors = DV.validate_dive_md(GOOD_DIVE_MD)
+def test_validate_survey_md(tmp_path):
+    from scripts.records import survey as DV
+    ok, errors = DV.validate_survey_md(GOOD_SURVEY_MD)
     assert ok, errors
     for bad, needle in [
         ("", "空"),
@@ -217,76 +217,76 @@ def test_validate_dive_md(tmp_path):
         ("## TL;DR\nx\n\n## 核心内容\nx\n\n## 分来源摘要\nx\n\n## 原始出处\n- https://a.b", "H1"),
         ("# t\n\n## TL;DR\nx\n\n## 核心内容\nx\n\n## 分来源摘要\nx\n\n## 原始出处\n无链接", "URL"),
     ]:
-        ok, errors = DV.validate_dive_md(bad)
+        ok, errors = DV.validate_survey_md(bad)
         assert not ok
         assert any(needle in e for e in errors), (needle, errors)
-    big = GOOD_DIVE_MD + "x" * (DV.DIVE_MD_MAX_BYTES + 10)
-    ok, errors = DV.validate_dive_md(big)
+    big = GOOD_SURVEY_MD + "x" * (DV.SURVEY_MD_MAX_BYTES + 10)
+    ok, errors = DV.validate_survey_md(big)
     assert not ok and any("过大" in e or "KB" in e for e in errors)
 
 
-def test_publish_dive_happy_path(tmp_path, monkeypatch):
+def test_publish_survey_happy_path(tmp_path, monkeypatch):
     _patch_ws(tmp_path, monkeypatch)
     _seed_record(tmp_path)
     conftest.seed_entry(paths.db_path(tmp_path), "rec1", status="done")
-    from scripts.records import dive as DV
+    from scripts.records import survey as DV
 
-    dive_dir = paths.dive_dir("rec1", tmp_path)
-    dive_dir.mkdir(parents=True, exist_ok=True)
-    (dive_dir / "dive.md").write_text(GOOD_DIVE_MD, encoding="utf-8")
-    raw = paths.dive_raw_dir("rec1", tmp_path)
+    survey_dir = paths.survey_dir("rec1", tmp_path)
+    survey_dir.mkdir(parents=True, exist_ok=True)
+    (survey_dir / "survey.md").write_text(GOOD_SURVEY_MD, encoding="utf-8")
+    raw = paths.survey_raw_dir("rec1", tmp_path)
     conftest.write_fetch_results(raw / "s0", [
         {"url": "https://github.com/figure/helix", "status": "success"}])
 
-    result = DV.publish_dive("rec1", tmp_path, paths.db_path(tmp_path))
+    result = DV.publish_survey("rec1", tmp_path, paths.db_path(tmp_path))
     assert result["ok"] and result["revision"] == 1
-    meta = json.loads(paths.dive_json_path("rec1", tmp_path).read_text(encoding="utf-8"))
+    meta = json.loads(paths.survey_json_path("rec1", tmp_path).read_text(encoding="utf-8"))
     assert meta["title"] == "Helix VLA Project"
     assert meta["sources"] == [{"url": "https://github.com/figure/helix", "status": "success"}]
     assert DV.read_status("rec1", tmp_path)["state"] == "done"
     # 站点索引
-    dives = json.loads((tmp_path / "site" / "data" / "dives.json").read_text(encoding="utf-8"))
-    assert dives and dives[0]["slug"] == "rec1"
+    surveys = json.loads((tmp_path / "site" / "data" / "surveys.json").read_text(encoding="utf-8"))
+    assert surveys and surveys[0]["slug"] == "rec1"
     entries = json.loads((tmp_path / "site" / "data" / "entries.json").read_text(encoding="utf-8"))
     rec1 = [e for e in entries if e["id"] == "rec1"][0]
-    assert rec1["has_dive"] is True and rec1["dive"]["date"]
+    assert rec1["has_survey"] is True and rec1["survey"]["date"]
     # 再发布 → revision 自增、created_at 保留
-    result2 = DV.publish_dive("rec1", tmp_path, paths.db_path(tmp_path))
+    result2 = DV.publish_survey("rec1", tmp_path, paths.db_path(tmp_path))
     assert result2["revision"] == 2
-    meta2 = json.loads(paths.dive_json_path("rec1", tmp_path).read_text(encoding="utf-8"))
+    meta2 = json.loads(paths.survey_json_path("rec1", tmp_path).read_text(encoding="utf-8"))
     assert meta2["created_at"] == meta["created_at"]
 
 
-def test_publish_dive_verify_failed(tmp_path, monkeypatch):
+def test_publish_survey_verify_failed(tmp_path, monkeypatch):
     _patch_ws(tmp_path, monkeypatch)
     _seed_record(tmp_path)
     conftest.seed_entry(paths.db_path(tmp_path), "rec1", status="done")
-    from scripts.records import dive as DV
-    dive_dir = paths.dive_dir("rec1", tmp_path)
-    dive_dir.mkdir(parents=True, exist_ok=True)
-    (dive_dir / "dive.md").write_text("# too short", encoding="utf-8")
-    with pytest.raises(DV.DiveError) as ei:
-        DV.publish_dive("rec1", tmp_path, paths.db_path(tmp_path))
-    assert ei.value.code == "DIVE_VERIFY_FAILED"
+    from scripts.records import survey as DV
+    survey_dir = paths.survey_dir("rec1", tmp_path)
+    survey_dir.mkdir(parents=True, exist_ok=True)
+    (survey_dir / "survey.md").write_text("# too short", encoding="utf-8")
+    with pytest.raises(DV.SurveyError) as ei:
+        DV.publish_survey("rec1", tmp_path, paths.db_path(tmp_path))
+    assert ei.value.code == "SURVEY_VERIFY_FAILED"
     assert DV.read_status("rec1", tmp_path)["state"] == "failed"
 
 
-def test_dive_status_and_queue(tmp_path, monkeypatch):
+def test_survey_status_and_queue(tmp_path, monkeypatch):
     _patch_ws(tmp_path, monkeypatch)
-    from scripts.records import dive as DV
+    from scripts.records import survey as DV
     DV.write_status("a1", tmp_path, "awaiting_agent", detail={"collected": 2})
     DV.write_status("a2", tmp_path, "done")
     (tmp_path / "artifacts" / "a1").mkdir(exist_ok=True)
     (tmp_path / "artifacts" / "a2").mkdir(exist_ok=True)
-    queue = DV.list_dive_queue(tmp_path)
+    queue = DV.list_survey_queue(tmp_path)
     assert [q["id"] for q in queue] == ["a1"]
-    st = DV.dive_status("a1", tmp_path)
-    assert st["status"]["state"] == "awaiting_agent" and st["has_dive"] is False
+    st = DV.survey_status("a1", tmp_path)
+    assert st["status"]["state"] == "awaiting_agent" and st["has_survey"] is False
 
 
 # ---------- Task 5: CLI ----------
 
-def _dive_args(ws, **over):
+def _survey_args(ws, **over):
     base = {"json": True, "quiet": True, "workspace": str(ws),
             "id": None, "status": False, "queue": False, "task": False,
             "publish": False, "force": False, "max_links": 5,
@@ -295,38 +295,38 @@ def _dive_args(ws, **over):
     return type("A", (), base)()
 
 
-def test_cli_dive_status_and_queue(tmp_path, monkeypatch, capsys):
+def test_cli_survey_status_and_queue(tmp_path, monkeypatch, capsys):
     _patch_ws(tmp_path, monkeypatch)
-    from scripts.records import dive as DV
+    from scripts.records import survey as DV
     DV.write_status("rec1", tmp_path, "awaiting_agent", detail={"collected": 1})
     (tmp_path / "artifacts" / "rec1").mkdir(exist_ok=True)
 
     from scripts import cli
-    args = _dive_args(tmp_path, id="rec1", status=True)
-    assert cli.cmd_dive(args) == 0
+    args = _survey_args(tmp_path, id="rec1", status=True)
+    assert cli.cmd_survey(args) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["ok"] and out["data"]["status"]["state"] == "awaiting_agent"
 
-    args = _dive_args(tmp_path, queue=True)
-    assert cli.cmd_dive(args) == 0
+    args = _survey_args(tmp_path, queue=True)
+    assert cli.cmd_survey(args) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["data"]["count"] == 1 and out["data"]["queue"][0]["id"] == "rec1"
 
 
-def test_cli_dive_error_shape(tmp_path, monkeypatch, capsys):
+def test_cli_survey_error_shape(tmp_path, monkeypatch, capsys):
     _patch_ws(tmp_path, monkeypatch)
     from scripts import cli
-    args = _dive_args(tmp_path, id="ghost")
-    assert cli.cmd_dive(args) == 1
+    args = _survey_args(tmp_path, id="ghost")
+    assert cli.cmd_survey(args) == 1
     out = json.loads(capsys.readouterr().out)
     assert out["ok"] is False and out["error"] == "RECORD_MISSING"
 
 
-def test_manifest_has_dive(capsys):
+def test_manifest_has_survey(capsys):
     from scripts import cli
     args = type("A", (), {"json": True})()
     assert cli.cmd_manifest(args) == 0
     out = json.loads(capsys.readouterr().out)
     names = [c["name"] for c in out["data"]["commands"]]
-    assert "dive" in names
+    assert "survey" in names
     assert out["data"]["version"] == "3.5"

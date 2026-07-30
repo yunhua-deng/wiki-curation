@@ -41,10 +41,10 @@ tasks:
         path: data.commands
         item: stats
         key: name
-      - name: has dive command
+      - name: has survey command
         type: json_contains
         path: data.commands
-        item: dive
+        item: survey
         key: name
 
   - id: doctor-quick

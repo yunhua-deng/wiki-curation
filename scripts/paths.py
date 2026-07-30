@@ -100,36 +100,36 @@ def audit_md_path(slug: str, depth: str, ws=None) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# dive（记录深度解读）产物路径（wiki/artifacts/{slug}/dive/...）
+# survey（记录综述）产物路径（wiki/artifacts/{slug}/survey/...）
 # ---------------------------------------------------------------------------
-def dive_dir(slug: str, ws=None) -> Path:
-    """dive 产物目录：wiki/artifacts/{slug}/dive"""
-    return entry_dir(slug, ws) / "dive"
+def survey_dir(slug: str, ws=None) -> Path:
+    """survey 产物目录：wiki/artifacts/{slug}/survey"""
+    return entry_dir(slug, ws) / "survey"
 
 
-def dive_raw_dir(slug: str, ws=None) -> Path:
-    """dive 采集材料目录：wiki/artifacts/{slug}/dive/raw"""
-    return dive_dir(slug, ws) / "raw"
+def survey_raw_dir(slug: str, ws=None) -> Path:
+    """survey 采集材料目录：wiki/artifacts/{slug}/survey/raw"""
+    return survey_dir(slug, ws) / "raw"
 
 
-def dive_md_path(slug: str, ws=None) -> Path:
-    """dive 页面路径：wiki/artifacts/{slug}/dive/dive.md"""
-    return dive_dir(slug, ws) / "dive.md"
+def survey_md_path(slug: str, ws=None) -> Path:
+    """survey 页面路径：wiki/artifacts/{slug}/survey/survey.md"""
+    return survey_dir(slug, ws) / "survey.md"
 
 
-def dive_json_path(slug: str, ws=None) -> Path:
-    """dive 元数据路径：wiki/artifacts/{slug}/dive/dive.json"""
-    return dive_dir(slug, ws) / "dive.json"
+def survey_json_path(slug: str, ws=None) -> Path:
+    """survey 元数据路径：wiki/artifacts/{slug}/survey/survey.json"""
+    return survey_dir(slug, ws) / "survey.json"
 
 
-def dive_status_path(slug: str, ws=None) -> Path:
-    """dive 状态机路径：wiki/artifacts/{slug}/dive/status.json"""
-    return dive_dir(slug, ws) / "status.json"
+def survey_status_path(slug: str, ws=None) -> Path:
+    """survey 状态机路径：wiki/artifacts/{slug}/survey/status.json"""
+    return survey_dir(slug, ws) / "status.json"
 
 
-def dive_task_path(slug: str, ws=None) -> Path:
-    """dive 任务 payload 路径：wiki/artifacts/{slug}/dive/task.json"""
-    return dive_dir(slug, ws) / "task.json"
+def survey_task_path(slug: str, ws=None) -> Path:
+    """survey 任务 payload 路径：wiki/artifacts/{slug}/survey/task.json"""
+    return survey_dir(slug, ws) / "task.json"
 
 
 # ---------------------------------------------------------------------------

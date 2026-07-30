@@ -316,18 +316,18 @@ def _build_trends(wiki_dir: Path) -> list[dict]:
     return items
 
 
-def _build_dives(wiki_dir: Path) -> list[dict]:
-    """v3.5：扫描 artifacts/*/dive/dive.md，生成深度解读索引。"""
+def _build_surveys(wiki_dir: Path) -> list[dict]:
+    """v3.5：扫描 artifacts/*/survey/survey.md，生成综述索引。"""
     artifacts = Path(wiki_dir) / "artifacts"
     if not artifacts.exists():
         return []
     items = []
     for entry_dir in sorted(artifacts.iterdir()):
-        md = entry_dir / "dive" / "dive.md"
+        md = entry_dir / "survey" / "survey.md"
         if not md.is_file():
             continue
         meta = {}
-        meta_path = entry_dir / "dive" / "dive.json"
+        meta_path = entry_dir / "survey" / "survey.json"
         if meta_path.exists():
             try:
                 meta = json.loads(meta_path.read_text(encoding="utf-8", errors="replace")) or {}
@@ -431,14 +431,14 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
     display_entries = [_slim_entry(e) for e in entries]
     for de in display_entries:
         de["_related"] = related_map.get(de["id"], [])
-    # v3.5：深度解读索引 + has_dive 注入（须先于 entries.json 落盘）
-    dives = _build_dives(wiki_dir)
-    dive_map = {d["slug"]: d for d in dives}
+    # v3.5：综述索引 + has_survey 注入（须先于 entries.json 落盘）
+    surveys = _build_surveys(wiki_dir)
+    survey_map = {d["slug"]: d for d in surveys}
     for de in display_entries:
-        dv = dive_map.get(de["id"])
-        de["has_dive"] = bool(dv)
+        dv = survey_map.get(de["id"])
+        de["has_survey"] = bool(dv)
         if dv:
-            de["dive"] = {"date": dv["date"], "excerpt": dv["excerpt"]}
+            de["survey"] = {"date": dv["date"], "excerpt": dv["excerpt"]}
     (data_dir / "entries.json").write_text(
         json.dumps(display_entries, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )
@@ -480,7 +480,7 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
 
     # v3.3：清理陈旧 data 产物（search_index/themes 等已废弃文件）
     current_data = {"entries.json", "tags.json", "sources.json", "entities.json",
-                    "graph.json", "timeline.json", "trends.json", "dives.json"}
+                    "graph.json", "timeline.json", "trends.json", "surveys.json"}
     for f in data_dir.glob("*.json"):
         if f.name not in current_data:
             f.unlink()
@@ -491,16 +491,16 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
         json.dumps(trends, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )
 
-    # v3.5：深度解读索引（dives 已在 entries.json 落盘前扫描）
-    (data_dir / "dives.json").write_text(
-        json.dumps(dives, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
+    # v3.5：综述索引（surveys 已在 entries.json 落盘前扫描）
+    (data_dir / "surveys.json").write_text(
+        json.dumps(surveys, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )
 
     # v3.3：重新生成 wiki/wiki.html 静态语义索引
     _write_html_index(display_entries, wiki_dir)
 
-    # 站点已简化为单页结构，清理旧版多页站点的遗留页面
-    for legacy_page in ("browse.html", "graph.html", "clusters.html", "timeline.html"):
+    # 站点已简化为单页结构，清理旧版多页站点的遗留页面（dive.html 为 v3.5 初版命名，已更名 survey.html）
+    for legacy_page in ("browse.html", "graph.html", "clusters.html", "timeline.html", "dive.html"):
         legacy_path = out_dir / legacy_page
         if legacy_path.exists():
             legacy_path.unlink()

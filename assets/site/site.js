@@ -70,13 +70,9 @@ async function init() {
   ]);
 
   // stats
-  const total = entries.length;
-  const done = entries.filter(e => e.status === 'done').length;
   const withRec = entries.filter(e => e.has_record).length;
   const trendCount = (trends || []).length;
   document.getElementById('stats').innerHTML = `
-    <div class="stat"><b>${total}</b> entries</div>
-    <div class="stat"><b>${done}</b> done</div>
     <div class="stat"><b>${withRec}</b> records</div>
     <div class="stat"><b>${entries.filter(e => e.watched).length}</b> watching</div>
     <div class="stat"><b>${trendCount}</b> trends</div>

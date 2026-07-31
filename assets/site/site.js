@@ -130,8 +130,8 @@ async function init() {
       for (const e of visible) {
         const tldr = (e.summary && e.summary.tldr) || e.overview || '';
         const linksHtml = (e.links||[]).slice(0,6).map(l => linkBadge(l)).join('');
-        html += `<tr class="wiki-row" data-id="${escapeHtml(e.id)}">`;
-        html += `<td class="col-id"><a href="javascript:void(0)" class="row-toggle">${escapeHtml(e.id)}</a></td>`;
+        html += `<tr class="wiki-row" data-id="${escapeHtml(e.id)}" title="点击展开详情">`;
+        html += `<td class="col-id"><span class="row-toggle-id">${escapeHtml(e.id)}</span></td>`;
         html += `<td class="col-type"><span class="badge badge-other">${escapeHtml(e.topic_type||e.type||'—')}</span></td>`;
         html += `<td class="col-title">${escapeHtml(e.title||e.id)}</td>`;
         html += `<td class="col-tldr"><span class="tldr-trunc">${escapeHtml(tldr).substring(0,100)}</span></td>`;
@@ -226,11 +226,10 @@ async function init() {
       });
     });
 
-    // row expansion
-    container.querySelectorAll('.row-toggle').forEach(a => {
-      a.addEventListener('click', (ev) => {
-        ev.preventDefault();
-        const row = a.closest('tr');
+    // v3.9: whole-row click toggles detail (interactive elements excluded)
+    container.querySelectorAll('tr.wiki-row').forEach(row => {
+      row.addEventListener('click', (ev) => {
+        if (ev.target.closest('a, button, input, select, textarea, label')) return;
         const detail = document.getElementById('detail-' + row.dataset.id);
         if (detail) detail.style.display = detail.style.display === 'none' ? '' : 'none';
       });

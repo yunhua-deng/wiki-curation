@@ -135,3 +135,29 @@ def test_handle_add_link_flow(tmp_path, monkeypatch):
                                                 "update_survey": True}, spawner=spawner)
     assert code == 200 and data.get("survey", {}).get("state") == "collecting"
     assert spawned and spawned[-1][2] is True
+
+
+def test_handle_track(tmp_path, monkeypatch):
+    _patch_ws(tmp_path, monkeypatch)
+    conftest.seed_entry(paths.db_path(tmp_path), "a1", status="done")
+    from scripts.site import api
+    spawned = []
+    spawner = lambda ws, cmd: spawned.append(cmd)
+    # 非 loopback / 缺 name / 非法 name
+    code, data = api.handle_track(tmp_path, {"name": "Yunzhu Li"}, client_ip="10.0.0.9")
+    assert code == 403
+    code, data = api.handle_track(tmp_path, {})
+    assert code == 400 and data["error"] == "MISSING_NAME"
+    code, data = api.handle_track(tmp_path, {"name": "x" * 100})
+    assert code == 400
+    # 创建 → 202 + spawner 收到 track --auto 命令
+    code, data = api.handle_track(tmp_path, {"name": "Yunzhu Li", "kind": "person"},
+                                  spawner=spawner)
+    assert code == 202 and data["ok"] and data["slug"] == "yunzhu-li"
+    assert spawned and "--auto" in spawned[-1] and "--name" in spawned[-1]
+    # 已存在（模拟子进程已创建 topic）→ 200 幂等，不再 spawn
+    from scripts import tracking as TR
+    TR.create_topic("Yunzhu Li", ws=tmp_path, db_path=paths.db_path(tmp_path))
+    code, data = api.handle_track(tmp_path, {"name": "Yunzhu Li"}, spawner=spawner)
+    assert code == 200 and data["exists"] is True
+    assert len(spawned) == 1

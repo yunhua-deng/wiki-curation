@@ -569,6 +569,107 @@ def cmd_add_link(args) -> int:
         return 1
 
 
+def cmd_post(args) -> int:
+    """post：技术 post——topic 取证 / 多记录融合 / hub 建议；--auto 端到端写作发布。"""
+    try:
+        from scripts import posts as POSTS
+        ws = paths.get_workspace()
+        db = paths.db_path(ws)
+        if getattr(args, "suggest", False):
+            items = POSTS.suggest_post_topics(db, ws=ws)
+            _print_result({"ok": True, "data": {"suggestions": items, "count": len(items)}}, args.json)
+            return 0
+        if getattr(args, "records", None):
+            ids = [x.strip() for x in args.records.split(",") if x.strip()]
+            trigger = {"kind": "records", "ids": ids}
+        elif getattr(args, "topic", None):
+            trigger = {"kind": "topic", "topic": args.topic}
+        else:
+            _print_result({"ok": False, "error": "MISSING_TRIGGER",
+                           "message": "post 需要 --topic / --records / --suggest 之一"}, args.json)
+            return 1
+        if getattr(args, "auto", False):
+            result = POSTS.auto_write_post(trigger, ws, db)
+            _print_result({"ok": True, "data": result}, args.json)
+            return 0
+        task = POSTS.generate_post_task(trigger, ws, db, limit=args.limit)
+        _print_result({"ok": True, "data": task}, args.json)
+        if not args.json:
+            print()
+            print(f"  post task 已生成（staging: {task['staging_path']}）")
+            print(f"  端到端自动写作: {sys.executable} {SCRIPT_DIR / 'cli.py'} post ... --auto")
+        return 0
+    except Exception as e:
+        from scripts.posts import PostError
+        if isinstance(e, PostError):
+            _print_result({"ok": False, "error": e.code, "message": str(e)}, args.json)
+        else:
+            _print_result({"ok": False, "error": "POST_FAILED", "message": str(e)}, args.json)
+        return 1
+
+
+def cmd_track(args) -> int:
+    """track：实体跟踪主题——create / refresh / list / due / archive。"""
+    try:
+        from scripts import tracking as TR
+        ws = paths.get_workspace()
+        db = paths.db_path(ws)
+        if getattr(args, "list", False):
+            items = TR.list_topics(ws)
+            out = [{"slug": t["slug"], "name": t["name"], "kind": t.get("kind"),
+                    "records": len(t.get("records") or []),
+                    "next_due": (t.get("refresh") or {}).get("next_due") or "",
+                    "digest_revision": t.get("digest_revision") or 0} for t in items]
+            _print_result({"ok": True, "data": {"topics": out, "count": len(out)}}, args.json)
+            return 0
+        if getattr(args, "due", False):
+            items = TR.due_topics(ws)
+            _print_result({"ok": True, "data": {"due": [t["slug"] for t in items],
+                                                "count": len(items)}}, args.json)
+            return 0
+        if getattr(args, "archive", None):
+            t = TR.archive_topic(args.archive, ws)
+            _print_result({"ok": True, "data": {"slug": t["slug"], "status": t["status"]}}, args.json)
+            return 0
+        if getattr(args, "refresh", None):
+            result = TR.refresh_topic(args.refresh, ws, db, auto=getattr(args, "auto", False))
+            _print_result({"ok": True, "data": result}, args.json)
+            return 0
+        if getattr(args, "name", None):
+            sources = {}
+            for k in ("homepage", "github", "scholar", "arxiv", "blog", "linkedin"):
+                v = getattr(args, k, None)
+                if v:
+                    sources[k] = v
+            # 已存在 → 视为登记来源/更新（幂等）
+            slug = TR.slugify_name(args.name)
+            if TR.load_topic(slug, ws):
+                if sources:
+                    t = TR.update_sources(slug, sources, ws)
+                    _print_result({"ok": True, "data": {"slug": slug, "updated_sources": True,
+                                                        "sources": t["sources"]}}, args.json)
+                else:
+                    _print_result({"ok": True, "data": {"slug": slug, "exists": True}}, args.json)
+                return 0
+            topic = TR.create_topic(args.name, kind=args.kind, sources=sources, ws=ws, db_path=db)
+            data = {"slug": topic["slug"], "records": topic["records"],
+                    "record_count": len(topic["records"])}
+            if getattr(args, "auto", False):
+                data["digest"] = TR.auto_write_digest(topic["slug"], ws, db)
+            _print_result({"ok": True, "data": data}, args.json)
+            return 0
+        _print_result({"ok": False, "error": "MISSING_ARGS",
+                       "message": "track 需要 --name / --refresh / --list / --due / --archive 之一"}, args.json)
+        return 1
+    except Exception as e:
+        from scripts.tracking import TrackError
+        if isinstance(e, TrackError):
+            _print_result({"ok": False, "error": e.code, "message": str(e)}, args.json)
+        else:
+            _print_result({"ok": False, "error": "TRACK_FAILED", "message": str(e)}, args.json)
+        return 1
+
+
 def cmd_watch(args) -> int:
     """watch：特别关注——toggle / --on / --off / 无 --id 列出全部。"""
     try:
@@ -651,6 +752,10 @@ def cmd_manifest(args) -> int:
             {"name": "add-link", "args": ["--id", "--url", "--role", "--update-survey"],
              "description": "手动添加链接到 record 图谱（origin=manual；--update-survey 联动重生成综述）"},
             {"name": "watch", "args": ["--id", "--on", "--off"], "description": "特别关注：toggle / 设置 / 无 --id 列出全部"},
+            {"name": "post", "args": ["--topic", "--records", "--suggest", "--auto"],
+             "description": "技术 post：主题取证/多记录融合/hub 建议（--auto 端到端写作发布）"},
+            {"name": "track", "args": ["--name", "--kind", "--refresh", "--list", "--due", "--archive", "--auto"],
+             "description": "实体跟踪主题：创建（关联 records）/ 周期 refresh / 到期清单（--due 供 cron）"},
             {"name": "star", "args": ["--id"], "description": "publish 后标星 canonical GitHub 仓库（需 GITHUB_TOKEN）"},
             {"name": "list", "args": ["--limit", "--status", "--all"], "description": "列出 entries"},
             {"name": "search", "args": ["query", "--limit"], "description": "FTS5 搜索"},
@@ -853,6 +958,25 @@ def main():
     p_addlink.add_argument("--role", choices=["canonical", "related"], default="related")
     p_addlink.add_argument("--update-survey", action="store_true", help="添加后自动重新生成综述")
 
+    p_post = sub.add_parser("post", help="技术 post：--topic 取证 / --records 融合 / --suggest 建议；--auto 端到端")
+    p_post.add_argument("--topic")
+    p_post.add_argument("--records", help="逗号分隔的 record id 列表")
+    p_post.add_argument("--suggest", action="store_true")
+    p_post.add_argument("--limit", type=int, default=8)
+    p_post.add_argument("--auto", action="store_true", help="headless 写作 + 校验 + 落位 + 站点重建")
+
+    p_track = sub.add_parser("track", help="实体跟踪：--name 创建 / --refresh 更新 / --list / --due / --archive")
+    p_track.add_argument("--name")
+    p_track.add_argument("--kind", default="person")
+    p_track.add_argument("--homepage"); p_track.add_argument("--github")
+    p_track.add_argument("--scholar"); p_track.add_argument("--arxiv")
+    p_track.add_argument("--blog"); p_track.add_argument("--linkedin")
+    p_track.add_argument("--refresh")
+    p_track.add_argument("--archive")
+    p_track.add_argument("--list", action="store_true")
+    p_track.add_argument("--due", action="store_true")
+    p_track.add_argument("--auto", action="store_true", help="headless 写/更新 digest + 站点重建")
+
     p_watch = sub.add_parser("watch", help="特别关注：toggle / --on / --off / 无 --id 列出全部")
     p_watch.add_argument("--id")
     p_watch.add_argument("--on", action="store_true")
@@ -882,7 +1006,7 @@ def main():
         "dedup": cmd_dedup, "recall": cmd_recall, "verify-links": cmd_verify_links,
         "star": cmd_star,
         "analyze": cmd_analyze, "survey": cmd_survey,
-        "add-link": cmd_add_link, "watch": cmd_watch,
+        "add-link": cmd_add_link, "watch": cmd_watch, "post": cmd_post, "track": cmd_track,
         "backfill-records": cmd_backfill_records, "doctor": cmd_doctor, "manifest": cmd_manifest,
     }
     if args.command in handlers: return handlers[args.command](args)

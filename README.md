@@ -104,6 +104,8 @@ All commands support `--json` for agent consumption.
 | `analyze --topic "..." [--emit-task]` | Evidence cluster + optional trend article task |
 | `analyze --dedup` | Duplicate candidate pairs |
 | `analyze --discover [--days N]` | Emerging hot topics (alias-aware) |
+| `post --topic X \| --records a,b \| --suggest [--auto]` | Blog-style post from wiki evidence (fusion/topic/suggest) |
+| `track --name X [--kind] [--refresh S] [--due] [--auto]` | Entity tracking topics: create/refresh/due/archive |
 | `survey --id X [--force] [--task\|--publish\|--status] [--queue]` | Deep-survey a record: fetch links + emit survey task / publish / status / queue |
 | `add-link --id X --url U [--role R] [--update-survey]` | Add a manually-found link to a record's link graph (origin=manual); optionally regenerate its survey |
 | `verify-links --id <slug>` | curl-HEAD reachability check |
@@ -120,7 +122,8 @@ wiki/
 │   ├── record.json          # THE record
 │   ├── raw/                 # fetched source materials
 │   └── survey/                # deep-survey page: survey.md + survey.json + status.json + raw/
-├── trends/                  # trend articles (auto-listed on site)
+├── posts/                   # blog-style posts (auto-listed on site)
+├── tracking/{slug}/         # entity tracking topics: topic.json + digest.md + raw/
 └── site/                    # built static site
 ```
 

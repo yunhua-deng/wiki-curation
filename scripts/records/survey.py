@@ -481,22 +481,8 @@ def _claude_headless_runner(prompt: str, ws, timeout: int = AUTO_WRITE_TIMEOUT) 
     prompt 已约束 agent 只读材料、只写 survey.md；acceptEdits 放行读写，
     其他需要授权的操作在 headless 下自动拒绝（无害失败）。
     """
-    import subprocess
-    exe = shutil.which("claude")
-    if not exe:
-        return {"ok": False, "stderr": "claude CLI not found"}
-    cmd = [exe, "-p", prompt, "--permission-mode", "acceptEdits"]
-    env = os.environ.copy()
-    env["WIKI_WORKSPACE"] = str(ws)
-    try:
-        r = subprocess.run(cmd, cwd=str(ws), env=env, capture_output=True,
-                           text=True, encoding="utf-8", errors="replace", timeout=timeout)
-        return {"ok": r.returncode == 0, "stdout": r.stdout or "",
-                "stderr": r.stderr or "", "exit_code": r.returncode}
-    except subprocess.TimeoutExpired:
-        return {"ok": False, "stderr": f"timeout ({timeout}s)"}
-    except Exception as e:
-        return {"ok": False, "stderr": str(e)}
+    from scripts.lib import headless_write_runner
+    return headless_write_runner(prompt, ws, timeout=timeout)
 
 
 def auto_write_survey(slug: str, ws=None, runner=None, timeout: int = AUTO_WRITE_TIMEOUT,

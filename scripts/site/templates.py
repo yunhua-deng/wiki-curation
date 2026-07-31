@@ -18,7 +18,7 @@ _BASE_TEMPLATE = """<!DOCTYPE html>
   <footer class="site-footer"><p>Wiki · {generated_at}</p></footer>
 </div>
 <script src="assets/marked.min.js"></script>
-<script src="assets/site.js?v=3.11"></script>
+<script src="assets/site.js?v=3.13"></script>
 </body>
 </html>
 """
@@ -29,7 +29,8 @@ _INDEX_CONTENT = """
   <div class="stats" id="stats"></div>
   <div class="nav-pills">
     <button id="nav-records" class="active">📋 Records</button>
-    <button id="nav-trends">📈 Trends</button>
+    <button id="nav-posts">📝 Posts</button>
+    <button id="nav-tracking">🎯 Tracking</button>
   </div>
 </div>
 <div id="records-view">
@@ -45,11 +46,19 @@ _INDEX_CONTENT = """
 </div>
 <div id="table-container"></div>
 </div>
-<div id="trends-view" style="display:none">
-  <div id="trend-list"></div>
-  <div id="trend-article" style="display:none">
-    <button id="trend-back">← Back to trends</button>
-    <article id="trend-body" class="markdown-body"></article>
+<div id="posts-view" style="display:none">
+  <div id="post-suggest"></div>
+  <div id="post-list"></div>
+  <div id="post-article" style="display:none">
+    <button id="post-back">← Back to posts</button>
+    <article id="post-body" class="markdown-body"></article>
+  </div>
+</div>
+<div id="tracking-view" style="display:none">
+  <div id="tracking-list"></div>
+  <div id="tracking-article" style="display:none">
+    <button id="tracking-back">← Back to tracking</button>
+    <article id="tracking-body" class="markdown-body"></article>
   </div>
 </div>
 """

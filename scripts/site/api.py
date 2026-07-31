@@ -19,26 +19,32 @@ ID_RE = re.compile(r"^[\w-]+$")
 LOOPBACK_IPS = {"127.0.0.1", "::1"}
 
 
-def _default_spawner(wiki_dir: Path, slug: str, force: bool = False) -> None:
-    """分离子进程执行 `cli.py --json survey --id <slug> --auto`（端到端）。"""
+def _spawn_detached(wiki_dir: Path, cmd: list, log_path: Path = None) -> None:
+    """以分离子进程执行固定命令（list argv，无 shell）。"""
     wiki_dir = Path(wiki_dir)
-    cli = Path(__file__).resolve().parent.parent / "cli.py"
-    log_dir = paths.survey_dir(slug, wiki_dir)
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log = open(log_dir / "collect.log", "ab")
     env = os.environ.copy()
     env["WIKI_WORKSPACE"] = str(wiki_dir)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
-    cmd = [sys.executable, str(cli), "--json", "survey", "--id", slug, "--auto"]
-    if force:
-        cmd.append("--force")
-    kwargs = dict(stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+    out = open(log_path, "ab") if log_path else subprocess.DEVNULL
+    kwargs = dict(stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                   env=env, cwd=str(wiki_dir.parent), close_fds=True)
     if os.name == "nt":
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
     else:
         kwargs["start_new_session"] = True
     subprocess.Popen(cmd, **kwargs)
+
+
+def _default_spawner(wiki_dir: Path, slug: str, force: bool = False) -> None:
+    """分离子进程执行 `cli.py --json survey --id <slug> --auto`（端到端）。"""
+    wiki_dir = Path(wiki_dir)
+    cli = Path(__file__).resolve().parent.parent / "cli.py"
+    log_dir = paths.survey_dir(slug, wiki_dir)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    cmd = [sys.executable, str(cli), "--json", "survey", "--id", slug, "--auto"]
+    if force:
+        cmd.append("--force")
+    _spawn_detached(wiki_dir, cmd, log_path=log_dir / "collect.log")
 
 
 def handle_survey_request(wiki_dir, payload: dict, client_ip: str = "127.0.0.1", spawner=None):
@@ -138,3 +144,36 @@ def handle_watch(wiki_dir, payload: dict, client_ip: str = "127.0.0.1"):
         build_site(db, ws)
     return 200, {"ok": True, "id": slug, "watched": bool(e["watched"]),
                  "watched_at": e.get("watched_at") or ""}
+
+
+_NAME_MAX = 64
+
+
+def handle_track(wiki_dir, payload: dict, client_ip: str = "127.0.0.1", spawner=None):
+    """POST /api/track：从网页实体发起跟踪主题（幂等）。返回 (http_code, json_dict)。"""
+    from scripts import tracking as TR
+
+    if client_ip not in LOOPBACK_IPS:
+        return 403, {"ok": False, "error": "FORBIDDEN",
+                     "message": "only loopback clients may create tracking topics"}
+    payload = payload or {}
+    name = str(payload.get("name") or "").strip()
+    kind = str(payload.get("kind") or "person").strip() or "person"
+    if not name:
+        return 400, {"ok": False, "error": "MISSING_NAME", "message": "name is required"}
+    if len(name) > _NAME_MAX or "\n" in name:
+        return 400, {"ok": False, "error": "INVALID_NAME", "message": "name too long or multiline"}
+    ws = Path(wiki_dir)
+    slug = TR.slugify_name(name)
+    if TR.load_topic(slug, ws):
+        return 200, {"ok": True, "exists": True, "slug": slug, "name": name}
+    cli = Path(__file__).resolve().parent.parent / "cli.py"
+    cmd = [sys.executable, str(cli), "--json", "track", "--name", name,
+           "--kind", kind, "--auto"]
+    if spawner:
+        spawner(ws, cmd)
+    else:
+        log_dir = paths.tracking_topic_dir(slug, ws)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        _spawn_detached(ws, cmd, log_path=log_dir / "create.log")
+    return 202, {"ok": True, "slug": slug, "name": name, "state": "creating"}

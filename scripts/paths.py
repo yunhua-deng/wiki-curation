@@ -133,6 +133,29 @@ def survey_task_path(slug: str, ws=None) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# posts / tracking（wiki 工作区级目录）
+# ---------------------------------------------------------------------------
+def posts_dir(ws=None) -> Path:
+    """技术 post 目录：wiki/posts"""
+    return _resolve_ws(ws) / "posts"
+
+
+def post_staging_dir(ws=None) -> Path:
+    """post 暂存目录（校验通过后才落位 posts/）：wiki/posts/_staging"""
+    return posts_dir(ws) / "_staging"
+
+
+def tracking_dir(ws=None) -> Path:
+    """实体跟踪主题根目录：wiki/tracking"""
+    return _resolve_ws(ws) / "tracking"
+
+
+def tracking_topic_dir(slug: str, ws=None) -> Path:
+    """单个跟踪主题目录：wiki/tracking/{slug}"""
+    return tracking_dir(ws) / slug
+
+
+# ---------------------------------------------------------------------------
 # 相对路径字符串（仅用于 task prompt / Markdown 文档内链接）
 # ⚠️ 禁止用于文件写入——写入操作必须使用上面的 article_path / raw_dir / audit_dir 等绝对路径
 # ---------------------------------------------------------------------------

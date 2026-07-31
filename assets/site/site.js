@@ -63,19 +63,20 @@ function getParam(name) {
 
 // ================= init =================
 async function init() {
-  const [entries, tags, trends] = await Promise.all([
+  const [entries, tags, postsData, trackingData] = await Promise.all([
     loadJSON('/site/data/entries.json'),
     loadJSON('/site/data/tags.json').catch(() => ({})),
-    loadJSON('/site/data/trends.json').catch(() => []),
+    loadJSON('/site/data/posts.json').catch(() => ({ items: [], suggestions: [] })),
+    loadJSON('/site/data/tracking.json').catch(() => []),
   ]);
 
   // stats
   const withRec = entries.filter(e => e.has_record).length;
-  const trendCount = (trends || []).length;
+  const postCount = ((postsData && postsData.items) || []).length;
   document.getElementById('stats').innerHTML = `
     <div class="stat"><b>${withRec}</b> records</div>
     <div class="stat"><b>${entries.filter(e => e.watched).length}</b> watching</div>
-    <div class="stat"><b>${trendCount}</b> trends</div>
+    <div class="stat"><b>${postCount}</b> posts</div>
   `;
 
   // type filter
@@ -177,7 +178,13 @@ async function init() {
         if ((e.tags||[]).length) html += `<p><strong>Tags</strong> ${e.tags.map(t=>`<span class="badge badge-tag">${escapeHtml(t)}</span>`).join(' ')}</p>`;
         if (e.entities) {
           const entBits = [];
-          for (const [k,v] of Object.entries(e.entities)) if (v.length) entBits.push(`${k}: ${v.join(', ')}`);
+          for (const [k,v] of Object.entries(e.entities)) {
+            if (!v.length) continue;
+            const chips = v.map(name =>
+              `<span class="ent-chip" data-entname="${escapeHtml(name)}" data-entkind="${escapeHtml(k === 'author' ? 'person' : k)}" title="🎯 点击发起跟踪（tracking topic）">${escapeHtml(name)}</span>`
+            ).join(' ');
+            entBits.push(`${k}: ${chips}`);
+          }
           if (entBits.length) html += `<p><strong>Entities</strong> ${entBits.join(' · ')}</p>`;
         }
         if (e.source && e.source.direct_source) {
@@ -238,6 +245,31 @@ async function init() {
         if (ev.target.closest('a, button, input, select, textarea, label')) return;
         const detail = document.getElementById('detail-' + row.dataset.id);
         if (detail) detail.style.display = detail.style.display === 'none' ? '' : 'none';
+      });
+    });
+
+    // v3.7: entity chip → create tracking topic via POST /api/track
+    container.querySelectorAll('.ent-chip').forEach(chip => {
+      chip.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        const name = chip.dataset.entname;
+        const kind = chip.dataset.entkind || 'person';
+        const oldTitle = chip.title;
+        chip.classList.add('pending');
+        try {
+          const res = await fetch('/api/track', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, kind }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.ok) throw new Error((data && data.message) || ('HTTP ' + res.status));
+          chip.classList.remove('pending');
+          chip.classList.add('tracked');
+          chip.title = data.exists ? `已有跟踪主题：${data.slug}` : `已创建跟踪主题：${data.slug}（digest 生成中，见 Tracking 页）`;
+        } catch (err) {
+          chip.classList.remove('pending');
+          chip.title = '发起失败（服务不支持？请重启 site --serve）：' + err.message;
+        }
       });
     });
 
@@ -435,54 +467,109 @@ async function init() {
   if (watchOnly) watchOnly.addEventListener('change', render);
   render();
 
-  // ============ v3.4: Trends 视图 ============
-  const trendList = document.getElementById('trend-list');
-  if (trends.length) {
-    trendList.innerHTML = trends.map(t => `
-      <div class="trend-card" data-slug="${escapeHtml(t.slug)}">
+  // ============ v3.7: Posts 视图（trends 改造）+ Tracking 视图 ============
+  const postItems = (postsData && postsData.items) || [];
+  const suggestions = (postsData && postsData.suggestions) || [];
+  const trackingItems = trackingData || [];
+
+  function renderMd(container, md) {
+    container.innerHTML = window.marked ? marked.parse(md) : `<pre>${escapeHtml(md)}</pre>`;
+  }
+
+  function attachReader(listEl, articleEl, bodyEl, backEl, items, fileOf) {
+    listEl.querySelectorAll('.post-card, .tracking-card').forEach(card => {
+      card.addEventListener('click', async () => {
+        const it = items.find(x => x.slug === card.dataset.slug);
+        if (!it) return;
+        listEl.style.display = 'none';
+        const sg = document.getElementById('post-suggest');
+        if (sg) sg.style.display = 'none';
+        articleEl.style.display = '';
+        bodyEl.innerHTML = '<p class="muted">Loading...</p>';
+        try {
+          const md = await (await fetch('/' + fileOf(it))).text();
+          renderMd(bodyEl, md);
+        } catch (e) {
+          bodyEl.innerHTML = `<p class="muted">Load failed: ${escapeHtml(e.message)}</p>`;
+        }
+        window.scrollTo(0, 0);
+      });
+    });
+    backEl.addEventListener('click', () => {
+      articleEl.style.display = 'none';
+      listEl.style.display = '';
+      const sg = document.getElementById('post-suggest');
+      if (sg) sg.style.display = '';
+    });
+  }
+
+  // --- posts list + suggestions ---
+  const postList = document.getElementById('post-list');
+  const sgBox = document.getElementById('post-suggest');
+  const freshSuggestions = suggestions.filter(s => !s.covered);
+  if (freshSuggestions.length) {
+    sgBox.innerHTML = '<h3 class="suggest-head">💡 分析建议（高关联记录）</h3>' + freshSuggestions.map(s => `
+      <div class="suggest-card">
+        <div class="suggest-title">${escapeHtml(s.title || s.anchor)}</div>
+        <div class="muted suggest-meta">${escapeHtml(s.anchor)} · ${s.degree} 条关联 · score ${s.score}</div>
+        <code class="suggest-cmd" title="点击复制">${escapeHtml(s.suggested_cmd)}</code>
+      </div>
+    `).join('');
+    sgBox.querySelectorAll('.suggest-cmd').forEach(c => {
+      c.addEventListener('click', () => {
+        navigator.clipboard && navigator.clipboard.writeText(c.textContent);
+        c.classList.add('copied');
+        setTimeout(() => c.classList.remove('copied'), 800);
+      });
+    });
+  } else {
+    sgBox.style.display = 'none';
+  }
+  if (postItems.length) {
+    postList.innerHTML = postItems.map(t => `
+      <div class="post-card" data-slug="${escapeHtml(t.slug)}">
         <h3>${escapeHtml(t.title)}</h3>
-        <div class="trend-meta">${escapeHtml(t.date || '')}</div>
+        <div class="trend-meta">${escapeHtml(t.date || '')}${t.trigger ? ' · ' + escapeHtml(t.trigger) : ''}</div>
         <p class="muted">${escapeHtml(t.excerpt || '')}</p>
       </div>
     `).join('');
   } else {
-    trendList.innerHTML = '<p class="empty">No trend articles yet</p>';
+    postList.innerHTML = '<p class="empty">No posts yet</p>';
   }
+  attachReader(postList, document.getElementById('post-article'),
+               document.getElementById('post-body'), document.getElementById('post-back'),
+               postItems, it => it.file);
 
+  // --- tracking list ---
+  const trackingList = document.getElementById('tracking-list');
+  if (trackingItems.length) {
+    trackingList.innerHTML = trackingItems.map(t => {
+      const due = t.next_due && t.next_due <= new Date().toISOString().slice(0, 10);
+      return `
+      <div class="tracking-card" data-slug="${escapeHtml(t.slug)}">
+        <h3>🎯 ${escapeHtml(t.name)}</h3>
+        <div class="trend-meta">${escapeHtml(t.kind)} · ${t.record_count} records · 上次刷新 ${escapeHtml(t.last_at || '—')}${due ? ' · <span class="badge badge-pending">到期</span>' : ''}${t.has_digest ? '' : ' · <span class="badge badge-running">生成中</span>'}</div>
+        <p class="muted">${escapeHtml(t.excerpt || '')}</p>
+      </div>`;
+    }).join('');
+  } else {
+    trackingList.innerHTML = '<p class="empty">No tracking topics yet</p>';
+  }
+  attachReader(trackingList, document.getElementById('tracking-article'),
+               document.getElementById('tracking-body'), document.getElementById('tracking-back'),
+               trackingItems, it => `tracking/${it.slug}/digest.md`);
+
+  // --- nav ---
   document.getElementById('nav-records').addEventListener('click', () => switchView('records'));
-  document.getElementById('nav-trends').addEventListener('click', () => switchView('trends'));
+  document.getElementById('nav-posts').addEventListener('click', () => switchView('posts'));
+  document.getElementById('nav-tracking').addEventListener('click', () => switchView('tracking'));
 
   function switchView(view) {
-    document.getElementById('nav-records').classList.toggle('active', view === 'records');
-    document.getElementById('nav-trends').classList.toggle('active', view === 'trends');
-    document.getElementById('records-view').style.display = view === 'records' ? '' : 'none';
-    document.getElementById('trends-view').style.display = view === 'trends' ? '' : 'none';
-  }
-
-  trendList.querySelectorAll('.trend-card').forEach(card => {
-    card.addEventListener('click', () => openTrend(card.dataset.slug));
-  });
-
-  async function openTrend(slug) {
-    const t = (trends || []).find(x => x.slug === slug);
-    if (!t) return;
-    document.getElementById('trend-list').style.display = 'none';
-    document.getElementById('trend-article').style.display = '';
-    const body = document.getElementById('trend-body');
-    body.innerHTML = '<p class="muted">Loading...</p>';
-    try {
-      const md = await (await fetch('/' + t.file)).text();
-      body.innerHTML = window.marked ? marked.parse(md) : `<pre>${escapeHtml(md)}</pre>`;
-    } catch (e) {
-      body.innerHTML = `<p class="muted">Load failed: ${escapeHtml(e.message)}</p>`;
+    for (const v of ['records', 'posts', 'tracking']) {
+      document.getElementById('nav-' + v).classList.toggle('active', view === v);
+      document.getElementById(v + '-view').style.display = view === v ? '' : 'none';
     }
-    window.scrollTo(0, 0);
   }
-
-  document.getElementById('trend-back').addEventListener('click', () => {
-    document.getElementById('trend-article').style.display = 'none';
-    document.getElementById('trend-list').style.display = '';
-  });
 }
 
 if (document.readyState === 'loading') {

@@ -103,3 +103,27 @@ def run_cmd(cmd, timeout=120, retries=1, backoff=2.0, cwd=None, env=None) -> dic
                 "stderr": str(e),
                 "exit_code": -2,
             }
+
+
+def headless_write_runner(prompt: str, ws, timeout: int = 900) -> dict:
+    """headless `claude -p` 执行写作任务（acceptEdits；工作目录=wiki 工作区）。
+
+    供 survey / post / tracking 等"agent 写文件"场景共用。
+    prompt 应约束 agent 只读材料、只写目标文件；其他需授权操作在 headless 下自动拒绝。
+    """
+    import subprocess
+    exe = shutil.which("claude")
+    if not exe:
+        return {"ok": False, "stderr": "claude CLI not found"}
+    cmd = [exe, "-p", prompt, "--permission-mode", "acceptEdits"]
+    env = os.environ.copy()
+    env["WIKI_WORKSPACE"] = str(ws)
+    try:
+        r = subprocess.run(cmd, cwd=str(ws), env=env, capture_output=True,
+                           text=True, encoding="utf-8", errors="replace", timeout=timeout)
+        return {"ok": r.returncode == 0, "stdout": r.stdout or "",
+                "stderr": r.stderr or "", "exit_code": r.returncode}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "stderr": f"timeout ({timeout}s)"}
+    except Exception as e:
+        return {"ok": False, "stderr": str(e)}

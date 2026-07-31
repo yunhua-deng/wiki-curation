@@ -282,46 +282,102 @@ def _slim_entry(e: dict) -> dict:
     }
 
 
-def _build_trends(wiki_dir: Path) -> list[dict]:
-    """v3.4：扫描 wiki/trends/*.md，生成趋势文章索引。"""
-    trends_dir = Path(wiki_dir) / "trends"
-    if not trends_dir.exists():
+def _build_posts(wiki_dir: Path, db_path=None) -> dict:
+    """v3.7：扫描 wiki/posts/*.md，生成 post 索引 + hub 建议（替代旧 trends）。"""
+    posts_dir = Path(wiki_dir) / "posts"
+    items = []
+    if posts_dir.exists():
+        # sort: newest date first, within same date numeric prefix ascending (01<02<...)
+        def _post_key(p):
+            s = p.stem
+            date = s[:10]  # YYYY-MM-DD
+            rest = s[11:] if len(s) > 11 and s[10] == '_' else ''
+            order = 99
+            if rest and rest[:2].isdigit():
+                order = int(rest[:2])
+            return (-_date_ordinal(date), order)
+
+        def _date_ordinal(d):
+            try: return int(d.replace('-', ''))
+            except: return 0
+
+        for md in sorted(posts_dir.glob("*.md"), key=_post_key):
+            try:
+                text = md.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                continue
+            title = ""
+            excerpt = ""
+            for line in text.splitlines():
+                s = line.strip()
+                if s.startswith("# ") and not title:
+                    title = s.lstrip("# ").strip()
+                elif s and not s.startswith(("#", ">", "|", "-", "```")) and not excerpt:
+                    excerpt = s[:200]
+            # provenance（auto 模式写入的 meta.json）
+            trigger = {}
+            meta_path = posts_dir / f"{md.stem}.meta.json"
+            if meta_path.exists():
+                try:
+                    trigger = (json.loads(meta_path.read_text(encoding="utf-8", errors="replace")) or {}).get("trigger") or {}
+                except Exception:
+                    trigger = {}
+            items.append({
+                "slug": md.stem,
+                "title": title or md.stem,
+                "date": md.stem[:10] if len(md.stem) >= 10 else "",
+                "excerpt": excerpt,
+                "file": f"posts/{md.name}",
+                "trigger": trigger.get("kind") or "",
+            })
+    suggestions = []
+    if db_path is not None:
+        try:
+            from scripts.posts import suggest_post_topics
+            suggestions = suggest_post_topics(db_path, ws=wiki_dir)
+        except Exception:
+            suggestions = []
+    return {"items": items, "suggestions": suggestions}
+
+
+def _build_tracking(wiki_dir: Path) -> list[dict]:
+    """v3.7：扫描 wiki/tracking/*/topic.json，生成跟踪主题索引（archived 不收录）。"""
+    root = Path(wiki_dir) / "tracking"
+    if not root.exists():
         return []
     items = []
-    # sort: newest date first, within same date numeric prefix ascending (01<02<...)
-    def _trend_key(p):
-        s = p.stem
-        date = s[:10]  # YYYY-MM-DD
-        # extract leading numeric prefix if present (e.g. 2026-07-25_01-xxx -> 1)
-        rest = s[11:] if len(s) > 11 and s[10] == '_' else ''
-        order = 99
-        if rest and rest[:2].isdigit():
-            order = int(rest[:2])
-        return (-_date_ordinal(date), order)
-
-    def _date_ordinal(d):
-        try: return int(d.replace('-', ''))
-        except: return 0
-
-    for md in sorted(trends_dir.glob("*.md"), key=_trend_key):
+    for topic_dir in sorted(root.iterdir()):
+        tj = topic_dir / "topic.json"
+        if not tj.is_file():
+            continue
         try:
-            text = md.read_text(encoding="utf-8", errors="replace")
+            t = json.loads(tj.read_text(encoding="utf-8", errors="replace")) or {}
         except Exception:
             continue
-        title = ""
+        if t.get("status") == "archived":
+            continue
         excerpt = ""
-        for line in text.splitlines():
-            s = line.strip()
-            if s.startswith("# ") and not title:
-                title = s.lstrip("# ").strip()
-            elif s and not s.startswith(("#", ">", "|", "-", "```")) and not excerpt:
-                excerpt = s[:200]
+        digest = topic_dir / "digest.md"
+        has_digest = digest.is_file()
+        if has_digest:
+            try:
+                for line in digest.read_text(encoding="utf-8", errors="replace").splitlines():
+                    s = line.strip()
+                    if s and not s.startswith(("#", ">", "|", "-", "```")):
+                        excerpt = s[:200]
+                        break
+            except Exception:
+                pass
+        refresh = t.get("refresh") or {}
         items.append({
-            "slug": md.stem,
-            "title": title or md.stem,
-            "date": md.stem[:10] if len(md.stem) >= 10 else "",
+            "slug": t.get("slug") or topic_dir.name,
+            "name": t.get("name") or topic_dir.name,
+            "kind": t.get("kind") or "person",
+            "record_count": len(t.get("records") or []),
+            "last_at": (refresh.get("last_at") or "")[:10],
+            "next_due": (refresh.get("next_due") or "")[:10],
+            "has_digest": has_digest,
             "excerpt": excerpt,
-            "file": f"trends/{md.name}",
         })
     return items
 
@@ -513,17 +569,24 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
     # 渲染 HTML 页面
     render_pages(entries, tags, sources, out_dir)
 
-    # v3.3：清理陈旧 data 产物（search_index/themes 等已废弃文件）
+    # v3.3：清理陈旧 data 产物（search_index/themes/trends 等已废弃文件）
     current_data = {"entries.json", "tags.json", "sources.json", "entities.json",
-                    "graph.json", "timeline.json", "trends.json", "surveys.json"}
+                    "graph.json", "timeline.json", "posts.json", "surveys.json",
+                    "tracking.json"}
     for f in data_dir.glob("*.json"):
         if f.name not in current_data:
             f.unlink()
 
-    # v3.4：趋势文章索引
-    trends = _build_trends(wiki_dir)
-    (data_dir / "trends.json").write_text(
-        json.dumps(trends, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
+    # v3.7：post 索引（含 hub 建议；替代旧 trends.json）
+    posts = _build_posts(wiki_dir, db_path)
+    (data_dir / "posts.json").write_text(
+        json.dumps(posts, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
+    )
+
+    # v3.7：实体跟踪索引
+    tracking = _build_tracking(wiki_dir)
+    (data_dir / "tracking.json").write_text(
+        json.dumps(tracking, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )
 
     # v3.5：综述索引（surveys 已在 entries.json 落盘前扫描）

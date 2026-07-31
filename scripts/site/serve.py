@@ -55,6 +55,20 @@ class SPAHandler(SimpleHTTPRequestHandler):
                 self.directory, payload, client_ip=self.client_address[0])
             self._send_json(code, data)
             return
+        if self.path.split("?")[0] == "/api/track":
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = 0
+            try:
+                payload = json.loads(self.rfile.read(length) or b"{}")
+            except Exception:
+                payload = {}
+            from scripts.site import api as site_api
+            code, data = site_api.handle_track(
+                self.directory, payload, client_ip=self.client_address[0])
+            self._send_json(code, data)
+            return
         if self.path.split("?")[0] == "/api/record-links":
             try:
                 length = int(self.headers.get("Content-Length") or 0)

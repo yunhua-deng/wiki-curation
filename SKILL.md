@@ -13,7 +13,9 @@ Single tier, single path:
 
 - **Record**: `add → pop → run → publish` → `record.json` — link graph (explicit + inferred URLs), TL;DR, X-style summary, tags, entities. Every ingestion goes through this.
 - **Recall**: `add` auto-surfaces similar past entries; `recall --input "..."` queries anytime (4-layer: url_exact → shared_link → entity → fts).
-- **Analyze**: `analyze --topic "X"` clusters evidence across records; `--emit-task` generates trend article payloads; `--discover` finds emerging hot topics.
+- **Analyze**: `analyze --topic "X"` clusters evidence across records (feeds posts); `--discover` finds emerging hot topics.
+- **Post**: `post --topic X / --records a,b / --suggest` — blog-style technical posts grounded in wiki evidence; `--auto` runs headless writing + validation + publish. Shown in the site Posts view with hub-based suggestions.
+- **Track**: `track --name "X" [--auto]` — entity (person) tracking topics: deterministic record association, headless digest, periodic `track --refresh` (`--due` for cron). Site Tracking view + entity-chip trigger.
 - **Survey**: `survey --id X --auto` end-to-end — the system fetches the record's links, a headless agent writes `artifacts/{slug}/survey/survey.md`, and publish happens automatically; step-by-step also supported (`survey --id X` collect+queue → agent writes → `--publish`). The site records table has a 🧭 column: click to trigger (auto pipeline) / view (new tab), with live state icons.
 - **Site**: built static HTML served locally — compact table, timeline view, inline detail expansion, trends reader.
 
@@ -41,7 +43,8 @@ wiki/
 │   ├── record.json          # THE record (only artifact the agent writes)
 │   ├── raw/                 # fetched source materials
 │   └── survey/                # deep-survey: survey.md (agent) + survey.json/status.json/task.json (system) + raw/
-├── trends/                  # trend articles (markdown, auto-listed on site)
+├── posts/                   # blog-style posts (markdown, auto-listed on site)
+├── tracking/{slug}/         # entity tracking topics: topic.json + digest.md + raw/
 ├── site/                    # built static site
 └── wiki.html                # semantic index
 ```
@@ -94,11 +97,13 @@ All commands support `--json`. `--workspace PATH` overrides `$WIKI_WORKSPACE`.
 | `publish --id <slug>` | Validate record.json, store links/relations/entities, rebuild site |
 | `recall --input "..." [--limit N]` | 4-layer similarity recall with reasons |
 | `search "query"` | FTS5 full-text search |
-| `analyze --topic "..." [--emit-task]` | Evidence cluster across records; optional trend task |
+| `analyze --topic "..." [--emit-task]` | Evidence cluster across records; optional post task |
 | `analyze --dedup` | Duplicate candidate pairs (same_url / shared_link) |
 | `analyze --discover [--days N]` | Emerging hot tags/entities (alias-aware, marks existing coverage) |
 | `survey --id X [--force] [--task\|--publish\|--status] [--queue]` | Deep-survey a record: fetch links + emit survey task / publish / status / agent queue |
 | `add-link --id X --url U [--role R] [--update-survey]` | Add a manually-found link to a record's link graph (origin=manual); optionally regenerate its survey |
+| `post --topic X \| --records a,b \| --suggest [--auto]` | Blog-style post from wiki evidence (fusion/topic/suggest) |
+| `track --name X [--kind] [--refresh S] [--due] [--auto]` | Entity tracking topics: create/refresh/due/archive |
 | `verify-links --id <slug>` | Lazy curl-HEAD link reachability |
 | `star --id <slug>` | Star canonical GitHub repos (needs `GITHUB_TOKEN`) |
 | `doctor [--quick] [--fix-plan]` | Health: queue/db/files/git/record-tier/entities |

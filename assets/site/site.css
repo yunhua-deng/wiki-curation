@@ -167,3 +167,11 @@ a:hover{text-decoration:underline}
 .wiki-row:hover td{background:var(--surface)}
 .wiki-row .row-toggle-id{color:var(--accent)}
 .wiki-row:hover .row-toggle-id{text-decoration:underline}
+
+/* Watch star (v3.10) */
+.wiki-table .col-watch{width:34px;text-align:center}
+.watch-star{background:none;border:none;font-size:1rem;color:var(--muted);cursor:pointer;padding:0;line-height:1.4}
+.watch-star:hover{color:#e3b341}
+.watch-star.on{color:#e3b341}
+.watch-only{display:flex;align-items:center;gap:.25rem;font-size:.85rem;color:var(--muted);cursor:pointer;user-select:none}
+.watch-only input{cursor:pointer}

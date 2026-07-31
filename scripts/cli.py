@@ -569,6 +569,40 @@ def cmd_add_link(args) -> int:
         return 1
 
 
+def cmd_watch(args) -> int:
+    """watch：特别关注——toggle / --on / --off / 无 --id 列出全部。"""
+    try:
+        from scripts.wiki_index import store
+        ws = paths.get_workspace()
+        db = paths.db_path(ws)
+        if not getattr(args, "id", None):
+            items = store.list_watched(db)
+            data = {"watched": [{"id": e["id"], "title": e.get("title") or "",
+                                 "watched_at": e.get("watched_at") or ""} for e in items],
+                    "count": len(items)}
+            _print_result({"ok": True, "data": data}, args.json)
+            return 0
+        if getattr(args, "on", False):
+            target = True
+        elif getattr(args, "off", False):
+            target = False
+        else:
+            cur = store.get_entry(db, args.id)
+            if not cur:
+                raise ValueError(f"entry not found: {args.id}")
+            target = not bool(cur.get("watched"))
+        e = store.set_watched(db, args.id, target)
+        _print_result({"ok": True, "data": {"id": args.id, "watched": bool(e["watched"]),
+                                            "watched_at": e.get("watched_at") or ""}}, args.json)
+        return 0
+    except ValueError as e:
+        _print_result({"ok": False, "error": "ENTRY_NOT_FOUND", "message": str(e)}, args.json)
+        return 1
+    except Exception as e:
+        _print_result({"ok": False, "error": "WATCH_FAILED", "message": str(e)}, args.json)
+        return 1
+
+
 def cmd_doctor(args) -> int:
     script_args = []
     if args.quick: script_args.append("--quick")
@@ -616,6 +650,7 @@ def cmd_manifest(args) -> int:
              "description": "记录综述：采集 links + 生成 survey task / 发布 / 状态 / 队列（--auto 端到端自动写作发布）"},
             {"name": "add-link", "args": ["--id", "--url", "--role", "--update-survey"],
              "description": "手动添加链接到 record 图谱（origin=manual；--update-survey 联动重生成综述）"},
+            {"name": "watch", "args": ["--id", "--on", "--off"], "description": "特别关注：toggle / 设置 / 无 --id 列出全部"},
             {"name": "star", "args": ["--id"], "description": "publish 后标星 canonical GitHub 仓库（需 GITHUB_TOKEN）"},
             {"name": "list", "args": ["--limit", "--status", "--all"], "description": "列出 entries"},
             {"name": "search", "args": ["query", "--limit"], "description": "FTS5 搜索"},
@@ -818,6 +853,11 @@ def main():
     p_addlink.add_argument("--role", choices=["canonical", "related"], default="related")
     p_addlink.add_argument("--update-survey", action="store_true", help="添加后自动重新生成综述")
 
+    p_watch = sub.add_parser("watch", help="特别关注：toggle / --on / --off / 无 --id 列出全部")
+    p_watch.add_argument("--id")
+    p_watch.add_argument("--on", action="store_true")
+    p_watch.add_argument("--off", action="store_true")
+
     p_doc = sub.add_parser("doctor", help="健康检查")
     p_doc.add_argument("--quick", action="store_true")
     p_doc.add_argument("--since")
@@ -842,7 +882,7 @@ def main():
         "dedup": cmd_dedup, "recall": cmd_recall, "verify-links": cmd_verify_links,
         "star": cmd_star,
         "analyze": cmd_analyze, "survey": cmd_survey,
-        "add-link": cmd_add_link,
+        "add-link": cmd_add_link, "watch": cmd_watch,
         "backfill-records": cmd_backfill_records, "doctor": cmd_doctor, "manifest": cmd_manifest,
     }
     if args.command in handlers: return handlers[args.command](args)

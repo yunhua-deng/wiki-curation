@@ -36,6 +36,12 @@ function statusBadge(s) {
   return `<span class="badge badge-${cls}">${escapeHtml(s||'—')}</span>`;
 }
 
+// v3.10: watch star cell — toggle 特别关注
+function watchCell(e) {
+  const on = !!e.watched;
+  return `<button class="watch-star${on ? ' on' : ''}" data-watchid="${escapeHtml(e.id)}" title="${on ? '取消特别关注' : '设为特别关注'}">${on ? '★' : '☆'}</button>`;
+}
+
 // v3.6: survey column cell — view link (_blank) / state icon / ghost trigger
 function surveyCell(e) {
   const id = escapeHtml(e.id);
@@ -72,6 +78,7 @@ async function init() {
     <div class="stat"><b>${total}</b> entries</div>
     <div class="stat"><b>${done}</b> done</div>
     <div class="stat"><b>${withRec}</b> records</div>
+    <div class="stat"><b>${entries.filter(e => e.watched).length}</b> watching</div>
     <div class="stat"><b>${trendCount}</b> trends</div>
   `;
 
@@ -82,6 +89,7 @@ async function init() {
 
   const searchInput = document.getElementById('search');
   const statusSel = document.getElementById('filter-status');
+  const watchOnly = document.getElementById('filter-watch');
   const container = document.getElementById('table-container');
   // v3.5：支持 /site/?q=<kw> 预填搜索（survey.html 的 "View record" 回跳用）
   const q0 = getParam('q');
@@ -111,6 +119,7 @@ async function init() {
     let html = '';
     for (const mk of monthList) {
       const visible = months[mk].filter(e => {
+        if (watchOnly && watchOnly.checked && !e.watched) return false;
         if (type && (e.topic_type || e.type) !== type) return false;
         if (status && e.status !== status) return false;
         if (!q) return true;
@@ -131,6 +140,7 @@ async function init() {
         const tldr = (e.summary && e.summary.tldr) || e.overview || '';
         const linksHtml = (e.links||[]).slice(0,6).map(l => linkBadge(l)).join('');
         html += `<tr class="wiki-row" data-id="${escapeHtml(e.id)}" title="点击展开详情">`;
+        html += `<td class="col-watch">${watchCell(e)}</td>`;
         html += `<td class="col-id"><span class="row-toggle-id">${escapeHtml(e.id)}</span></td>`;
         html += `<td class="col-type"><span class="badge badge-other">${escapeHtml(e.topic_type||e.type||'—')}</span></td>`;
         html += `<td class="col-title">${escapeHtml(e.title||e.id)}</td>`;
@@ -141,7 +151,7 @@ async function init() {
         html += '</tr>';
         // expandable detail row
         html += `<tr class="wiki-detail" id="detail-${escapeHtml(e.id)}" style="display:none">`;
-        html += `<td colspan="7"><div class="detail-card">`;
+        html += `<td colspan="8"><div class="detail-card">`;
         html += `<p><strong>TL;DR</strong> ${escapeHtml(tldr)}</p>`;
         const summaryText = (e.summary && e.summary.text) || '';
         if (summaryText) {
@@ -232,6 +242,35 @@ async function init() {
         if (ev.target.closest('a, button, input, select, textarea, label')) return;
         const detail = document.getElementById('detail-' + row.dataset.id);
         if (detail) detail.style.display = detail.style.display === 'none' ? '' : 'none';
+      });
+    });
+
+    // v3.10: watch star toggle — POST /api/watch, optimistic with revert
+    container.querySelectorAll('[data-watchid]').forEach(btn => {
+      btn.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        const id = btn.dataset.watchid;
+        const wasOn = btn.classList.contains('on');
+        btn.classList.toggle('on', !wasOn);
+        btn.textContent = wasOn ? '☆' : '★';
+        try {
+          const res = await fetch('/api/watch', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.ok) throw new Error((data && data.message) || ('HTTP ' + res.status));
+          btn.classList.toggle('on', !!data.watched);
+          btn.textContent = data.watched ? '★' : '☆';
+          btn.title = data.watched ? '取消特别关注' : '设为特别关注';
+          const ent = entries.find(x => x.id === id);
+          if (ent) ent.watched = !!data.watched;
+          if (watchOnly && watchOnly.checked) render();
+        } catch (err) {
+          btn.classList.toggle('on', wasOn);
+          btn.textContent = wasOn ? '★' : '☆';
+          btn.title = '关注失败（服务不支持？请重启 site --serve）：' + err.message;
+        }
       });
     });
 
@@ -397,6 +436,7 @@ async function init() {
   searchInput.addEventListener('input', render);
   sel.addEventListener('change', render);
   statusSel.addEventListener('change', render);
+  if (watchOnly) watchOnly.addEventListener('change', render);
   render();
 
   // ============ v3.4: Trends 视图 ============

@@ -102,6 +102,8 @@ MIGRATIONS = [
     ('v2_add_spec_version', 'ALTER TABLE entries ADD COLUMN spec_version TEXT DEFAULT \'1.0\''),
     ('v2_add_verified_depths', 'ALTER TABLE entries ADD COLUMN verified_depths TEXT DEFAULT \'\''),
     ('v3_add_source_prompt', 'ALTER TABLE entries ADD COLUMN source_prompt TEXT'),
+    ('v5_add_watched', 'ALTER TABLE entries ADD COLUMN watched INTEGER DEFAULT 0'),
+    ('v5_add_watched_at', 'ALTER TABLE entries ADD COLUMN watched_at TEXT'),
 ]
 
 VALID_STATUSES = {"pending", "running", "done", "failed", "orphan", "verified_brief"}

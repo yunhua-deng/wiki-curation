@@ -107,7 +107,8 @@ COLUMNS = [
     'id', 'date', 'ver', 'depth', 'sources', 'topic_type', 'title', 'overview', 'tags',
     'raw', 'file', 'source_input', 'source_prompt', 'input_type', 'source_type', 'status',
     'error', 'materials_ready', 'queued_at', 'started_at', 'completed_at',
-    'spec_version', 'verified_depths', 'entities', 'owner'
+    'spec_version', 'verified_depths', 'entities', 'owner',
+    'watched', 'watched_at'
 ]
 
 
@@ -274,6 +275,37 @@ def upsert_task(db_path, slug, source_input=None, source_prompt=None, input_type
     conn.commit()
     conn.close()
     return entry
+
+
+def set_watched(db_path, slug, on: bool):
+    """设置/取消特别关注。返回更新后的 entry；entry 不存在抛 ValueError。"""
+    db_path = Path(db_path)
+    ensure_schema(db_path)
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    row = conn.execute('SELECT * FROM entries WHERE id = ?', (slug,)).fetchone()
+    if not row:
+        conn.close()
+        raise ValueError(f"entry not found: {slug}")
+    watched_at = _now_iso() if on else None
+    conn.execute('UPDATE entries SET watched = ?, watched_at = ? WHERE id = ?',
+                 (1 if on else 0, watched_at, slug))
+    conn.commit()
+    row = conn.execute('SELECT * FROM entries WHERE id = ?', (slug,)).fetchone()
+    conn.close()
+    return _row_to_entry(row)
+
+
+def list_watched(db_path):
+    """全部特别关注条目（按关注时间倒序）。"""
+    db_path = Path(db_path)
+    ensure_schema(db_path)
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        'SELECT * FROM entries WHERE watched = 1 ORDER BY watched_at DESC').fetchall()
+    conn.close()
+    return [_row_to_entry(r) for r in rows]
 
 
 def update_status(db_path, slug, status, error=None, title=None, **kwargs):

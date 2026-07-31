@@ -166,6 +166,8 @@ def _export_entries(db_path, wiki_dir):
             "raw": _raw_url(row),
             "article_url": _article_url(row),
             "spec_version": row.get("spec_version") or "1.0",
+            "watched": 1 if row.get("watched") else 0,
+            "watched_at": row.get("watched_at") or "",
             "verified_depths": row.get("verified_depths") or "",
             # v3.0 record-first：记录标识与链接图谱
             "has_record": paths.record_path(slug, wiki_dir).exists(),
@@ -270,6 +272,8 @@ def _slim_entry(e: dict) -> dict:
         "links": e.get("links") or [],
         "has_record": bool(e.get("has_record")),
         "preview": e.get("preview") or {},
+        "watched": bool(e.get("watched")),
+        "watched_at": e.get("watched_at") or "",
         "_search_aliases": e.get("_search_aliases") or [],
         "source": {
             "direct_source": _url_str(src.get("direct_source")),

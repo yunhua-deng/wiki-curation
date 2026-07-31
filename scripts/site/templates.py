@@ -18,7 +18,7 @@ _BASE_TEMPLATE = """<!DOCTYPE html>
   <footer class="site-footer"><p>Wiki · {generated_at}</p></footer>
 </div>
 <script src="assets/marked.min.js"></script>
-<script src="assets/site.js?v=3.9"></script>
+<script src="assets/site.js?v=3.10"></script>
 </body>
 </html>
 """
@@ -41,6 +41,7 @@ _INDEX_CONTENT = """
     <option value="done">done</option>
     <option value="pending">pending</option>
   </select>
+  <label class="watch-only" title="只看特别关注"><input type="checkbox" id="filter-watch"> ★ 关注</label>
 </div>
 <div id="table-container"></div>
 </div>

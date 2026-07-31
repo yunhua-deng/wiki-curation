@@ -119,7 +119,7 @@ def build_record_task(slug: str, source_type: str, raw_files: list[str], raw_sum
   "date": "YYYY-MM-DD（无法确定留空字符串）",
   "topic_type": "paper|project|tool|company|institution|researcher|concept|whitepaper|best_practice|comparison|trend|article|observation|product 之一",
   "tldr": "一句话总结（≤80字，客观陈述，不评价）",
-  "summary": "解读摘要（200-400 字，类似 X/LinkedIn 帖子风格：2-4 个短段落。第 1 段一句话点题（这是什么）；第 2 段核心要点（方法/数据/结果，2-3 句）；第 3 段背景与意义（为什么值得关注/与已有工作的关系，1-2 句）；如有不足或待验证处可加第 4 段（1 句）。客观陈述，不评价。"
+  "summary": "解读摘要（400-800 字，2-5 个短段落，每段以 **小标题** 开头再接内容，如 **核心要点**：…。第 1 段一句话点题（这是什么）；中间段核心要点（方法/数据/结果）；末段背景与意义或待验证处。客观陈述，不评价。"
   "tags": ["3-5 个关键词"],
   "entities": {{"company": [], "author": [], "product": [], "series": []}},
   "links": [
@@ -143,7 +143,8 @@ def build_record_task(slug: str, source_type: str, raw_files: list[str], raw_sum
 3. **entities 归一化**：公司/作者/产品名优先对齐 `skills/wiki-curation/references/entity_aliases.yaml` 中的 canonical 写法；四个桶必须齐全（可为空数组）。
 4. **topic_type** 必须是上面枚举之一，按内容主题判断（不是按来源平台）。
 5. **tldr** 一句话，≤80 字；禁止评价、对比、个人观点（不写"我认为/优于/最强"）。
-6. **tags** 3-5 个，能用于后续检索与趋势聚合。
+6. **summary** 400-800 字；每段以 `**小标题**` 开头（如 **核心要点**、**关键数据**、**背景与意义**），小标题后接该段内容；客观陈述，不评价。
+7. **tags** 3-5 个，能用于后续检索与趋势聚合。
 
 ## 已抓取的关联目标（explicit 候选，供参考）
 

@@ -186,6 +186,9 @@ def _export_entries(db_path, wiki_dir):
             }
             entry["source"] = record.get("source") or {}
             entry["entities"] = record.get("entities") or {}
+            # v3.7：发起时的召回预览
+            if record.get("preview"):
+                entry["preview"] = record["preview"]
             if not entry["links"] and record.get("links"):
                 entry["links"] = record["links"]
         # v3.2: alias-expanded search text
@@ -223,10 +226,11 @@ def _build_sources(entries):
     return {k: dict(v) for k, v in sorted(sources.items())}
 
 
-def _build_related_map(db_path) -> dict[str, list[dict]]:
-    """v3.4：relations 表 → entry → top related（交给站点展示）。"""
+def _build_related_map(db_path, entries=None) -> dict[str, list[dict]]:
+    """v3.4：relations 表 → entry → top related；v3.7：附标题（列表展示）。"""
     from scripts.records.links import get_all_relations
     rels = get_all_relations(db_path)
+    titles = {e.get("id"): (e.get("title") or "") for e in (entries or [])}
     m: dict[str, dict[str, float]] = {}
     for r in rels:
         for eid in (r["entry_a"], r["entry_b"]):
@@ -236,7 +240,8 @@ def _build_related_map(db_path) -> dict[str, list[dict]]:
     out = {}
     for eid, others in m.items():
         ranked = sorted(others.items(), key=lambda kv: -kv[1])[:6]
-        out[eid] = [{"id": oid, "score": round(s, 1)} for oid, s in ranked]
+        out[eid] = [{"id": oid, "score": round(s, 1), "title": titles.get(oid) or ""}
+                    for oid, s in ranked]
     return out
 
 
@@ -264,6 +269,7 @@ def _slim_entry(e: dict) -> dict:
         "entities": e.get("entities") or {},
         "links": e.get("links") or [],
         "has_record": bool(e.get("has_record")),
+        "preview": e.get("preview") or {},
         "_search_aliases": e.get("_search_aliases") or [],
         "source": {
             "direct_source": _url_str(src.get("direct_source")),
@@ -445,7 +451,7 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
     graph = build_graph(entries, wiki_dir, relation_edges=get_all_relations(db_path))
 
     # v3.4：关联条目（relations 表 top N）注入 entries.json 供详情展示
-    related_map = _build_related_map(db_path)
+    related_map = _build_related_map(db_path, entries)
 
     # v3.3：entries.json 瘦身——只写前端表格/详情消费字段
     display_entries = [_slim_entry(e) for e in entries]

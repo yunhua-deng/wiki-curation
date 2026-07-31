@@ -10,7 +10,7 @@
   "tags_min": 1,
   "tags_max": 8,
   "tldr_max_chars": 200,
-  "summary_max_chars": 600,
+  "summary_max_chars": 1600,
   "rules": [
     "version 必须为 3.0",
     "topic_type 必须能归一化到 VALID_TOPIC_TYPES",

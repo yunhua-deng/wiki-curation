@@ -18,7 +18,7 @@ _BASE_TEMPLATE = """<!DOCTYPE html>
   <footer class="site-footer"><p>Wiki · {generated_at}</p></footer>
 </div>
 <script src="assets/marked.min.js"></script>
-<script src="assets/site.js?v=3.7"></script>
+<script src="assets/site.js?v=3.8"></script>
 </body>
 </html>
 """

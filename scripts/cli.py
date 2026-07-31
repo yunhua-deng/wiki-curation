@@ -217,6 +217,14 @@ def cmd_add(args) -> int:
             db = paths.db_path(paths.get_workspace())
             joined = entry.get("joined_input") or "\n".join(args.input or [])
             recall_data = recall(db, joined, limit=5, exclude_id=slug)
+            # v3.7：召回结果持久化为 RECALL 事件，publish 时注入 record.preview 供站点展示
+            if recall_data is not None:
+                try:
+                    from scripts import wiki_index
+                    wiki_index.record_event(db, slug, "RECALL",
+                                            {"query": joined[:300], **recall_data})
+                except Exception as ee:
+                    print(f"RECALL event write failed: {ee}", file=sys.stderr)
         except Exception as e:
             print(f"⚠️ 自动召回失败（不影响入库）: {e}", file=sys.stderr)
 

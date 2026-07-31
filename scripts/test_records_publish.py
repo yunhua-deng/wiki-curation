@@ -194,3 +194,56 @@ def test_compute_relations_kinds(tmp_path):
     assert "shared_link" in by_target["c"]
     assert "shared_entity" in by_target["c"]
     assert "tag_overlap" in by_target["c"]
+
+
+# ---------- v3.7: add-time RECALL 事件 → record preview 注入 ----------
+
+def test_publish_injects_recall_preview(tmp_path, monkeypatch):
+    _patch_ws(tmp_path, monkeypatch)
+    db = paths.db_path(tmp_path)
+    _seed_record_entry(db, tmp_path)
+    from scripts import wiki_index
+    wiki_index.record_event(db, "rec1", "RECALL", {
+        "query": "https://mp.weixin.qq.com/s/aaa",
+        "matches": [{"id": "rec2", "title": "Old Paper", "score": 85.0,
+                     "reasons": [{"kind": "shared_link", "detail": "arxiv.org/abs/2501.0001"}]}],
+    })
+    from scripts.records.publish_record import publish_record
+    publish_record(_publish_args(), db, tmp_path, SCRIPT_DIR)
+    record = RS.load_record("rec1", tmp_path)
+    assert record.get("preview", {}).get("recall", {}).get("matches")
+    m = record["preview"]["recall"]["matches"][0]
+    assert m["id"] == "rec2" and m["score"] == 85.0
+    assert record["preview"]["recall"]["added_at"]
+    # 站点 entries.json 带出 preview
+    entries = json.loads((tmp_path / "site" / "data" / "entries.json").read_text(encoding="utf-8"))
+    rec1 = [e for e in entries if e["id"] == "rec1"][0]
+    assert rec1["preview"]["recall"]["matches"][0]["title"] == "Old Paper"
+
+
+def test_publish_without_recall_event_no_preview(tmp_path, monkeypatch):
+    _patch_ws(tmp_path, monkeypatch)
+    db = paths.db_path(tmp_path)
+    _seed_record_entry(db, tmp_path)
+    from scripts.records.publish_record import publish_record
+    publish_record(_publish_args(), db, tmp_path, SCRIPT_DIR)
+    record = RS.load_record("rec1", tmp_path)
+    assert "preview" not in record
+
+
+def test_cmd_add_persists_recall_event(tmp_path, monkeypatch, capsys):
+    _patch_ws(tmp_path, monkeypatch)
+    from scripts import cli, wiki_index
+    monkeypatch.setattr(cli, "_wiki_db_cmd", lambda *a, **kw: {
+        "ok": True, "data": {"id": "rec9", "joined_input": "https://x.com/a"}})
+    fake_recall = {"matches": [{"id": "rec1", "title": "T", "score": 42.0,
+                                "reasons": [{"kind": "entity", "detail": "Figure AI"}]}]}
+    monkeypatch.setattr("scripts.records.recall.recall",
+                        lambda db, q, limit=5, exclude_id=None: fake_recall)
+    args = type("A", (), {"json": True, "quiet": True, "workspace": str(tmp_path),
+                          "input": ["https://x.com/a"], "inputs_file": None, "append_to": None,
+                          "input_type": "url", "source_type": "generic_web",
+                          "source_prompt": None, "id": None, "no_recall": False})()
+    assert cli.cmd_add(args) == 0
+    events = wiki_index.get_events(paths.db_path(tmp_path), slug="rec9", action="RECALL")
+    assert events and json.loads(events[0]["detail"])["matches"][0]["id"] == "rec1"

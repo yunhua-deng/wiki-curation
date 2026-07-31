@@ -20,6 +20,11 @@ function linkBadge(l) {
   return `<a class="link-badge${cls}" href="${escapeHtml(l.url)}" target="_blank" rel="noopener" title="${escapeHtml(l.url)}">${icon}</a>${dot}`;
 }
 
+// v3.7: render **bold** mini-headings inside summary paragraphs (already HTML-escaped)
+function renderBold(escapedText) {
+  return escapedText.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+}
+
 async function loadJSON(path) {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`${path}: ${res.status}`);
@@ -140,7 +145,7 @@ async function init() {
         html += `<p><strong>TL;DR</strong> ${escapeHtml(tldr)}</p>`;
         const summaryText = (e.summary && e.summary.text) || '';
         if (summaryText) {
-          html += `<div class="summary-block">${escapeHtml(summaryText).split(/\n\s*\n|\n/).filter(p=>p.trim()).map(p=>`<p>${p}</p>`).join('')}</div>`;
+          html += `<div class="summary-block">${renderBold(escapeHtml(summaryText)).split(/\n\s*\n|\n/).filter(p=>p.trim()).map(p=>`<p>${p}</p>`).join('')}</div>`;
         }
         // group links by domain
         const domainLinks = {};
@@ -173,13 +178,31 @@ async function init() {
           const ds = String(e.source.direct_source);
           html += `<p><strong>Source</strong> <a href="${escapeHtml(ds)}" target="_blank" rel="noopener">${escapeHtml(ds.substring(0,80))}</a></p>`;
         }
-        // v3.4: related entries from relations table
+        // v3.4/v3.7: related entries as list (id + title, click-to-scroll)
         if ((e._related||[]).length) {
-          html += '<p><strong>Related</strong> ';
+          html += '<p class="related-head"><strong>Related</strong></p>';
+          html += '<ul class="related-list">';
           html += e._related.map(r =>
-            `<span class="badge badge-tag" style="cursor:pointer" data-relid="${escapeHtml(r.id)}">${escapeHtml(r.id)}</span>`
-          ).join(' ');
-          html += '</p>';
+            `<li><span class="rel-id" data-relid="${escapeHtml(r.id)}" title="跳转展开">${escapeHtml(r.id)}</span>` +
+            (r.title ? ` <span class="rel-title">${escapeHtml(r.title)}</span>` : '') +
+            ` <span class="rel-score muted">${r.score}</span></li>`
+          ).join('');
+          html += '</ul>';
+        }
+        // v3.7: initiation preview (add-time recall list with reasons)
+        const pv = e.preview && e.preview.recall;
+        if (pv && (pv.matches||[]).length) {
+          html += `<details class="preview-recall"><summary>🔁 发起时召回（${pv.matches.length}）· ${escapeHtml((pv.added_at||'').slice(0,10))}</summary>`;
+          html += '<ul class="related-list">';
+          for (const m of pv.matches) {
+            const reasons = (m.reasons||[]).slice(0,2).map(x=>`${x.kind}: ${x.detail}`).join('; ');
+            html += `<li><span class="rel-id" data-relid="${escapeHtml(m.id)}" title="跳转展开">${escapeHtml(m.id)}</span>` +
+                    (m.title ? ` <span class="rel-title">${escapeHtml(m.title)}</span>` : '') +
+                    ` <span class="rel-score muted">${m.score}</span>` +
+                    (reasons ? `<div class="rel-reasons muted">${escapeHtml(reasons)}</div>` : '') +
+                    `</li>`;
+          }
+          html += '</ul></details>';
         }
         // v3.5: survey（综述）button / link — v3.6: 新开 tab
         if (e.has_survey) {

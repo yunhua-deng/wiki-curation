@@ -147,3 +147,17 @@ a:hover{text-decoration:underline}
 .link-add-form select,.link-add-form button{font-size:.78rem;padding:.15rem .45rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--ink);cursor:pointer}
 .link-add-form button:hover{border-color:var(--accent);color:var(--accent)}
 .link-add-status{font-size:.78rem}
+
+/* Related list + preview recall (v3.7) */
+.related-head{margin:.4rem 0 .1rem}
+.related-list{margin:.1rem 0 .5rem;padding-left:1.1rem;list-style:none}
+.related-list li{padding:.1rem 0}
+.rel-id{font-family:var(--font-mono);font-size:.78rem;color:var(--accent);cursor:pointer}
+.rel-id:hover{text-decoration:underline}
+.rel-title{font-size:.82rem}
+.rel-score{font-size:.72rem;margin-left:.3rem}
+.rel-reasons{font-size:.72rem;padding-left:1.4rem}
+.preview-recall{margin:.3rem 0}
+.preview-recall summary{cursor:pointer;color:var(--muted);font-size:.82rem}
+.preview-recall summary:hover{color:var(--accent)}
+.summary-block p strong{color:var(--ink)}

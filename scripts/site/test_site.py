@@ -264,3 +264,25 @@ def test_render_pages_includes_survey_html(tmp_path):
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_build_related_map_includes_titles(tmp_path):
+    from scripts.wiki_index.schema import ensure_schema
+    from scripts.records import links as L
+    from scripts.site.build import _build_related_map
+    db = tmp_path / "data" / "wiki.db"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    ensure_schema(db)
+    from scripts import conftest
+    conftest.seed_entry(db, "a1", status="done")
+    conftest.seed_entry(db, "a2", status="done")
+    L.replace_links(db, "a1", [{"url": "https://arxiv.org/abs/2501.0001", "kind": "arxiv"}])
+    L.replace_links(db, "a2", [{"url": "https://arxiv.org/abs/2501.0001", "kind": "arxiv"}])
+    from scripts.records import relations as REL
+    REL.rewire_relations(db, "a1")
+    entries = [{"id": "a1", "title": "Alpha"}, {"id": "a2", "title": "Beta Paper"}]
+    m = _build_related_map(db, entries)
+    assert m["a1"][0]["id"] == "a2" and m["a1"][0]["title"] == "Beta Paper"
+    # 无 entries 时 title 为空字符串（向后兼容）
+    m2 = _build_related_map(db)
+    assert m2["a1"][0]["title"] == ""

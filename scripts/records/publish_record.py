@@ -149,6 +149,23 @@ def publish_record(args, db_path, wiki_dir, scripts_dir):
     for link in record["links"]:
         link["fetched"] = 1 if normalize_url(link.get("url", "")) in fetched_urls else 0
         link.setdefault("verified", None)
+
+    # v3.7：注入 add 时的召回预览（RECALL 事件）到 record.preview，供站点展示
+    try:
+        recall_events = wiki_index.get_events(db_path, slug=entry_id, action="RECALL", limit=1)
+        if recall_events:
+            detail = recall_events[0].get("detail")
+            payload = json.loads(detail) if isinstance(detail, str) else (detail or {})
+            if payload.get("matches"):
+                record["preview"] = {
+                    "recall": {
+                        "query": payload.get("query") or "",
+                        "matches": payload["matches"][:5],
+                        "added_at": recall_events[0].get("timestamp") or "",
+                    }
+                }
+    except Exception:
+        pass  # preview 注入失败不阻塞发布
     RS.save_record(entry_id, ws, record)
 
     # === 入库：links / entities / relations（relations 依赖前两者，必须最后织） ===

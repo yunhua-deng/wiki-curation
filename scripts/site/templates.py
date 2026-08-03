@@ -18,7 +18,7 @@ _BASE_TEMPLATE = """<!DOCTYPE html>
   <footer class="site-footer"><p>Wiki · {generated_at}</p></footer>
 </div>
 <script src="assets/marked.min.js"></script>
-<script src="assets/site.js?v=3.14"></script>
+<script src="assets/site.js?v=3.15"></script>
 </body>
 </html>
 """
@@ -54,17 +54,9 @@ _INDEX_CONTENT = """
   </div>
   <div id="post-suggest"></div>
   <div id="post-list"></div>
-  <div id="post-article" style="display:none">
-    <button id="post-back">← Back to posts</button>
-    <article id="post-body" class="markdown-body"></article>
-  </div>
 </div>
 <div id="tracking-view" style="display:none">
   <div id="tracking-list"></div>
-  <div id="tracking-article" style="display:none">
-    <button id="tracking-back">← Back to tracking</button>
-    <article id="tracking-body" class="markdown-body"></article>
-  </div>
 </div>
 """
 
@@ -150,11 +142,139 @@ _DOC_READER = r"""
   <article id="doc-body" class="markdown-body"></article>
 </div>
 <script>
+function esc(text){ const d=document.createElement('div'); d.textContent=text||''; return d.innerHTML; }
+function renderBoldD(t){ return t.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>'); }
+const ICONS={github:'⌥',arxiv:'📄',huggingface:'🤗',homepage:'🏠',weixin:'💬',linkedin:'💼',docs:'📚',other:'🔗'};
+
+function linkBadgeD(l){
+  const dot=l.verified===1?'<span class="dot ok"></span>':l.verified===0?'<span class="dot dead"></span>':'';
+  return `<a class="link-badge${l.origin==='inferred'?' inferred':''}" href="${esc(l.url)}" target="_blank" rel="noopener" title="${esc(l.url)}">${ICONS[l.kind]||ICONS.other}</a>${dot}`;
+}
+
+function statusBadgeD(s){ const c={done:'done',pending:'pending',running:'running',failed:'failed'}[s]||'other';
+  return `<span class="badge badge-${c}">${esc(s||'—')}</span>`; }
+
+function surveyCellD(e){
+  if(e.has_survey) return `<a class="survey-btn" href="/site/survey.html?id=${encodeURIComponent(e.id)}" target="_blank" rel="noopener">🧭 查看综述</a>`;
+  const st=e.survey_state;
+  if(st==='collecting'||st==='writing'||st==='awaiting_agent'||st==='failed')
+    return `<span class="badge badge-${st==='failed'?'failed':st==='awaiting_agent'?'pending':'running'}">综述 ${st==='failed'?'失败':st==='awaiting_agent'?'排队中':'进行中'}</span>`;
+  if(e.has_record) return `<button class="survey-btn" id="survey-go">🧭 发起综述</button> <span id="survey-status" class="muted"></span>`;
+  return '';
+}
+
+function recLink(id){ return `<a class="rec-link" href="/site/doc.html?kind=record&id=${encodeURIComponent(id)}">${esc(id)}</a>`; }
+
 async function initDoc() {
-  const slug = new URLSearchParams(window.location.search).get('slug');
-  const kind = new URLSearchParams(window.location.search).get('kind') || 'post';
-  const el = (id) => document.getElementById(id);
-  if (!slug) { el('doc-loading').textContent = 'Missing slug'; return; }
+  const q = new URLSearchParams(window.location.search);
+  const kind = q.get('kind') || 'post';
+  const slug = q.get('slug') || '';
+  const id = q.get('id') || '';
+  const el = (x) => document.getElementById(x);
+  if (!slug && !id) { el('doc-loading').textContent = 'Missing slug/id'; return; }
+
+  if (kind === 'record') {
+    if (!id) { el('doc-loading').textContent = 'Missing id'; return; }
+    el('doc-back-list').href = '/site/';
+    try {
+      const entries = await fetch('/site/data/entries.json').then(r=>r.json());
+      const e = entries.find(x => x.id === id);
+      let rec = {};
+      try { rec = await (await fetch('/artifacts/' + encodeURIComponent(id) + '/record.json')).json(); } catch(_) {}
+      if (!e && !rec.title) throw new Error('record not found: ' + id);
+      const title = rec.title || e.title || id;
+      const tldr = (rec.tldr || (e.summary && e.summary.tldr) || e.overview || '');
+      const summary = rec.summary || '';
+      const links = (rec.links && rec.links.length ? rec.links : (e.links || []));
+      const entities = rec.entities || e.entities || {};
+      const tags = rec.tags || e.tags || [];
+      el('doc-loading').style.display='none'; el('doc-view').style.display='';
+      let html = `<h1>${esc(title)}</h1>
+        <p class="trend-meta">${esc(e ? e.id : id)} · ${esc(e ? e.date : (rec.date||''))} ${e ? statusBadgeD(e.status) : ''} · ${esc(e ? (e.topic_type||'') : (rec.topic_type||''))}</p>`;
+      if(tldr) html += `<p><strong>TL;DR</strong> ${esc(tldr)}</p>`;
+      if(summary) html += `<div class="summary-block">${renderBoldD(esc(summary)).split(/\n\s*\n|\n/).filter(p=>p.trim()).map(p=>`<p>${p}</p>`).join('')}</div>`;
+      if(links.length){ const seen={}; let lh='<p><strong>Links</strong><br>';
+        for(const l of links){ try{ const u=new URL(l.url); const d=u.hostname.replace('www.',''); (seen[d]=seen[d]||[]).push(l);}catch(_){ (seen.other=seen.other||[]).push(l);} }
+        for(const [d,ls] of Object.entries(seen)) lh+=`<span class="link-domain">${esc(d)}</span> `+ls.map(linkBadgeD).join('')+'<br>';
+        lh+='</p>'; html+=lh; }
+      if(tags.length) html += `<p><strong>Tags</strong> ${tags.map(t=>`<span class="badge badge-tag">${esc(t)}</span>`).join(' ')}</p>`;
+      const entBits=[];
+      for(const [k,v] of Object.entries(entities)) if(v&&v.length) entBits.push(`${k}: ${v.map(n=>`<span class="ent-chip" data-entname="${esc(n)}" data-entkind="${esc(k==='author'?'person':k)}" title="🎯 发起跟踪">${esc(n)}</span>`).join(' ')}`);
+      if(entBits.length) html += `<p><strong>Entities</strong> ${entBits.join(' · ')}</p>`;
+      if((e._related||[]).length){ html += `<p class="related-head"><strong>Related</strong></p><ul class="related-list">`;
+        html += e._related.map(r=>`<li>${recLink(r.id)} <span class="rel-title">${esc(r.title||'')}</span> <span class="rel-score muted">${r.score}</span></li>`).join('');
+        html += '</ul>'; }
+      const pv=e && e.preview && e.preview.recall;
+      if(pv && (pv.matches||[]).length){ html += `<details class="preview-recall"><summary>🔁 发起时召回（${pv.matches.length}）</summary><ul class="related-list">`;
+        html += pv.matches.map(m=>`<li>${recLink(m.id)} ${m.title?`<span class="rel-title">${esc(m.title)}</span>`:''} <span class="rel-score muted">${m.score}</span></li>`).join('');
+        html += '</ul></details>'; }
+      html += `<p>${surveyCellD(e||{})}</p>`;
+      if(e && e.has_record) html += `<p class="link-add" data-linkadd="${esc(e.id)}"><button class="link-add-toggle">＋ 添加链接</button></p>`;
+      html += `<p><a href="/site/raw.html?id=${encodeURIComponent(id)}" target="_blank" rel="noopener">📁 Raw materials</a></p>`;
+      el('doc-body').innerHTML = html;
+      // entity chips → tracking
+      document.querySelectorAll('.ent-chip').forEach(chip=>chip.addEventListener('click', async (ev)=>{
+        ev.stopPropagation();
+        try{
+          const r=await fetch('/api/track',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:chip.dataset.entname,kind:chip.dataset.entkind})});
+          const d=await r.json().catch(()=>({}));
+          chip.title=(r.ok&&d.ok)?(d.exists?('已有跟踪：'+d.slug):('已创建：'+d.slug)):((d.message)||'失败');
+          chip.classList.add('tracked');
+        }catch(_){ chip.title='发起失败（请重启 site --serve）'; }
+      }));
+      // survey trigger
+      const sg=document.getElementById('survey-go');
+      if(sg) sg.addEventListener('click', async ()=>{
+        sg.disabled=true; const st=document.getElementById('survey-status');
+        st.textContent=' ⏳ 已发起，采集+写作中…';
+        try{
+          const r=await fetch('/api/survey',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+          const d=await r.json().catch(()=>({}));
+          if(!r.ok||!d.ok){ st.textContent=' '+(d.message||('失败 HTTP '+r.status)); sg.disabled=false; return; }
+          const t0=Date.now();
+          const timer=setInterval(async()=>{
+            try{
+              const s2=await (await fetch('/api/survey/status?id='+encodeURIComponent(id))).json();
+              if(s2.has_survey){ clearInterval(timer); st.innerHTML=` ✓ <a href="/site/survey.html?id=${encodeURIComponent(id)}" target="_blank">查看综述</a>`; return; }
+              const state=s2.status&&s2.status.state;
+              if(state==='failed'){ clearInterval(timer); st.textContent=' 综述失败'; sg.disabled=false; return; }
+              if(Date.now()-t0>600000){ clearInterval(timer); st.textContent=' 仍在进行，可稍后刷新'; }
+            }catch(_){}
+          },5000);
+        }catch(err){ st.textContent=' 服务不支持（请重启 site --serve）'; sg.disabled=false; }
+      });
+      // add-link form
+      document.querySelectorAll('[data-linkadd]').forEach(wrap=>{
+        wrap.querySelector('.link-add-toggle').addEventListener('click', ()=>{
+          if(wrap.querySelector('input')) return;
+          const form=document.createElement('span'); form.className='link-add-form';
+          form.innerHTML=` <input type="url" placeholder="https://…" size="40"> <select><option value="related">related</option><option value="canonical">canonical</option></select> <button data-act="add">添加</button> <button data-act="addsurvey" title="添加并自动更新综述">添加并更新综述</button> <span class="link-add-status muted"></span>`;
+          wrap.appendChild(form);
+          const input=form.querySelector('input'); const statusEl=form.querySelector('.link-add-status'); input.focus();
+          const submit=async(updateSurvey)=>{
+            const url=input.value.trim(); const role=form.querySelector('select').value;
+            if(!/^https?:\/\/\S+$/.test(url)){ statusEl.textContent=' URL 需以 http(s) 开头'; return; }
+            statusEl.textContent=' 添加中…';
+            try{
+              const r=await fetch('/api/record-links',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,url,role,update_survey:updateSurvey})});
+              const d=await r.json().catch(()=>({}));
+              if(!r.ok||!d.ok){ statusEl.textContent=' '+(d.message||('失败 HTTP '+r.status)); return; }
+              const badge=document.createElement('a'); badge.className='link-badge'; badge.href=url; badge.target='_blank'; badge.rel='noopener'; badge.title=url+'（manual）'; badge.textContent=ICONS[d.link&&d.link.kind]||ICONS.other;
+              const lp=document.querySelector('.markdown-body p strong');
+              (lp?lp.parentElement:wrap).appendChild(badge);
+              statusEl.textContent= updateSurvey?' ✓ 已添加，综述更新中（稍后刷新查看）':' ✓ 已添加';
+            }catch(err){ statusEl.textContent=' 服务不支持（请重启 site --serve）'; }
+          };
+          form.querySelector('[data-act="add"]').addEventListener('click',()=>submit(false));
+          form.querySelector('[data-act="addsurvey"]').addEventListener('click',()=>submit(true));
+        });
+      });
+    } catch (err) { el('doc-loading').textContent = 'Load failed: ' + err.message; }
+    return;
+  }
+
+  // post / tracking markdown
+  el('doc-back-list').href = '/site/' + (kind === 'tracking' ? '?v=tracking' : '?v=posts');
   const src = kind === 'tracking' ? 'tracking/' + slug + '/digest.md' : 'posts/' + slug + '.md';
   try {
     const res = await fetch('/' + src);
@@ -162,12 +282,10 @@ async function initDoc() {
     const md = await res.text();
     el('doc-loading').style.display = 'none';
     el('doc-view').style.display = '';
-    el('doc-back-list').href = '/site/' + (kind === 'tracking' ? '?v=tracking' : '?v=posts');
     const body = el('doc-body');
     const html = window.marked ? marked.parse(md) : '<pre>' + md.replace(/</g, '&lt;') + '</pre>';
-    // record ids → 可点击链接
     body.innerHTML = html.replace(/(?<![\w"=/])(20\d\d-\d\d-\d\d_[A-Za-z0-9_-]+)/g,
-      '<a href="/site/?q=$1" target="_blank" rel="noopener" class="rec-link">$1</a>');
+      '<a href="/site/doc.html?kind=record&id=$1" class="rec-link">$1</a>');
   } catch (err) { el('doc-loading').textContent = 'Load failed: ' + err.message; }
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initDoc); else initDoc();

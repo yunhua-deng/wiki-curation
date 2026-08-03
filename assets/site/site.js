@@ -73,10 +73,12 @@ async function init() {
   // stats
   const withRec = entries.filter(e => e.has_record).length;
   const postCount = ((postsData && postsData.items) || []).length;
+  const trackingCount = (trackingData || []).length;
   document.getElementById('stats').innerHTML = `
     <div class="stat"><b>${withRec}</b> records</div>
     <div class="stat"><b>${entries.filter(e => e.watched).length}</b> watching</div>
     <div class="stat"><b>${postCount}</b> posts</div>
+    <div class="stat"><b>${trackingCount}</b> tracking</div>
   `;
 
   // type filter
@@ -136,7 +138,7 @@ async function init() {
       for (const e of visible) {
         const tldr = (e.summary && e.summary.tldr) || e.overview || '';
         const linksHtml = (e.links||[]).slice(0,6).map(l => linkBadge(l)).join('');
-        html += `<tr class="wiki-row" data-id="${escapeHtml(e.id)}" title="点击展开详情">`;
+        html += `<tr class="wiki-row" data-id="${escapeHtml(e.id)}" title="点击查看详情">`;
         html += `<td class="col-watch">${watchCell(e)}</td>`;
         html += `<td class="col-id"><span class="row-toggle-id">${escapeHtml(e.id)}</span></td>`;
         html += `<td class="col-type"><span class="badge badge-other">${escapeHtml(e.topic_type||e.type||'—')}</span></td>`;
@@ -146,85 +148,6 @@ async function init() {
         html += `<td class="col-survey">${surveyCell(e)}</td>`;
         html += `<td class="col-date">${escapeHtml(e.date||'—')}</td>`;
         html += '</tr>';
-        // expandable detail row
-        html += `<tr class="wiki-detail" id="detail-${escapeHtml(e.id)}" style="display:none">`;
-        html += `<td colspan="8"><div class="detail-card">`;
-        html += `<p><strong>TL;DR</strong> ${escapeHtml(tldr)}</p>`;
-        const summaryText = (e.summary && e.summary.text) || '';
-        if (summaryText) {
-          html += `<div class="summary-block">${renderBold(escapeHtml(summaryText)).split(/\n\s*\n|\n/).filter(p=>p.trim()).map(p=>`<p>${p}</p>`).join('')}</div>`;
-        }
-        // group links by domain
-        const domainLinks = {};
-        for (const l of (e.links||[])) {
-          try { const u = new URL(l.url); const d = u.hostname.replace('www.','');
-            if (!domainLinks[d]) domainLinks[d] = [];
-            domainLinks[d].push(l);
-          } catch(_) { if (!domainLinks['other']) domainLinks['other'] = []; domainLinks['other'].push(l); }
-        }
-        if (Object.keys(domainLinks).length) {
-          let lh = '<p><strong>Links</strong><br>';
-          for (const [d, ls] of Object.entries(domainLinks)) {
-            lh += `<span class="link-domain">${escapeHtml(d)}</span> `;
-            lh += ls.map(l=>linkBadge(l)).join('') + '<br>';
-          }
-          lh += '</p>';
-          html += lh;
-        }
-        // v3.7: manual add-link (records only) — POST /api/record-links
-        if (e.has_record) {
-          html += `<p class="link-add" data-linkadd="${escapeHtml(e.id)}"><button class="link-add-toggle" title="把新发现的链接加入该记录的链接图谱">＋ 添加链接</button></p>`;
-        }
-        if ((e.tags||[]).length) html += `<p><strong>Tags</strong> ${e.tags.map(t=>`<span class="badge badge-tag">${escapeHtml(t)}</span>`).join(' ')}</p>`;
-        if (e.entities) {
-          const entBits = [];
-          for (const [k,v] of Object.entries(e.entities)) {
-            if (!v.length) continue;
-            const chips = v.map(name =>
-              `<span class="ent-chip" data-entname="${escapeHtml(name)}" data-entkind="${escapeHtml(k === 'author' ? 'person' : k)}" title="🎯 点击发起跟踪（tracking topic）">${escapeHtml(name)}</span>`
-            ).join(' ');
-            entBits.push(`${k}: ${chips}`);
-          }
-          if (entBits.length) html += `<p><strong>Entities</strong> <span class="muted ent-hint">（点名字可发起跟踪）</span> ${entBits.join(' · ')}</p>`;
-        }
-        if (e.source && e.source.direct_source) {
-          const ds = String(e.source.direct_source);
-          html += `<p><strong>Source</strong> <a href="${escapeHtml(ds)}" target="_blank" rel="noopener">${escapeHtml(ds.substring(0,80))}</a></p>`;
-        }
-        // v3.4/v3.7: related entries as list (id + title, click-to-scroll)
-        if ((e._related||[]).length) {
-          html += '<p class="related-head"><strong>Related</strong></p>';
-          html += '<ul class="related-list">';
-          html += e._related.map(r =>
-            `<li><span class="rel-id" data-relid="${escapeHtml(r.id)}" title="跳转展开">${escapeHtml(r.id)}</span>` +
-            (r.title ? ` <span class="rel-title">${escapeHtml(r.title)}</span>` : '') +
-            ` <span class="rel-score muted">${r.score}</span></li>`
-          ).join('');
-          html += '</ul>';
-        }
-        // v3.7: initiation preview (add-time recall list with reasons)
-        const pv = e.preview && e.preview.recall;
-        if (pv && (pv.matches||[]).length) {
-          html += `<details class="preview-recall"><summary>🔁 发起时召回（${pv.matches.length}）· ${escapeHtml((pv.added_at||'').slice(0,10))}</summary>`;
-          html += '<ul class="related-list">';
-          for (const m of pv.matches) {
-            const reasons = (m.reasons||[]).slice(0,2).map(x=>`${x.kind}: ${x.detail}`).join('; ');
-            html += `<li><span class="rel-id" data-relid="${escapeHtml(m.id)}" title="跳转展开">${escapeHtml(m.id)}</span>` +
-                    (m.title ? ` <span class="rel-title">${escapeHtml(m.title)}</span>` : '') +
-                    ` <span class="rel-score muted">${m.score}</span>` +
-                    (reasons ? `<div class="rel-reasons muted">${escapeHtml(reasons)}</div>` : '') +
-                    `</li>`;
-          }
-          html += '</ul></details>';
-        }
-        // v3.5: survey（综述）button / link — v3.6: 新开 tab
-        if (e.has_survey) {
-          html += `<p><a class="survey-btn" href="/site/survey.html?id=${encodeURIComponent(e.id)}" target="_blank" rel="noopener">🧭 查看综述</a></p>`;
-        } else if (e.has_record) {
-          html += `<p><button class="survey-btn" data-surveyid="${escapeHtml(e.id)}">🧭 综述</button> <span class="survey-status muted" data-surveystatus="${escapeHtml(e.id)}"></span></p>`;
-        }
-        html += `<p><a href="/site/raw.html?id=${encodeURIComponent(e.id)}">📁 Raw materials</a></p>`;
-        html += '</div></td></tr>';
       }
       html += '</tbody></table></div></div>';
     }
@@ -239,37 +162,11 @@ async function init() {
       });
     });
 
-    // v3.9: whole-row click toggles detail (interactive elements excluded)
+    // v3.10: row click → record standalone page (interactive elements excluded)
     container.querySelectorAll('tr.wiki-row').forEach(row => {
       row.addEventListener('click', (ev) => {
         if (ev.target.closest('a, button, input, select, textarea, label')) return;
-        const detail = document.getElementById('detail-' + row.dataset.id);
-        if (detail) detail.style.display = detail.style.display === 'none' ? '' : 'none';
-      });
-    });
-
-    // v3.7: entity chip → create tracking topic via POST /api/track
-    container.querySelectorAll('.ent-chip').forEach(chip => {
-      chip.addEventListener('click', async (ev) => {
-        ev.stopPropagation();
-        const name = chip.dataset.entname;
-        const kind = chip.dataset.entkind || 'person';
-        const oldTitle = chip.title;
-        chip.classList.add('pending');
-        try {
-          const res = await fetch('/api/track', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, kind }),
-          });
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok || !data.ok) throw new Error((data && data.message) || ('HTTP ' + res.status));
-          chip.classList.remove('pending');
-          chip.classList.add('tracked');
-          chip.title = data.exists ? `已有跟踪主题：${data.slug}` : `已创建跟踪主题：${data.slug}（digest 生成中，见 Tracking 页）`;
-        } catch (err) {
-          chip.classList.remove('pending');
-          chip.title = '发起失败（服务不支持？请重启 site --serve）：' + err.message;
-        }
+        window.location.href = '/site/doc.html?kind=record&id=' + encodeURIComponent(row.dataset.id);
       });
     });
 
@@ -355,111 +252,7 @@ async function init() {
         }
       });
     });
-
-    // v3.7: manual add-link — inline form, POST /api/record-links, optional survey regen
-    container.querySelectorAll('[data-linkadd]').forEach(wrap => {
-      const id = wrap.dataset.linkadd;
-      const toggle = wrap.querySelector('.link-add-toggle');
-      toggle.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        if (wrap.querySelector('input')) return;
-        const form = document.createElement('span');
-        form.className = 'link-add-form';
-        form.innerHTML = ` <input type="url" placeholder="https://…" size="44">` +
-          ` <select><option value="related">related</option><option value="canonical">canonical</option></select>` +
-          ` <button data-act="add">添加</button>` +
-          ` <button data-act="addsurvey" title="添加链接并自动重新生成综述">添加并更新综述</button>` +
-          ` <span class="link-add-status muted"></span>`;
-        toggle.after(form);
-        const input = form.querySelector('input');
-        const statusEl = form.querySelector('.link-add-status');
-        input.focus();
-        const injectBadge = (url, kind) => {
-          const badge = document.createElement('a');
-          badge.className = 'link-badge';
-          badge.href = url; badge.target = '_blank'; badge.rel = 'noopener'; badge.title = url + '（manual）';
-          badge.textContent = (LINK_ICONS[kind] || LINK_ICONS.other);
-          const detail = wrap.closest('.detail-card');
-          const domainSpan = detail && detail.querySelector('.link-domain');
-          if (domainSpan && domainSpan.parentElement) {
-            domainSpan.parentElement.appendChild(badge);
-          } else {
-            const p = document.createElement('p');
-            p.innerHTML = '<strong>Links</strong> ';
-            p.appendChild(badge);
-            wrap.before(p);
-          }
-        };
-        const submit = async (updateSurvey) => {
-          const url = input.value.trim();
-          const role = form.querySelector('select').value;
-          if (!/^https?:\/\/\S+$/.test(url)) { statusEl.textContent = ' URL 需以 http(s):// 开头'; return; }
-          // 记录综述基线 revision（regen 完成 = revision 自增；区分旧 survey.md 造成的 has_survey 恒真）
-          let baseRev = 0;
-          if (updateSurvey) {
-            try {
-              const cur = await (await fetch('/api/survey/status?id=' + encodeURIComponent(id))).json();
-              baseRev = (cur.survey && cur.survey.revision) || 0;
-            } catch (_) {}
-          }
-          statusEl.textContent = ' 添加中…';
-          try {
-            const res = await fetch('/api/record-links', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id, url, role, update_survey: updateSurvey }),
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok || !data.ok) { statusEl.textContent = ' ' + ((data && data.message) || ('失败 HTTP ' + res.status)); return; }
-            injectBadge(url, (data.link && data.link.kind) || 'other');
-            if (!updateSurvey) { statusEl.textContent = ' ✓ 已添加（manual，站点已重建）'; return; }
-            statusEl.textContent = ' ✓ 已添加，综述更新中…';
-            const t0 = Date.now();
-            const timer = setInterval(async () => {
-              try {
-                const st = await (await fetch('/api/survey/status?id=' + encodeURIComponent(id))).json();
-                const rev = (st.survey && st.survey.revision) || 0;
-                const state = st.status && st.status.state;
-                if (rev > baseRev && state === 'done') {
-                  clearInterval(timer);
-                  statusEl.innerHTML = ` ✓ 综述已更新（rev ${rev}）：<a href="/site/survey.html?id=${encodeURIComponent(id)}" target="_blank" rel="noopener">🧭 查看</a>`;
-                  return;
-                }
-                if (state === 'failed') { clearInterval(timer); statusEl.textContent = ' 综述更新失败（链接已添加）'; return; }
-                if (Date.now() - t0 > 600000) { clearInterval(timer); statusEl.textContent = ' 综述仍在更新，可稍后刷新'; }
-              } catch (_) {}
-            }, 5000);
-          } catch (err) {
-            statusEl.textContent = ' 当前 wiki 服务不支持添加链接（若刚升级，请重启 site --serve）';
-          }
-        };
-        form.querySelector('[data-act="add"]').addEventListener('click', (e2) => { e2.stopPropagation(); submit(false); });
-        form.querySelector('[data-act="addsurvey"]').addEventListener('click', (e2) => { e2.stopPropagation(); submit(true); });
-        input.addEventListener('keydown', (e2) => { if (e2.key === 'Enter') { e2.stopPropagation(); submit(false); } });
-      });
-    });
-
-    // v3.4: related-entry badges — scroll to and expand the target row
-    container.querySelectorAll('[data-relid]').forEach(badge => {
-      badge.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        const targetId = badge.dataset.relid;
-        const targetRow = container.querySelector(`tr[data-id="${targetId}"]`);
-        if (targetRow) {
-          // expand the target's detail
-          const detail = document.getElementById('detail-' + targetId);
-          if (detail) detail.style.display = '';
-          // open collapsed month if needed
-          const monthGroup = targetRow.closest('.month-group');
-          if (monthGroup && monthGroup.classList.contains('collapsed')) {
-            monthGroup.classList.remove('collapsed');
-            const h = monthGroup.querySelector('.month-header');
-            if (h) h.textContent = h.textContent.replace('▸', '▾');
-          }
-          targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-      });
-    });
-  }
+  } // end render
 
   searchInput.addEventListener('input', render);
   sel.addEventListener('change', render);
@@ -472,37 +265,13 @@ async function init() {
   const suggestions = (postsData && postsData.suggestions) || [];
   const trackingItems = trackingData || [];
 
-  function renderMd(container, md) {
-    const html = window.marked ? marked.parse(md) : `<pre>${escapeHtml(md)}</pre>`;
-    // record id → 可点击链接（跳回 records 视图搜索）
-    container.innerHTML = html.replace(/(?<![\w"=/])(20\d\d-\d\d-\d\d_[A-Za-z0-9_-]+)/g,
-      '<a href="/site/?q=$1" target="_blank" rel="noopener" class="rec-link">$1</a>');
-  }
-
-  function attachReader(listEl, articleEl, bodyEl, backEl, items, fileOf) {
-    listEl.querySelectorAll('.post-card, .tracking-card').forEach(card => {
-      card.addEventListener('click', async () => {
-        const it = items.find(x => x.slug === card.dataset.slug);
-        if (!it) return;
-        listEl.style.display = 'none';
-        const sg = document.getElementById('post-suggest');
-        if (sg) sg.style.display = 'none';
-        articleEl.style.display = '';
-        bodyEl.innerHTML = '<p class="muted">Loading...</p>';
-        try {
-          const md = await (await fetch('/' + fileOf(it))).text();
-          renderMd(bodyEl, md);
-        } catch (e) {
-          bodyEl.innerHTML = `<p class="muted">Load failed: ${escapeHtml(e.message)}</p>`;
-        }
-        window.scrollTo(0, 0);
+  // v3.10: 卡片点击直接进入独立 URL（SPA reader 已退役）
+  function bindCardNav(containerEl, kind) {
+    containerEl.querySelectorAll('.post-card, .tracking-card').forEach(card => {
+      card.addEventListener('click', (ev) => {
+        if (ev.target.closest('a, button')) return;
+        window.location.href = '/site/doc.html?kind=' + kind + '&slug=' + encodeURIComponent(card.dataset.slug);
       });
-    });
-    backEl.addEventListener('click', () => {
-      articleEl.style.display = 'none';
-      listEl.style.display = '';
-      const sg = document.getElementById('post-suggest');
-      if (sg) sg.style.display = '';
     });
   }
 
@@ -641,45 +410,10 @@ async function init() {
         h.textContent = h.textContent.replace('▸', '▾').replace('▾', g.classList.contains('collapsed') ? '▸' : '▾');
       });
     });
-    bindPostCards(items);
-  }
-
-  function bindPostCards(items) {
-    postList.querySelectorAll('.doc-link').forEach(a => {
-      a.addEventListener('click', (ev) => ev.stopPropagation());
-    });
-    postList.querySelectorAll('.post-card').forEach(card => {
-      card.addEventListener('click', async () => {
-        const it = items.find(x => x.slug === card.dataset.slug);
-        if (!it) return;
-        postList.style.display = 'none';
-        sgBox.style.display = 'none';
-        const tb = document.querySelector('.post-trigger');
-        if (tb) tb.style.display = 'none';
-        const articleEl = document.getElementById('post-article');
-        const bodyEl = document.getElementById('post-body');
-        articleEl.style.display = '';
-        bodyEl.innerHTML = '<p class="muted">Loading...</p>';
-        try {
-          const md = await (await fetch('/' + it.file)).text();
-          renderMd(bodyEl, md);
-        } catch (e) {
-          bodyEl.innerHTML = `<p class="muted">Load failed: ${escapeHtml(e.message)}</p>`;
-        }
-        window.scrollTo(0, 0);
-      });
-    });
+    bindCardNav(postList, 'post');
   }
 
   renderPosts(postItems);
-
-  document.getElementById('post-back').addEventListener('click', () => {
-    document.getElementById('post-article').style.display = 'none';
-    postList.style.display = '';
-    sgBox.style.display = '';
-    const tb = document.querySelector('.post-trigger');
-    if (tb) tb.style.display = '';
-  });
 
   // --- tracking list ---
   const trackingList = document.getElementById('tracking-list');
@@ -696,9 +430,7 @@ async function init() {
   } else {
     trackingList.innerHTML = '<p class="empty">No tracking topics yet</p>';
   }
-  attachReader(trackingList, document.getElementById('tracking-article'),
-               document.getElementById('tracking-body'), document.getElementById('tracking-back'),
-               trackingItems, it => `tracking/${it.slug}/digest.md`);
+  bindCardNav(trackingList, 'tracking');
 
   // --- nav ---
   document.getElementById('nav-records').addEventListener('click', () => switchView('records'));
@@ -711,6 +443,10 @@ async function init() {
       document.getElementById(v + '-view').style.display = view === v ? '' : 'none';
     }
   }
+
+  // v3.10: ?v=posts|tracking 初始视图（doc.html 返回列表链接用）
+  const v0 = getParam('v');
+  if (v0 === 'posts' || v0 === 'tracking') switchView(v0);
 }
 
 if (document.readyState === 'loading') {

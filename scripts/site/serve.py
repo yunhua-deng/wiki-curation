@@ -39,73 +39,68 @@ class SPAHandler(SimpleHTTPRequestHandler):
             return
         super().do_GET()
 
+    def _read_json_body(self):
+        """读取并解析 POST body。返回 (payload, error_response_or_None)。"""
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        raw = self.rfile.read(length) if length else b""
+        if not raw:
+            return {}, None
+        try:
+            return json.loads(raw), None
+        except Exception:
+            return None, (400, {"ok": False, "error": "INVALID_JSON",
+                                "message": "request body is not valid JSON (expect UTF-8)"})
+
     def do_POST(self):
         # v3.5：survey 发起 API（仅 loopback；api 层再校验）
         if self.path.split("?")[0] == "/api/watch":
-            try:
-                length = int(self.headers.get("Content-Length") or 0)
-            except ValueError:
-                length = 0
-            try:
-                payload = json.loads(self.rfile.read(length) or b"{}")
-            except Exception:
-                payload = {}
+            payload, err = self._read_json_body()
+            if err:
+                self._send_json(*err)
+                return
             from scripts.site import api as site_api
             code, data = site_api.handle_watch(
                 self.directory, payload, client_ip=self.client_address[0])
             self._send_json(code, data)
             return
         if self.path.split("?")[0] == "/api/track":
-            try:
-                length = int(self.headers.get("Content-Length") or 0)
-            except ValueError:
-                length = 0
-            try:
-                payload = json.loads(self.rfile.read(length) or b"{}")
-            except Exception:
-                payload = {}
+            payload, err = self._read_json_body()
+            if err:
+                self._send_json(*err)
+                return
             from scripts.site import api as site_api
             code, data = site_api.handle_track(
                 self.directory, payload, client_ip=self.client_address[0])
             self._send_json(code, data)
             return
         if self.path.split("?")[0] == "/api/post":
-            try:
-                length = int(self.headers.get("Content-Length") or 0)
-            except ValueError:
-                length = 0
-            try:
-                payload = json.loads(self.rfile.read(length) or b"{}")
-            except Exception:
-                payload = {}
+            payload, err = self._read_json_body()
+            if err:
+                self._send_json(*err)
+                return
             from scripts.site import api as site_api
             code, data = site_api.handle_post(
                 self.directory, payload, client_ip=self.client_address[0])
             self._send_json(code, data)
             return
         if self.path.split("?")[0] == "/api/record-links":
-            try:
-                length = int(self.headers.get("Content-Length") or 0)
-            except ValueError:
-                length = 0
-            try:
-                payload = json.loads(self.rfile.read(length) or b"{}")
-            except Exception:
-                payload = {}
+            payload, err = self._read_json_body()
+            if err:
+                self._send_json(*err)
+                return
             from scripts.site import api as site_api
             code, data = site_api.handle_add_link(
                 self.directory, payload, client_ip=self.client_address[0])
             self._send_json(code, data)
             return
         if self.path.split("?")[0] == "/api/survey":
-            try:
-                length = int(self.headers.get("Content-Length") or 0)
-            except ValueError:
-                length = 0
-            try:
-                payload = json.loads(self.rfile.read(length) or b"{}")
-            except Exception:
-                payload = {}
+            payload, err = self._read_json_body()
+            if err:
+                self._send_json(*err)
+                return
             from scripts.site import api as site_api
             code, data = site_api.handle_survey_request(
                 self.directory, payload, client_ip=self.client_address[0])

@@ -403,7 +403,7 @@ def merge_posts(stems: list, ws=None, db_path=None, runner=None, timeout: int = 
         raise PostError("WRITE_FAILED", f"merge 写作未产出文件: {err or 'no output'}")
     pub = publish_post_file(staging, ws, {"kind": "merge", "merged": stems},
                             model="")
-    # 归档被合并的 post
+    # 归档被合并的 post（归档后再重建一次站点，使索引不再含被合并项）
     merged_dir = posts_dir / "_merged"
     merged_dir.mkdir(parents=True, exist_ok=True)
     for stem in stems:
@@ -411,6 +411,10 @@ def merge_posts(stems: list, ws=None, db_path=None, runner=None, timeout: int = 
             src = posts_dir / f"{stem}{suf}"
             if src.exists():
                 src.replace(merged_dir / f"{stem}{suf}")
+    from scripts.publish.lock import PublishLock
+    from scripts.site.build import build_site
+    with PublishLock(timeout=30):
+        build_site(db_path, ws)
     return {"ok": True, **pub, "merged_stems": stems, "evidence_count": len(evidence)}
 
 

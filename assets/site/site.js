@@ -569,6 +569,7 @@ async function init() {
         <div class="muted suggest-meta">${escapeHtml(s.anchor)} · ${s.degree} 条关联 · score ${s.score}</div>
         <div class="suggest-actions">
           <button class="suggest-go" data-sg="${i}">✍️ 一键写作</button>
+          <button class="suggest-dismiss" data-sg="${i}" title="我不需要这个分析建议">✕ 忽略</button>
           <code class="suggest-cmd" title="点击复制">${escapeHtml(s.suggested_cmd)}</code>
         </div>
       </div>
@@ -586,6 +587,25 @@ async function init() {
         const s = freshSuggestions[Number(b.dataset.sg)];
         b.disabled = true;
         startPost({ records: s.records });
+      });
+    });
+    sgBox.querySelectorAll('.suggest-dismiss').forEach(b => {
+      b.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        const s = freshSuggestions[Number(b.dataset.sg)];
+        b.disabled = true;
+        try {
+          const res = await fetch('/api/post-ignore', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ anchor: s.anchor }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.ok) { b.disabled = false; b.title = '忽略失败：' + ((data && data.message) || res.status); return; }
+          b.closest('.suggest-card').remove();
+        } catch (err) {
+          b.disabled = false;
+          b.title = '忽略失败（服务不支持？请重启 site --serve）';
+        }
       });
     });
   } else {
@@ -607,7 +627,7 @@ async function init() {
         <div class="month-body" id="${gid}">
         ${groups[mk].map(t => `
           <div class="post-card" data-slug="${escapeHtml(t.slug)}">
-            <h3>${escapeHtml(t.title)}</h3>
+            <h3>${escapeHtml(t.title)} <a class="doc-link" href="/site/doc.html?kind=post&slug=${encodeURIComponent(t.slug)}" target="_blank" rel="noopener" title="独立页面（新 tab）">🔗</a></h3>
             <div class="trend-meta">${escapeHtml(t.date || '')}${t.trigger ? ' · ' + escapeHtml(t.trigger) : ''}</div>
             <p class="muted">${escapeHtml(t.excerpt || '')}</p>
           </div>`).join('')}
@@ -625,6 +645,9 @@ async function init() {
   }
 
   function bindPostCards(items) {
+    postList.querySelectorAll('.doc-link').forEach(a => {
+      a.addEventListener('click', (ev) => ev.stopPropagation());
+    });
     postList.querySelectorAll('.post-card').forEach(card => {
       card.addEventListener('click', async () => {
         const it = items.find(x => x.slug === card.dataset.slug);
@@ -665,7 +688,7 @@ async function init() {
       const due = t.next_due && t.next_due <= new Date().toISOString().slice(0, 10);
       return `
       <div class="tracking-card" data-slug="${escapeHtml(t.slug)}">
-        <h3>🎯 ${escapeHtml(t.name)}</h3>
+        <h3>🎯 ${escapeHtml(t.name)} <a class="doc-link" href="/site/doc.html?kind=tracking&slug=${encodeURIComponent(t.slug)}" target="_blank" rel="noopener" title="独立页面（新 tab）">🔗</a></h3>
         <div class="trend-meta">${escapeHtml(t.kind)} · ${t.record_count} records · 上次刷新 ${escapeHtml(t.last_at || '—')}${due ? ' · <span class="badge badge-pending">到期</span>' : ''}${t.has_digest ? '' : ' · <span class="badge badge-running">生成中</span>'}</div>
         <p class="muted">${escapeHtml(t.excerpt || '')}</p>
       </div>`;

@@ -579,6 +579,20 @@ def cmd_post(args) -> int:
             items = POSTS.suggest_post_topics(db, ws=ws)
             _print_result({"ok": True, "data": {"suggestions": items, "count": len(items)}}, args.json)
             return 0
+        if getattr(args, "ignore", None):
+            result = POSTS.ignore_suggestion(args.ignore, ws)
+            _print_result({"ok": True, "data": result}, args.json)
+            return 0
+        if getattr(args, "merge", None):
+            stems = [x.strip() for x in args.merge.split(",") if x.strip()]
+            if getattr(args, "auto", False):
+                result = POSTS.merge_posts(stems, ws, db)
+                _print_result({"ok": True, "data": result}, args.json)
+                return 0
+            # 无 --auto：输出 merge 任务给 agent 手动执行（staging 文件名）
+            _print_result({"ok": False, "error": "MERGE_NEEDS_AUTO",
+                           "message": "post --merge 需要 --auto（headless 整合写作）"}, args.json)
+            return 1
         if getattr(args, "records", None):
             ids = [x.strip() for x in args.records.split(",") if x.strip()]
             trigger = {"kind": "records", "ids": ids}
@@ -752,8 +766,8 @@ def cmd_manifest(args) -> int:
             {"name": "add-link", "args": ["--id", "--url", "--role", "--update-survey"],
              "description": "手动添加链接到 record 图谱（origin=manual；--update-survey 联动重生成综述）"},
             {"name": "watch", "args": ["--id", "--on", "--off"], "description": "特别关注：toggle / 设置 / 无 --id 列出全部"},
-            {"name": "post", "args": ["--topic", "--records", "--suggest", "--auto"],
-             "description": "技术 post：主题取证/多记录融合/hub 建议（--auto 端到端写作发布）"},
+            {"name": "post", "args": ["--topic", "--records", "--suggest", "--merge", "--ignore", "--auto"],
+             "description": "技术 post：主题取证/多记录融合/hub 建议/系列整合/忽略建议（--auto 端到端）"},
             {"name": "track", "args": ["--name", "--kind", "--refresh", "--list", "--due", "--archive", "--auto"],
              "description": "实体跟踪主题：创建（关联 records）/ 周期 refresh / 到期清单（--due 供 cron）"},
             {"name": "star", "args": ["--id"], "description": "publish 后标星 canonical GitHub 仓库（需 GITHUB_TOKEN）"},
@@ -963,6 +977,8 @@ def main():
     p_post.add_argument("--records", help="逗号分隔的 record id 列表")
     p_post.add_argument("--suggest", action="store_true")
     p_post.add_argument("--limit", type=int, default=8)
+    p_post.add_argument("--merge", help="逗号分隔的 post stem 列表，整合为一篇（需 --auto）")
+    p_post.add_argument("--ignore", help="忽略一条分析建议（anchor entry id）")
     p_post.add_argument("--auto", action="store_true", help="headless 写作 + 校验 + 落位 + 站点重建")
 
     p_track = sub.add_parser("track", help="实体跟踪：--name 创建 / --refresh 更新 / --list / --due / --archive")

@@ -207,3 +207,10 @@ a:hover{text-decoration:underline}
 .suggest-go:hover{border-color:var(--accent);color:var(--accent)}
 .suggest-go:disabled{opacity:.5;cursor:default}
 .rec-link{font-family:var(--font-mono);font-size:.85em}
+
+/* Standalone doc link + dismiss (v3.8) */
+.doc-link{font-size:.75rem;text-decoration:none;vertical-align:middle;margin-left:.25rem}
+.doc-link:hover{text-decoration:underline}
+.suggest-dismiss{font-size:.72rem;padding:.1rem .5rem;border:1px solid var(--border);border-radius:4px;background:none;color:var(--muted);cursor:pointer}
+.suggest-dismiss:hover{color:#cf222e;border-color:#cf222e}
+.suggest-dismiss:disabled{opacity:.5;cursor:default}

@@ -143,6 +143,38 @@ if (document.readyState === 'loading') document.addEventListener('DOMContentLoad
 """
 
 
+_DOC_READER = r"""
+<div id="doc-loading" class="muted">Loading...</div>
+<div id="doc-view" style="display:none">
+  <p class="dive-nav"><a href="/site/">← Wiki</a> · <a id="doc-back-list" href="#">返回列表</a></p>
+  <article id="doc-body" class="markdown-body"></article>
+</div>
+<script>
+async function initDoc() {
+  const slug = new URLSearchParams(window.location.search).get('slug');
+  const kind = new URLSearchParams(window.location.search).get('kind') || 'post';
+  const el = (id) => document.getElementById(id);
+  if (!slug) { el('doc-loading').textContent = 'Missing slug'; return; }
+  const src = kind === 'tracking' ? 'tracking/' + slug + '/digest.md' : 'posts/' + slug + '.md';
+  try {
+    const res = await fetch('/' + src);
+    if (!res.ok) throw new Error(src + ': HTTP ' + res.status);
+    const md = await res.text();
+    el('doc-loading').style.display = 'none';
+    el('doc-view').style.display = '';
+    el('doc-back-list').href = '/site/' + (kind === 'tracking' ? '?v=tracking' : '?v=posts');
+    const body = el('doc-body');
+    const html = window.marked ? marked.parse(md) : '<pre>' + md.replace(/</g, '&lt;') + '</pre>';
+    // record ids → 可点击链接
+    body.innerHTML = html.replace(/(?<![\w"=/])(20\d\d-\d\d-\d\d_[A-Za-z0-9_-]+)/g,
+      '<a href="/site/?q=$1" target="_blank" rel="noopener" class="rec-link">$1</a>');
+  } catch (err) { el('doc-loading').textContent = 'Load failed: ' + err.message; }
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initDoc); else initDoc();
+</script>
+"""
+
+
 def render_pages(entries, tags, sources, out_dir):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -155,6 +187,9 @@ def render_pages(entries, tags, sources, out_dir):
     )
     (out_dir / "survey.html").write_text(
         _render_page("Survey", _SURVEY_CONTENT, generated_at), encoding="utf-8"
+    )
+    (out_dir / "doc.html").write_text(
+        _render_page("Doc", _DOC_READER, generated_at), encoding="utf-8"
     )
 
 

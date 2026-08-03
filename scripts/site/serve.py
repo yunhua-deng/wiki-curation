@@ -66,6 +66,16 @@ class SPAHandler(SimpleHTTPRequestHandler):
                 self.directory, payload, client_ip=self.client_address[0])
             self._send_json(code, data)
             return
+        if self.path.split("?")[0] == "/api/post-ignore":
+            payload, err = self._read_json_body()
+            if err:
+                self._send_json(*err)
+                return
+            from scripts.site import api as site_api
+            code, data = site_api.handle_post_ignore(
+                self.directory, payload, client_ip=self.client_address[0])
+            self._send_json(code, data)
+            return
         if self.path.split("?")[0] == "/api/track":
             payload, err = self._read_json_body()
             if err:

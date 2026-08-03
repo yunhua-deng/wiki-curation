@@ -298,8 +298,11 @@ def suggest_post_topics(db_path, min_degree: int = 3, top_n: int = 5, ws=None) -
 
     hubs = sorted(((eid, d) for eid, d in deg.items() if d["degree"] >= min_degree),
                   key=lambda kv: -kv[1]["score"])
+    ignored = set(load_ignored(ws) if ws is not None else [])
     out = []
-    for eid, d in hubs[:top_n]:
+    for eid, d in hubs[:top_n + len(ignored)]:
+        if eid in ignored:
+            continue
         e = entries.get(eid) or {}
         top_neighbors = sorted(neighbors.get(eid, {}).items(), key=lambda kv: -kv[1])[:4]
         ids = [eid] + [nid for nid, _ in top_neighbors]
@@ -314,3 +317,129 @@ def suggest_post_topics(db_path, min_degree: int = 3, top_n: int = 5, ws=None) -
             "suggested_cmd": f"{CLI_CMD} --json post --records {','.join(ids)} --auto",
         })
     return out
+
+
+# ============================================================
+# 建议忽略清单 + 系列整合（merge）
+# ============================================================
+
+def _ignored_path(ws) -> Path:
+    return paths.posts_dir(ws) / ".ignored_suggestions.json"
+
+
+def load_ignored(ws) -> list:
+    p = _ignored_path(ws)
+    if not p.exists():
+        return []
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    return [x for x in (data if isinstance(data, list) else []) if isinstance(x, str)]
+
+
+def ignore_suggestion(anchor: str, ws=None) -> dict:
+    """把一条建议永久忽略（写入忽略清单，重建站点）。"""
+    from scripts.publish.lock import PublishLock
+    from scripts.site.build import build_site
+
+    ws = Path(ws) if ws is not None else paths.get_workspace()
+    ignored = load_ignored(ws)
+    if anchor not in ignored:
+        ignored.append(anchor)
+        _ignored_path(ws).parent.mkdir(parents=True, exist_ok=True)
+        _ignored_path(ws).write_text(json.dumps(ignored, ensure_ascii=False, indent=2), encoding="utf-8")
+    with PublishLock(timeout=30):
+        build_site(paths.db_path(ws), ws)
+    return {"ok": True, "anchor": anchor, "ignored_count": len(ignored)}
+
+
+def merge_posts(stems: list, ws=None, db_path=None, runner=None, timeout: int = 900) -> dict:
+    """整合多篇 post 为一篇：收集原文 + 相关 record 证据 → headless 写作 →
+    校验落位 → 原 post 移入 posts/_merged/（保留历史，站点不再列出）。"""
+    from scripts.lib import headless_write_runner
+    from scripts.records import schema as RS
+
+    ws = Path(ws) if ws is not None else paths.get_workspace()
+    db_path = Path(db_path) if db_path is not None else paths.db_path(ws)
+    posts_dir = paths.posts_dir(ws)
+    if len(stems) < 2:
+        raise PostError("MERGE_NEEDS_2", "post --merge 至少需要两篇")
+
+    originals = []
+    record_ids = []
+    for stem in stems:
+        md = posts_dir / f"{stem}.md"
+        if not md.exists():
+            raise PostError("POST_MISSING", f"post 不存在: {stem}")
+        originals.append(md.read_text(encoding="utf-8", errors="replace"))
+        try:
+            meta = json.loads((posts_dir / f"{stem}.meta.json").read_text(encoding="utf-8"))
+        except Exception:
+            meta = {}
+        tr = meta.get("trigger") or {}
+        record_ids += tr.get("ids", []) or ([tr["topic"]] if tr.get("kind") == "topic" else [])
+    # 关联 record 证据（按 id 取；topic 触发则回退标题取证）
+    evidence = []
+    seen = set()
+    for rid in record_ids:
+        if not rid or rid in seen:
+            continue
+        seen.add(rid)
+        ev = _record_evidence(rid, ws)
+        if ev.get("tldr") or ev.get("title"):
+            evidence.append(ev)
+    merged_title = "整合：" + "｜".join(
+        re.sub(r"^#+\s*", "", p.splitlines()[0]).strip()[:24] for p in originals)[:80]
+    slug = slugify(merged_title.replace("整合：", ""))[:36]
+
+    staging = paths.post_staging_dir(ws) / f"{_today()}-{slug}.md"
+    staging.parent.mkdir(parents=True, exist_ok=True)
+    task = build_merge_task(merged_title, originals, evidence, staging)
+    runner = runner or headless_write_runner
+    result = runner(task, ws, timeout=timeout)
+    if not staging.exists():
+        err = ((result or {}).get("stderr") or (result or {}).get("stdout") or "")[-300:]
+        raise PostError("WRITE_FAILED", f"merge 写作未产出文件: {err or 'no output'}")
+    pub = publish_post_file(staging, ws, {"kind": "merge", "merged": stems},
+                            model="")
+    # 归档被合并的 post
+    merged_dir = posts_dir / "_merged"
+    merged_dir.mkdir(parents=True, exist_ok=True)
+    for stem in stems:
+        for suf in (".md", ".meta.json"):
+            src = posts_dir / f"{stem}{suf}"
+            if src.exists():
+                src.replace(merged_dir / f"{stem}{suf}")
+    return {"ok": True, **pub, "merged_stems": stems, "evidence_count": len(evidence)}
+
+
+def build_merge_task(title: str, originals: list, evidence: list, staging_path: Path) -> str:
+    """构造 merge 写作 agent 的 task prompt。"""
+    orig_block = "\n\n---\n\n".join(f"### 原文 {i + 1}\n\n{o[:6000]}" for i, o in enumerate(originals))
+    ev_lines = [f"- [{e['id']}]（{e.get('date') or '?'}）{e.get('title') or e['id']}——{e.get('tldr') or ''}"
+                for e in evidence[:20]]
+    ev_block = "\n".join(ev_lines) or "- （无独立证据）"
+    return f"""你是技术 blog 作者。把下面 {len(originals)} 篇**同主题 post**整合为**一篇**更完整的文章，写入任务指定的输出文件（staging 路径）。
+
+## 任务
+
+1. 识别这些 post 的共同主线（它们属于同一系列/主题）。
+2. 写一篇整合文：H1 标题（点明共同主题，非"整合："拼接）+ hook + 按主线组织的 3-6 个小节 + 收尾展望。
+3. 消除重复论述；保留每篇的独特视角与关键证据；证据行内引用 record id（如 [2026-07-25_01-data-closed-loop-architecture] 所在记录）或 URL。
+4. 篇幅 1200-6000 字符。
+
+## 原文材料
+
+{orig_block}
+
+## 关联记录证据（wiki 内，可深入 artifacts/ 阅读）
+
+{ev_block}
+
+## 硬性规则
+
+1. 内容可溯源到原文或关联记录；禁止编造 URL/数据。
+2. **禁止执行任何 git 操作**；不要写目标文件以外的文件；不要运行 publish / cli 命令。
+3. 完成后只返回一句话摘要。
+"""

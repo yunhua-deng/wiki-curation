@@ -146,6 +146,22 @@ def handle_watch(wiki_dir, payload: dict, client_ip: str = "127.0.0.1"):
                  "watched_at": e.get("watched_at") or ""}
 
 
+def handle_post_ignore(wiki_dir, payload: dict, client_ip: str = "127.0.0.1"):
+    """POST /api/post-ignore：忽略一条分析建议（写入忽略清单 + 重建站点）。"""
+    from scripts import posts as POSTS
+
+    if client_ip not in LOOPBACK_IPS:
+        return 403, {"ok": False, "error": "FORBIDDEN",
+                     "message": "only loopback clients may dismiss suggestions"}
+    payload = payload or {}
+    anchor = str(payload.get("anchor") or "").strip()
+    if not anchor or not ID_RE.match(anchor):
+        return 400, {"ok": False, "error": "INVALID_ANCHOR", "message": "anchor must be an entry id"}
+    ws = Path(wiki_dir)
+    result = POSTS.ignore_suggestion(anchor, ws)
+    return 200, result
+
+
 _NAME_MAX = 64
 
 

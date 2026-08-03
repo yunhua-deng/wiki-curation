@@ -302,6 +302,8 @@ def _build_posts(wiki_dir: Path, db_path=None) -> dict:
             except: return 0
 
         for md in sorted(posts_dir.glob("*.md"), key=_post_key):
+            if md.parent.name in ("_merged", "_staging"):
+                continue
             try:
                 text = md.read_text(encoding="utf-8", errors="replace")
             except Exception:

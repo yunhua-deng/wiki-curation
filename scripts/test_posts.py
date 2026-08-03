@@ -133,3 +133,65 @@ def test_suggest_post_topics_hub_detection(tmp_path, monkeypatch):
     assert "hub1" in suggestions[0]["records"]
     assert "post --records" in suggestions[0]["suggested_cmd"]
     assert suggestions[0]["covered"] is False
+
+
+def test_ignore_suggestion(tmp_path, monkeypatch):
+    _patch_ws(tmp_path, monkeypatch)
+    from scripts import posts
+    result = posts.ignore_suggestion("hub1", tmp_path)
+    assert result["ok"] and result["ignored_count"] == 1
+    assert posts.load_ignored(tmp_path) == ["hub1"]
+    # 幂等
+    posts.ignore_suggestion("hub1", tmp_path)
+    assert posts.load_ignored(tmp_path) == ["hub1"]
+
+
+def test_suggest_filters_ignored(tmp_path, monkeypatch):
+    _patch_ws(tmp_path, monkeypatch)
+    db = paths.db_path(tmp_path)
+    for i, slug in enumerate(["hub1", "n1", "n2", "n3"]):
+        conftest.seed_entry(db, slug, status="done", topic_type="paper")
+    url = "https://arxiv.org/abs/2501.0001"
+    L.replace_links(db, "hub1", [{"url": url, "kind": "arxiv"}])
+    for s in ("n1", "n2", "n3"):
+        L.replace_links(db, s, [{"url": url, "kind": "arxiv"}])
+        from scripts.records import relations as REL
+        REL.rewire_relations(db, s)
+    from scripts import posts
+    posts.ignore_suggestion("hub1", tmp_path)
+    suggestions = posts.suggest_post_topics(db, min_degree=3, top_n=5, ws=tmp_path)
+    assert suggestions == []  # hub1 被忽略
+
+
+def test_merge_posts(tmp_path, monkeypatch):
+    _patch_ws(tmp_path, monkeypatch)
+    RS.save_record("a1", tmp_path, RECORD_A)
+    posts_dir = paths.posts_dir(tmp_path)
+    posts_dir.mkdir(parents=True, exist_ok=True)
+    for stem, title in [("2026-07-25_01-aaa", "数据闭环"), ("2026-07-25_02-bbb", "仿真基座")]:
+        (posts_dir / f"{stem}.md").write_text(
+            f"# {title}\n\n正文 {title}，见 [a1]。\n" + "字" * 500, encoding="utf-8")
+        (posts_dir / f"{stem}.meta.json").write_text(
+            json.dumps({"stem": stem, "trigger": {"kind": "topic", "topic": title}}), encoding="utf-8")
+    from scripts import posts
+
+    def fake_runner(prompt, ws, timeout=900):
+        line = [l for l in prompt.splitlines() if l.startswith("`") and l.endswith(".md`")][0]
+        out = Path(line.strip("`"))
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text("# 整合文\n\n" + "正文" * 500 + "\n\n见 [a1] 与 https://x.com/y\n", encoding="utf-8")
+        return {"ok": True, "stdout": "done", "stderr": ""}
+
+    result = posts.merge_posts(["2026-07-25_01-aaa", "2026-07-25_02-bbb"],
+                               tmp_path, paths.db_path(tmp_path), runner=fake_runner)
+    assert result["ok"] and result["merged_stems"] == ["2026-07-25_01-aaa", "2026-07-25_02-bbb"]
+    # 新 post 落位、原 post 归档
+    new_md = tmp_path / result["file"]
+    assert new_md.exists()
+    assert not (posts_dir / "2026-07-25_01-aaa.md").exists()
+    assert (posts_dir / "_merged" / "2026-07-25_01-aaa.md").exists()
+    # 站点 posts.json 只列新 post
+    posts_json = json.loads((tmp_path / "site" / "data" / "posts.json").read_text(encoding="utf-8"))
+    slugs = [i["slug"] for i in posts_json["items"]]
+    assert result["stem"] in slugs
+    assert not any("2026-07-25_01-aaa" in x for x in slugs)

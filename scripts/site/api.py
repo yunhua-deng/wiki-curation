@@ -177,3 +177,59 @@ def handle_track(wiki_dir, payload: dict, client_ip: str = "127.0.0.1", spawner=
         log_dir.mkdir(parents=True, exist_ok=True)
         _spawn_detached(ws, cmd, log_path=log_dir / "create.log")
     return 202, {"ok": True, "slug": slug, "name": name, "state": "creating"}
+
+
+def _existing_post_for_topic(ws: Path, topic: str) -> str:
+    """已写过同 topic 的 post → 返回 stem（幂等）；否则 ''。"""
+    posts_dir = paths.posts_dir(ws)
+    if not posts_dir.exists():
+        return ""
+    for meta in posts_dir.glob("*.meta.json"):
+        try:
+            m = json.loads(meta.read_text(encoding="utf-8", errors="replace")) or {}
+        except Exception:
+            continue
+        tr = m.get("trigger") or {}
+        if tr.get("kind") == "topic" and (tr.get("topic") or "").strip() == topic:
+            return m.get("stem") or meta.stem.replace(".meta", "")
+    return ""
+
+
+def handle_post(wiki_dir, payload: dict, client_ip: str = "127.0.0.1", spawner=None):
+    """POST /api/post：网页发起 post 写作（topic 或 records 融合）。返回 (http_code, json_dict)。"""
+    if client_ip not in LOOPBACK_IPS:
+        return 403, {"ok": False, "error": "FORBIDDEN",
+                     "message": "only loopback clients may trigger posts"}
+    payload = payload or {}
+    ws = Path(wiki_dir)
+    cli = Path(__file__).resolve().parent.parent / "cli.py"
+    cmd = [sys.executable, str(cli), "--json", "post"]
+
+    topic = str(payload.get("topic") or "").strip()
+    records = payload.get("records")
+    if records and isinstance(records, list):
+        ids = [str(x).strip() for x in records if str(x).strip()]
+        if not ids or len(ids) > 8 or any(not ID_RE.match(i) for i in ids):
+            return 400, {"ok": False, "error": "INVALID_RECORDS",
+                         "message": "records must be 1-8 entry ids"}
+        cmd += ["--records", ",".join(ids), "--auto"]
+        trigger_desc = f"records fusion ({len(ids)})"
+    elif topic:
+        if len(topic) > 200:
+            return 400, {"ok": False, "error": "INVALID_TOPIC", "message": "topic too long"}
+        existing = _existing_post_for_topic(ws, topic)
+        if existing:
+            return 200, {"ok": True, "exists": True, "stem": existing}
+        cmd += ["--topic", topic, "--auto"]
+        trigger_desc = topic
+    else:
+        return 400, {"ok": False, "error": "MISSING_TRIGGER",
+                     "message": "topic or records required"}
+
+    if spawner:
+        spawner(ws, cmd)
+    else:
+        log_dir = paths.post_staging_dir(ws)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        _spawn_detached(ws, cmd, log_path=log_dir / "post.log")
+    return 202, {"ok": True, "trigger": trigger_desc, "state": "writing"}

@@ -185,7 +185,7 @@ async function init() {
             ).join(' ');
             entBits.push(`${k}: ${chips}`);
           }
-          if (entBits.length) html += `<p><strong>Entities</strong> ${entBits.join(' · ')}</p>`;
+          if (entBits.length) html += `<p><strong>Entities</strong> <span class="muted ent-hint">（点名字可发起跟踪）</span> ${entBits.join(' · ')}</p>`;
         }
         if (e.source && e.source.direct_source) {
           const ds = String(e.source.direct_source);
@@ -473,7 +473,10 @@ async function init() {
   const trackingItems = trackingData || [];
 
   function renderMd(container, md) {
-    container.innerHTML = window.marked ? marked.parse(md) : `<pre>${escapeHtml(md)}</pre>`;
+    const html = window.marked ? marked.parse(md) : `<pre>${escapeHtml(md)}</pre>`;
+    // record id → 可点击链接（跳回 records 视图搜索）
+    container.innerHTML = html.replace(/(?<![\w"=/])(20\d\d-\d\d-\d\d_[A-Za-z0-9_-]+)/g,
+      '<a href="/site/?q=$1" target="_blank" rel="noopener" class="rec-link">$1</a>');
   }
 
   function attachReader(listEl, articleEl, bodyEl, backEl, items, fileOf) {
@@ -503,16 +506,71 @@ async function init() {
     });
   }
 
-  // --- posts list + suggestions ---
+  // --- posts view: trigger bar + suggestions + month-grouped list ---
   const postList = document.getElementById('post-list');
   const sgBox = document.getElementById('post-suggest');
+  const trigStatus = document.getElementById('post-trigger-status');
+
+  async function startPost(payload) {
+    if (trigStatus) trigStatus.textContent = ' ⏳ 已发起，写作中（约 2-4 分钟）…';
+    try {
+      const res = await fetch('/api/post', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        if (trigStatus) trigStatus.textContent = ' ' + ((data && data.message) || ('失败 HTTP ' + res.status));
+        return;
+      }
+      if (data.exists) {
+        if (trigStatus) trigStatus.textContent = ` 已存在同主题 post：${data.stem}`;
+        return;
+      }
+      const before = postItems.length;
+      const t0 = Date.now();
+      const timer = setInterval(async () => {
+        try {
+          const fresh = await loadJSON('/site/data/posts.json?ts=' + Date.now()).catch(() => null);
+          const items = (fresh && fresh.items) || [];
+          if (items.length > before) {
+            clearInterval(timer);
+            if (trigStatus) trigStatus.textContent = ' ✓ 已完成（已刷新列表）';
+            renderPosts(items);
+            return;
+          }
+          if (Date.now() - t0 > 480000) {
+            clearInterval(timer);
+            if (trigStatus) trigStatus.textContent = ' 仍在写作，请稍后手动刷新页面';
+          }
+        } catch (_) {}
+      }, 15000);
+    } catch (err) {
+      if (trigStatus) trigStatus.textContent = ' 当前 wiki 服务不支持在线发起（请重启 site --serve），或改用 CLI/agent';
+    }
+  }
+
+  const topicInput = document.getElementById('post-topic-input');
+  const topicBtn = document.getElementById('post-topic-btn');
+  if (topicBtn && topicInput) {
+    topicBtn.addEventListener('click', () => {
+      const t = (topicInput.value || '').trim();
+      if (!t) { if (trigStatus) trigStatus.textContent = ' 请先输入主题'; return; }
+      startPost({ topic: t });
+    });
+    topicInput.addEventListener('keydown', (e2) => { if (e2.key === 'Enter') topicBtn.click(); });
+  }
+
   const freshSuggestions = suggestions.filter(s => !s.covered);
   if (freshSuggestions.length) {
-    sgBox.innerHTML = '<h3 class="suggest-head">💡 分析建议（高关联记录）</h3>' + freshSuggestions.map(s => `
+    sgBox.innerHTML = '<h3 class="suggest-head">💡 分析建议（高关联记录）</h3>' + freshSuggestions.map((s, i) => `
       <div class="suggest-card">
         <div class="suggest-title">${escapeHtml(s.title || s.anchor)}</div>
         <div class="muted suggest-meta">${escapeHtml(s.anchor)} · ${s.degree} 条关联 · score ${s.score}</div>
-        <code class="suggest-cmd" title="点击复制">${escapeHtml(s.suggested_cmd)}</code>
+        <div class="suggest-actions">
+          <button class="suggest-go" data-sg="${i}">✍️ 一键写作</button>
+          <code class="suggest-cmd" title="点击复制">${escapeHtml(s.suggested_cmd)}</code>
+        </div>
       </div>
     `).join('');
     sgBox.querySelectorAll('.suggest-cmd').forEach(c => {
@@ -522,23 +580,83 @@ async function init() {
         setTimeout(() => c.classList.remove('copied'), 800);
       });
     });
+    sgBox.querySelectorAll('.suggest-go').forEach(b => {
+      b.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const s = freshSuggestions[Number(b.dataset.sg)];
+        b.disabled = true;
+        startPost({ records: s.records });
+      });
+    });
   } else {
     sgBox.style.display = 'none';
   }
-  if (postItems.length) {
-    postList.innerHTML = postItems.map(t => `
-      <div class="post-card" data-slug="${escapeHtml(t.slug)}">
-        <h3>${escapeHtml(t.title)}</h3>
-        <div class="trend-meta">${escapeHtml(t.date || '')}${t.trigger ? ' · ' + escapeHtml(t.trigger) : ''}</div>
-        <p class="muted">${escapeHtml(t.excerpt || '')}</p>
-      </div>
-    `).join('');
-  } else {
-    postList.innerHTML = '<p class="empty">No posts yet</p>';
+
+  function renderPosts(items) {
+    if (!items.length) { postList.innerHTML = '<p class="empty">No posts yet</p>'; return; }
+    const groups = {};
+    for (const p of items) {
+      const mk = (p.date || 'unknown').slice(0, 7) || 'unknown';
+      (groups[mk] = groups[mk] || []).push(p);
+    }
+    const mks = Object.keys(groups).sort().reverse();
+    postList.innerHTML = mks.map(mk => {
+      const gid = `pm-${mk.replace('-', '')}`;
+      return `<div class="month-group" data-month="${mk}">
+        <h3 class="month-header" data-target="${gid}">${mk} · ${groups[mk].length} posts ▾</h3>
+        <div class="month-body" id="${gid}">
+        ${groups[mk].map(t => `
+          <div class="post-card" data-slug="${escapeHtml(t.slug)}">
+            <h3>${escapeHtml(t.title)}</h3>
+            <div class="trend-meta">${escapeHtml(t.date || '')}${t.trigger ? ' · ' + escapeHtml(t.trigger) : ''}</div>
+            <p class="muted">${escapeHtml(t.excerpt || '')}</p>
+          </div>`).join('')}
+        </div>
+      </div>`;
+    }).join('');
+    postList.querySelectorAll('.month-header').forEach(h => {
+      h.addEventListener('click', () => {
+        const g = h.parentElement;
+        g.classList.toggle('collapsed');
+        h.textContent = h.textContent.replace('▸', '▾').replace('▾', g.classList.contains('collapsed') ? '▸' : '▾');
+      });
+    });
+    bindPostCards(items);
   }
-  attachReader(postList, document.getElementById('post-article'),
-               document.getElementById('post-body'), document.getElementById('post-back'),
-               postItems, it => it.file);
+
+  function bindPostCards(items) {
+    postList.querySelectorAll('.post-card').forEach(card => {
+      card.addEventListener('click', async () => {
+        const it = items.find(x => x.slug === card.dataset.slug);
+        if (!it) return;
+        postList.style.display = 'none';
+        sgBox.style.display = 'none';
+        const tb = document.querySelector('.post-trigger');
+        if (tb) tb.style.display = 'none';
+        const articleEl = document.getElementById('post-article');
+        const bodyEl = document.getElementById('post-body');
+        articleEl.style.display = '';
+        bodyEl.innerHTML = '<p class="muted">Loading...</p>';
+        try {
+          const md = await (await fetch('/' + it.file)).text();
+          renderMd(bodyEl, md);
+        } catch (e) {
+          bodyEl.innerHTML = `<p class="muted">Load failed: ${escapeHtml(e.message)}</p>`;
+        }
+        window.scrollTo(0, 0);
+      });
+    });
+  }
+
+  renderPosts(postItems);
+
+  document.getElementById('post-back').addEventListener('click', () => {
+    document.getElementById('post-article').style.display = 'none';
+    postList.style.display = '';
+    sgBox.style.display = '';
+    const tb = document.querySelector('.post-trigger');
+    if (tb) tb.style.display = '';
+  });
 
   // --- tracking list ---
   const trackingList = document.getElementById('tracking-list');

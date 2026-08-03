@@ -190,7 +190,20 @@ a:hover{text-decoration:underline}
 .tracking-card{cursor:pointer}
 
 /* Entity chips → tracking (v3.7) */
-.ent-chip{cursor:pointer;border-bottom:1px dotted var(--muted)}
-.ent-chip:hover{color:var(--accent);border-bottom-color:var(--accent)}
+.ent-chip{cursor:pointer;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:0 .45rem;font-size:.78rem;display:inline-block;margin:.05rem .1rem}
+.ent-chip:hover{color:var(--accent);border-color:var(--accent)}
+.ent-hint{font-size:.72rem}
 .ent-chip.pending{opacity:.5}
 .ent-chip.tracked{color:#1a7f37;border-bottom-color:#1a7f37}
+
+/* Post trigger bar + suggestion actions + rec links (v3.8) */
+.post-trigger{display:flex;gap:.5rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap}
+.post-trigger input{flex:1;min-width:240px;padding:.35rem .6rem;border:1px solid var(--border);border-radius:var(--radius);font-size:.88rem;background:var(--surface);color:var(--ink)}
+.post-trigger button{padding:.35rem .8rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--ink);font-size:.85rem;cursor:pointer}
+.post-trigger button:hover{border-color:var(--accent);color:var(--accent)}
+#post-trigger-status{font-size:.8rem}
+.suggest-actions{display:flex;gap:.5rem;align-items:center;margin-top:.3rem;flex-wrap:wrap}
+.suggest-go{padding:.1rem .5rem;font-size:.75rem;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--ink);cursor:pointer}
+.suggest-go:hover{border-color:var(--accent);color:var(--accent)}
+.suggest-go:disabled{opacity:.5;cursor:default}
+.rec-link{font-family:var(--font-mono);font-size:.85em}

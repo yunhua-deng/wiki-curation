@@ -161,3 +161,32 @@ def test_handle_track(tmp_path, monkeypatch):
     code, data = api.handle_track(tmp_path, {"name": "Yunzhu Li"}, spawner=spawner)
     assert code == 200 and data["exists"] is True
     assert len(spawned) == 1
+
+
+def test_handle_post(tmp_path, monkeypatch):
+    _patch_ws(tmp_path, monkeypatch)
+    from scripts.site import api
+    spawned = []
+    spawner = lambda ws, cmd: spawned.append(cmd)
+    code, data = api.handle_post(tmp_path, {"topic": "世界模型"}, client_ip="10.0.0.7")
+    assert code == 403
+    code, data = api.handle_post(tmp_path, {})
+    assert code == 400 and data["error"] == "MISSING_TRIGGER"
+    code, data = api.handle_post(tmp_path, {"records": ["../bad"]})
+    assert code == 400 and data["error"] == "INVALID_RECORDS"
+    # topic → 202 + spawn --topic ... --auto
+    code, data = api.handle_post(tmp_path, {"topic": "世界模型"}, spawner=spawner)
+    assert code == 202 and data["state"] == "writing"
+    assert "--topic" in spawned[-1] and "--auto" in spawned[-1]
+    # 已存在同 topic → 200 幂等
+    posts_dir = paths.posts_dir(tmp_path)
+    posts_dir.mkdir(parents=True, exist_ok=True)
+    (posts_dir / "2026-08-03_01-x.meta.json").write_text(json.dumps(
+        {"stem": "2026-08-03_01-x", "trigger": {"kind": "topic", "topic": "世界模型"}}), encoding="utf-8")
+    code, data = api.handle_post(tmp_path, {"topic": "世界模型"}, spawner=spawner)
+    assert code == 200 and data["exists"] is True and data["stem"] == "2026-08-03_01-x"
+    assert len(spawned) == 1
+    # records 融合 → 202
+    code, data = api.handle_post(tmp_path, {"records": ["a1", "b2"]}, spawner=spawner)
+    assert code == 202
+    assert "--records" in spawned[-1] and "a1,b2" in spawned[-1]

@@ -18,7 +18,7 @@ _BASE_TEMPLATE = """<!DOCTYPE html>
   <footer class="site-footer"><p>Wiki · {generated_at}</p></footer>
 </div>
 <script src="assets/marked.min.js"></script>
-<script src="assets/site.js?v=3.13"></script>
+<script src="assets/site.js?v=3.14"></script>
 </body>
 </html>
 """
@@ -47,6 +47,11 @@ _INDEX_CONTENT = """
 <div id="table-container"></div>
 </div>
 <div id="posts-view" style="display:none">
+  <div class="post-trigger">
+    <input type="text" id="post-topic-input" placeholder="输入主题，基于 wiki 证据写一篇 post…">
+    <button id="post-topic-btn">✍️ 发起写作</button>
+    <span id="post-trigger-status" class="muted"></span>
+  </div>
   <div id="post-suggest"></div>
   <div id="post-list"></div>
   <div id="post-article" style="display:none">

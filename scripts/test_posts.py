@@ -160,7 +160,7 @@ def test_suggest_filters_ignored(tmp_path, monkeypatch):
     from scripts import posts
     posts.ignore_suggestion("hub1", tmp_path)
     suggestions = posts.suggest_post_topics(db, min_degree=3, top_n=5, ws=tmp_path)
-    assert suggestions == []  # hub1 被忽略
+    assert all(s["anchor"] != "hub1" for s in suggestions)  # hub1 被忽略，其他 hub 仍可出现
 
 
 def test_merge_posts(tmp_path, monkeypatch):

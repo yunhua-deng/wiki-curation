@@ -420,7 +420,8 @@ def build_merge_task(title: str, originals: list, evidence: list, staging_path: 
     ev_lines = [f"- [{e['id']}]（{e.get('date') or '?'}）{e.get('title') or e['id']}——{e.get('tldr') or ''}"
                 for e in evidence[:20]]
     ev_block = "\n".join(ev_lines) or "- （无独立证据）"
-    return f"""你是技术 blog 作者。把下面 {len(originals)} 篇**同主题 post**整合为**一篇**更完整的文章，写入任务指定的输出文件（staging 路径）。
+    return f"""你是技术 blog 作者。把下面 {len(originals)} 篇**同主题 post**整合为**一篇**更完整的文章，写入唯一输出文件：
+`{staging_path}`
 
 ## 任务
 

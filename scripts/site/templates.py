@@ -18,7 +18,7 @@ _BASE_TEMPLATE = """<!DOCTYPE html>
   <footer class="site-footer"><p>Wiki · {generated_at}</p></footer>
 </div>
 <script src="assets/marked.min.js"></script>
-<script src="assets/site.js?v=3.16"></script>
+<script src="assets/site.js?v=3.17"></script>
 </body>
 </html>
 """
@@ -215,6 +215,7 @@ async function initDoc() {
       // entity chips → tracking
       document.querySelectorAll('.ent-chip').forEach(chip=>chip.addEventListener('click', async (ev)=>{
         ev.stopPropagation();
+        if(!window.confirm('为「'+chip.dataset.entname+'」创建跟踪主题？将自动关联已入库记录并生成跟踪页（可能发起一次 headless 写作）。')) return;
         try{
           const r=await fetch('/api/track',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:chip.dataset.entname,kind:chip.dataset.entkind})});
           const d=await r.json().catch(()=>({}));

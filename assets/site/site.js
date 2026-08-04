@@ -151,7 +151,18 @@ async function init() {
         // expandable detail row
         html += `<tr class="wiki-detail" id="detail-${escapeHtml(e.id)}" style="display:none">`;
         html += `<td colspan="8"><div class="detail-card">`;
-        html += `<p class="detail-tools"><a class="doc-link" href="/site/doc.html?kind=record&id=${encodeURIComponent(e.id)}" target="_blank" rel="noopener" title="独立页浏览（新 tab）">🔗 独立页</a></p>`;
+        // v3.11: detail toolbar — 独立页 / 综述 / 添加链接 全部置顶
+        html += `<p class="detail-tools">`;
+        html += `<a class="doc-link" href="/site/doc.html?kind=record&id=${encodeURIComponent(e.id)}" target="_blank" rel="noopener" title="独立页浏览（新 tab）">🔗 独立页</a>`;
+        if (e.has_survey) {
+          html += ` <span class="tool-sep">·</span> <a class="survey-btn" href="/site/survey.html?id=${encodeURIComponent(e.id)}" target="_blank" rel="noopener">🧭 查看综述</a>`;
+        } else if (e.has_record) {
+          html += ` <span class="tool-sep">·</span> <button class="survey-btn" data-surveyid="${escapeHtml(e.id)}">🧭 发起综述</button> <span class="survey-status muted" data-surveystatus="${escapeHtml(e.id)}"></span>`;
+        }
+        if (e.has_record) {
+          html += ` <span class="tool-sep">·</span> <span class="link-add" data-linkadd="${escapeHtml(e.id)}"><button class="link-add-toggle" title="把新发现的链接加入该记录的链接图谱">＋ 添加链接</button></span>`;
+        }
+        html += `</p>`;
         html += `<p><strong>TL;DR</strong> ${escapeHtml(tldr)}</p>`;
         const summaryText = (e.summary && e.summary.text) || '';
         if (summaryText) {
@@ -173,10 +184,6 @@ async function init() {
           }
           lh += '</p>';
           html += lh;
-        }
-        // v3.7: manual add-link (records only) — POST /api/record-links
-        if (e.has_record) {
-          html += `<p class="link-add" data-linkadd="${escapeHtml(e.id)}"><button class="link-add-toggle" title="把新发现的链接加入该记录的链接图谱">＋ 添加链接</button></p>`;
         }
         if ((e.tags||[]).length) html += `<p><strong>Tags</strong> ${e.tags.map(t=>`<span class="badge badge-tag">${escapeHtml(t)}</span>`).join(' ')}</p>`;
         if (e.entities) {
@@ -220,12 +227,6 @@ async function init() {
           }
           html += '</ul></details>';
         }
-        // v3.5: survey（综述）button / link — v3.6: 新开 tab
-        if (e.has_survey) {
-          html += `<p><a class="survey-btn" href="/site/survey.html?id=${encodeURIComponent(e.id)}" target="_blank" rel="noopener">🧭 查看综述</a></p>`;
-        } else if (e.has_record) {
-          html += `<p><button class="survey-btn" data-surveyid="${escapeHtml(e.id)}">🧭 综述</button> <span class="survey-status muted" data-surveystatus="${escapeHtml(e.id)}"></span></p>`;
-        }
         html += `<p><a href="/site/raw.html?id=${encodeURIComponent(e.id)}">📁 Raw materials</a></p>`;
         html += '</div></td></tr>';
       }
@@ -259,6 +260,7 @@ async function init() {
         ev.stopPropagation();
         const name = chip.dataset.entname;
         const kind = chip.dataset.entkind || 'person';
+        if (!window.confirm('为「' + name + '」创建跟踪主题？将自动关联已入库记录并生成跟踪页（可能发起一次 headless 写作）。')) return;
         const oldTitle = chip.title;
         chip.classList.add('pending');
         try {

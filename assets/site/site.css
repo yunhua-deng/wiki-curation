@@ -214,3 +214,7 @@ a:hover{text-decoration:underline}
 .suggest-dismiss{font-size:.72rem;padding:.1rem .5rem;border:1px solid var(--border);border-radius:4px;background:none;color:var(--muted);cursor:pointer}
 .suggest-dismiss:hover{color:#cf222e;border-color:#cf222e}
 .suggest-dismiss:disabled{opacity:.5;cursor:default}
+
+/* Detail toolbar (v3.11) */
+.detail-tools{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center;margin:0 0 .4rem}
+.tool-sep{color:var(--muted)}

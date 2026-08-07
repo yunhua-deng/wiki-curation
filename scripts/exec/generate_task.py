@@ -43,7 +43,6 @@ def main():
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         print(f"  📝 Record 任务: {result['slug']}")
-        print(f"  模型: 跟随调用方（skill 不配置）")
         print(f"  输出: {result['output_path']}")
         print(f"\n  --- Task ---")
         print(result["task"])

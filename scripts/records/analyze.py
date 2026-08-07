@@ -269,12 +269,9 @@ def emit_trend_task(cluster: dict, depth: str = "standard") -> dict:
 
 - 只写 wiki/trends/ 下一个 md 文件，禁止 git 操作，禁止修改 wiki.db
 """
-    # 模型跟随调用方 agent，skill 不配置
     return {
         "task": task,
         "taskName": f"trend-{topic[:30]}",
-        "model": None,
-        "fallback": [],
         "mode": "run",
         "task_mode": "trend",
         "cleanup": "keep",

@@ -29,8 +29,7 @@ def test_record_task_envelope(patch_workspace):
     assert result["slug"] == slug
     assert result["output_path"].endswith("record.json")
     assert result["depth"] is None
-    assert result["model"] is None  # 模型跟随调用方，skill 不配置
-    assert isinstance(result["fallback"], list)
+    assert "model" not in result  # skill 不感知模型，跟随调用方
     # envelope 与文章任务对齐的共有字段
     for key in ("task", "cleanup", "context", "wiki_type", "type_label", "raw_files"):
         assert key in result, f"missing envelope key: {key}"

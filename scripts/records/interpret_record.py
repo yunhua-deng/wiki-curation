@@ -192,12 +192,9 @@ def generate_record_task(slug: str, source_type: str, append_to: str = None) -> 
     drill_urls = _read_drill_targets(raw_dir)
     task = build_record_task(slug, source_type, raw_files, raw_summary, drill_urls, append_to=append_to, has_agent_notes=has_agent_notes)
 
-    # 模型跟随调用方 agent，skill 不配置
     return {
         "task": task,
         "taskName": f"record-{slug}",
-        "model": None,
-        "fallback": [],
         "mode": "run",
         "task_mode": "record",
         "cleanup": "keep",
@@ -224,7 +221,6 @@ def main():
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         print(f"  📝 Record 任务: {result['slug']}")
-        print(f"  模型: 跟随调用方（skill 不配置）")
         print(f"  输出: {result['output_path']}")
         print(f"\n  --- Task ---")
         print(result["task"])

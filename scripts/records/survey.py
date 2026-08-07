@@ -233,12 +233,9 @@ def generate_survey_task(slug: str, ws=None) -> dict:
     related = _related_entries(paths.db_path(ws), slug)
     task_text = build_survey_task(slug, record, survey_files, survey_summary,
                                 raw_files, raw_summary, related, ws)
-    # 模型跟随调用方 agent，skill 不配置
     return {
         "task": task_text,
         "taskName": f"survey-{slug}",
-        "model": None,
-        "fallback": [],
         "mode": "run",
         "task_mode": "survey",
         "cleanup": "keep",

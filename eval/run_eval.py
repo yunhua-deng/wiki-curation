@@ -447,7 +447,7 @@ def run_task(task: dict, run_llm: bool, workspace: Path) -> dict:
             return details
 
         prompt = _build_llm_prompt(task, result)
-        llm = _llm_score(prompt, model=task.get("model"))
+        llm = _llm_score(prompt)
         if not llm["ok"]:
             details["checks"].append({"name": "llm", "ok": False, "message": llm["error"]})
             print(f"  ❌ {llm['error']}")

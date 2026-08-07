@@ -168,12 +168,9 @@ def generate_post_task(trigger: dict, ws=None, db_path=None, limit: int = 8) -> 
     staging_dir.mkdir(parents=True, exist_ok=True)
     staging_path = staging_dir / f"{_today()}-{slug}.md"
     task_text = build_post_task(trigger, evidence, staging_path)
-    # 模型跟随调用方 agent，skill 不配置
     return {
         "task": task_text,
         "taskName": f"post-{slug}",
-        "model": None,
-        "fallback": [],
         "mode": "run",
         "task_mode": "post",
         "cleanup": "keep",
@@ -216,7 +213,7 @@ def _next_stem(posts_dir: Path, date_str: str, slug: str) -> str:
     return f"{date_str}_{nn:02d}-{slug}"
 
 
-def publish_post_file(staging_path, ws, trigger: dict, model: str = "") -> dict:
+def publish_post_file(staging_path, ws, trigger: dict) -> dict:
     """校验 staging 文件 → 落位 posts/ + meta.json → 重建站点。返回 {file, stem}。"""
     from scripts.publish.lock import PublishLock
     from scripts.site.build import build_site
@@ -238,7 +235,7 @@ def publish_post_file(staging_path, ws, trigger: dict, model: str = "") -> dict:
         final = posts_dir / f"{stem}.md"
         final.write_text(text, encoding="utf-8")
         staging_path.unlink(missing_ok=True)
-        meta = {"stem": stem, "trigger": trigger, "model": model, "created_at": _now_iso()}
+        meta = {"stem": stem, "trigger": trigger, "created_at": _now_iso()}
         (posts_dir / f"{stem}.meta.json").write_text(
             json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
         build_site(paths.db_path(ws), ws)
@@ -258,7 +255,7 @@ def auto_write_post(trigger: dict, ws=None, db_path=None, runner=None,
     if not staging.exists():
         err = ((result or {}).get("stderr") or (result or {}).get("stdout") or "")[-300:]
         raise PostError("WRITE_FAILED", f"headless 写作未产出文件: {err or 'no output'}")
-    pub = publish_post_file(staging, ws, trigger, model=task.get("model") or "")
+    pub = publish_post_file(staging, ws, trigger)
     return {"ok": True, **pub, "evidence_count": task["evidence_count"]}
 
 
@@ -399,8 +396,7 @@ def merge_posts(stems: list, ws=None, db_path=None, runner=None, timeout: int = 
     if not staging.exists():
         err = ((result or {}).get("stderr") or (result or {}).get("stdout") or "")[-300:]
         raise PostError("WRITE_FAILED", f"merge 写作未产出文件: {err or 'no output'}")
-    pub = publish_post_file(staging, ws, {"kind": "merge", "merged": stems},
-                            model="")
+    pub = publish_post_file(staging, ws, {"kind": "merge", "merged": stems})
     # 归档被合并的 post（归档后再重建一次站点，使索引不再含被合并项）
     merged_dir = posts_dir / "_merged"
     merged_dir.mkdir(parents=True, exist_ok=True)

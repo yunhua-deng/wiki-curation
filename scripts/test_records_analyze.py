@@ -70,7 +70,7 @@ def test_emit_trend_task_envelope(kb):
     assert "wiki/trends/" in task["task"]
     assert "Helix" in task["task"]
     assert "禁止编造" in task["task"]
-    assert isinstance(task["fallback"], list)
+    assert "fallback" not in task  # skill 不感知模型，跟随调用方
 
 
 def test_discover_topics(kb, monkeypatch):

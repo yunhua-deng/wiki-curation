@@ -313,14 +313,13 @@ def cmd_run(args):
             err(f"  ❌ Invalid interpret output")
         return 1
 
-    _log(slug, 'WRITE', {'model': task_spec.get('model'), 'taskName': task_spec.get('taskName')})
+    _log(slug, 'WRITE', {'taskName': task_spec.get('taskName')})
 
     # === Step 5: spawn spec ===
     publish_cmd = f"{sys.executable} {SCRIPTS_DIR / 'wiki_db.py'} publish --id {slug}"
     spawn_spec = {
         "task": task_spec["task"],
         "taskName": task_spec["taskName"],
-        "model": task_spec.get("model"),
         "mode": "run",
         "task_mode": "record",
         "cleanup": "keep",
@@ -350,7 +349,6 @@ def cmd_run(args):
         print(json.dumps(spawn_spec, ensure_ascii=False, indent=2))
         return 0
 
-    log(f"  模型: 跟随调用方（skill 不配置）")
     log(f"  taskName: {task_spec['taskName']}")
     log(f"  output: {spawn_spec['output_path']}")
     log(f"\n  --- sessions_spawn 参数 ---")

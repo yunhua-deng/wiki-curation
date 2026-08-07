@@ -156,10 +156,6 @@ use the orchestrator's analytical framing as reference.
 - The extraction agent reads `agent_notes.md` as **analysis reference only**;
   all factual claims in record.json must still be anchored in raw source materials.
 
-## Model
-
-Skill 不配置模型：所有 agent 任务（record / survey / post / trend）的 envelope 中 `model` 恒为 `null`，由调用方 agent 使用自己的模型执行。
-
 ## Configuration
 
 - `references/sources.yaml` — source-type classification, fetch handlers, drill policy

@@ -149,8 +149,6 @@ def build_post_task(trigger: dict, evidence: list, staging_path: Path) -> str:
 
 def generate_post_task(trigger: dict, ws=None, db_path=None, limit: int = 8) -> dict:
     """生成 post 任务 envelope。trigger: {"kind":"topic","topic":X} 或 {"kind":"records","ids":[...]}。"""
-    from scripts.route_model import select_model
-
     ws = Path(ws) if ws is not None else paths.get_workspace()
     db_path = Path(db_path) if db_path is not None else paths.db_path(ws)
     if trigger.get("kind") == "topic":
@@ -170,12 +168,12 @@ def generate_post_task(trigger: dict, ws=None, db_path=None, limit: int = 8) -> 
     staging_dir.mkdir(parents=True, exist_ok=True)
     staging_path = staging_dir / f"{_today()}-{slug}.md"
     task_text = build_post_task(trigger, evidence, staging_path)
-    model_info = select_model("post")
+    # 模型跟随调用方 agent，skill 不配置
     return {
         "task": task_text,
         "taskName": f"post-{slug}",
-        "model": model_info["model"],
-        "fallback": model_info.get("fallback", []),
+        "model": None,
+        "fallback": [],
         "mode": "run",
         "task_mode": "post",
         "cleanup": "keep",

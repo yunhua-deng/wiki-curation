@@ -156,16 +156,13 @@ use the orchestrator's analytical framing as reference.
 - The extraction agent reads `agent_notes.md` as **analysis reference only**;
   all factual claims in record.json must still be anchored in raw source materials.
 
-## Model routing
+## Model
 
-Priority: `WIKI_MODEL_RECORD` env var → `references/models.yaml` record tier → hardcoded default.
-
-Default: `kimi/kimi-for-coding`, fallback `deepseek/deepseek-v4-flash`.
+Skill 不配置模型：所有 agent 任务（record / survey / post / trend）的 envelope 中 `model` 恒为 `null`，由调用方 agent 使用自己的模型执行。
 
 ## Configuration
 
 - `references/sources.yaml` — source-type classification, fetch handlers, drill policy
-- `references/models.yaml` — model routing
 - `references/record_schema.json` — record.json constraints
 - `references/entity_aliases.yaml` — entity canonical/alias map
 

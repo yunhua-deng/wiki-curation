@@ -234,7 +234,6 @@ def dedup_candidates(db_path, min_score: float = 40, limit: int = 50) -> list[di
 
 def emit_trend_task(cluster: dict, depth: str = "standard") -> dict:
     """把聚簇证据打包成 agent 趋势综述任务（envelope 与 record 任务同构）。"""
-    from scripts.route_model import select_model
     topic = cluster["topic"]
     lines = []
     for e in cluster["entries"]:
@@ -270,12 +269,12 @@ def emit_trend_task(cluster: dict, depth: str = "standard") -> dict:
 
 - 只写 wiki/trends/ 下一个 md 文件，禁止 git 操作，禁止修改 wiki.db
 """
-    model_info = select_model("record")
+    # 模型跟随调用方 agent，skill 不配置
     return {
         "task": task,
         "taskName": f"trend-{topic[:30]}",
-        "model": model_info["model"],
-        "fallback": model_info.get("fallback", []),
+        "model": None,
+        "fallback": [],
         "mode": "run",
         "task_mode": "trend",
         "cleanup": "keep",

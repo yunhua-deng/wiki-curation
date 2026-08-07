@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""test_records_interpret.py — record 提取任务生成 + 模型路由 record 档契约测试。"""
+"""test_records_interpret.py — record 提取任务生成契约测试。"""
 import json
 from pathlib import Path
 
 from scripts import conftest
 from scripts import paths
 from scripts.records.interpret_record import generate_record_task
-from scripts.route_model import select_model
 
 
 def _seed_raw(ws, slug):
@@ -30,7 +29,7 @@ def test_record_task_envelope(patch_workspace):
     assert result["slug"] == slug
     assert result["output_path"].endswith("record.json")
     assert result["depth"] is None
-    assert isinstance(result["model"], str) and result["model"]
+    assert result["model"] is None  # 模型跟随调用方，skill 不配置
     assert isinstance(result["fallback"], list)
     # envelope 与文章任务对齐的共有字段
     for key in ("task", "cleanup", "context", "wiki_type", "type_label", "raw_files"):
@@ -56,14 +55,6 @@ def test_record_task_prompt_content(patch_workspace):
     assert "git" in task.lower()
     # 合法枚举写进 prompt
     assert "canonical" in task and "related" in task
-
-
-def test_select_model_record_tier():
-    result = select_model("record")
-    assert result["tier"] == "record"
-    assert result["downgraded"] is False
-    assert isinstance(result["model"], str) and result["model"]
-    assert isinstance(result["fallback"], list)
 
 
 def test_generate_task_cli_record_mode(patch_workspace):

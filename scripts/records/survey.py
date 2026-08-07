@@ -223,8 +223,6 @@ record 已提取的 links：
 
 def generate_survey_task(slug: str, ws=None) -> dict:
     """生成 survey 任务 envelope（与 record task envelope 对齐 + task_mode=survey）。"""
-    from scripts.route_model import select_model
-
     ws = Path(ws) if ws is not None else paths.get_workspace()
     record = RS.load_record(slug, ws)
     if not record:
@@ -235,12 +233,12 @@ def generate_survey_task(slug: str, ws=None) -> dict:
     related = _related_entries(paths.db_path(ws), slug)
     task_text = build_survey_task(slug, record, survey_files, survey_summary,
                                 raw_files, raw_summary, related, ws)
-    model_info = select_model("survey")
+    # 模型跟随调用方 agent，skill 不配置
     return {
         "task": task_text,
         "taskName": f"survey-{slug}",
-        "model": model_info["model"],
-        "fallback": model_info.get("fallback", []),
+        "model": None,
+        "fallback": [],
         "mode": "run",
         "task_mode": "survey",
         "cleanup": "keep",
@@ -321,7 +319,7 @@ def spawn_survey_agent_if_possible(slug: str, ws=None) -> dict:
     if not task_path.exists():
         return {"spawned": False, "reason": "task.json missing"}
     task = json.loads(task_path.read_text(encoding="utf-8"))
-    cmd = [exe, "--taskName", task["taskName"], "--model", task["model"],
+    cmd = [exe, "--taskName", task["taskName"],
            "--mode", "run", "--task", task["task"]]
     r = run_cmd(cmd, timeout=60)
     return {"spawned": bool(r["ok"]), "reason": "" if r["ok"] else (r.get("stderr") or "spawn failed")[:200]}

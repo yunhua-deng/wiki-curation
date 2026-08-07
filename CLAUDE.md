@@ -44,7 +44,6 @@ python eval/run_eval.py --llm
 
 - `references/` —— agent 需要读取的知识/规则：
   - `sources.yaml`（来源类型、分类规则）
-  - `models.yaml`（模型路由：record 档）
   - `record_schema.json`（record.json 约束常量，records/schema.py 消费）
   - `entity_aliases.yaml`（实体 canonical/别名映射）
 - `assets/` —— 前端静态资源：

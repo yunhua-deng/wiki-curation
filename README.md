@@ -139,7 +139,6 @@ wiki/
 ## Configuration
 
 - `references/sources.yaml` — source-type classification, fetch handlers, drill policy
-- `references/models.yaml` — model routing (`WIKI_MODEL_RECORD` env overrides)
 - `references/record_schema.json` — record.json constraints
 - `references/entity_aliases.yaml` — entity canonical/alias map
 

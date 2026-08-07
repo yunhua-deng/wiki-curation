@@ -182,7 +182,7 @@ def test_generate_survey_task_contract(tmp_path, monkeypatch):
     for needle in ["record.json", "TL;DR", "核心内容", "分来源摘要", "原始出处",
                    "更多内容请看", "禁止", "survey/raw"]:
         assert needle in body, needle
-    assert task["model"]  # 非空
+    assert task["model"] is None  # 模型跟随调用方，skill 不配置
 
 
 # ---------- Task 4: validate + publish + status/queue ----------

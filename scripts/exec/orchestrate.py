@@ -320,7 +320,7 @@ def cmd_run(args):
     spawn_spec = {
         "task": task_spec["task"],
         "taskName": task_spec["taskName"],
-        "model": task_spec["model"],
+        "model": task_spec.get("model"),
         "mode": "run",
         "task_mode": "record",
         "cleanup": "keep",
@@ -332,7 +332,7 @@ def cmd_run(args):
         "publish_cmd": publish_cmd,
         "spawn_cmd": (
             f"sessions_spawn --taskName {shlex.quote(task_spec['taskName'])} "
-            f"--model {shlex.quote(task_spec['model'])} --mode run "
+            f"--mode run "
             f"--task <see JSON 'task' field>"
         ),
         "raw_dir": str(paths.raw_dir(slug)),
@@ -350,7 +350,7 @@ def cmd_run(args):
         print(json.dumps(spawn_spec, ensure_ascii=False, indent=2))
         return 0
 
-    log(f"  模型: {task_spec['model']}")
+    log(f"  模型: 跟随调用方（skill 不配置）")
     log(f"  taskName: {task_spec['taskName']}")
     log(f"  output: {spawn_spec['output_path']}")
     log(f"\n  --- sessions_spawn 参数 ---")

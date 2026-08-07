@@ -85,6 +85,8 @@ python skills/wiki-curation/scripts/cli.py --json run --id <slug>
 python skills/wiki-curation/scripts/cli.py --json publish --id <slug>
 ```
 
+Concurrency: with multiple queued entries, run steps 4–5 **in parallel per entry** (one extraction sub-agent per slug). `publish` is serialized per wiki via a `.publish.lock` file lock — on `BUSY`, wait and retry. `pop --limit 3` is the default local batch cap; do not exceed it without explicit user approval.
+
 ## CLI reference
 
 All commands support `--json`. `--workspace PATH` overrides `$WIKI_WORKSPACE`.

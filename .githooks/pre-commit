@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# .githooks/pre-commit — skill 内容有变更时跑契约测试
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+if ! git diff --cached --name-only | grep -qE '^(scripts/|references/|assets/|SKILL.md|pyproject.toml)'; then
+    # 没有改动 skill 内容，直接放行，零延迟
+    exit 0
+fi
+
+echo "==> wiki-curation skill changes detected, running contract tests..."
+
+# Windows（Git Bash/MinGW）优先用 PowerShell 脚本
+if command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -ExecutionPolicy Bypass -File "$REPO_ROOT/scripts/run_contract_tests.ps1"
+else
+    bash "$REPO_ROOT/scripts/run_contract_tests.sh"
+fi

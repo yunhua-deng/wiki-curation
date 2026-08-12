@@ -1,11 +1,11 @@
 # wiki-curation 维护守则
 
-`skills/wiki-curation/` 是由 `AGENTS.md` 强约束指派的知识策展 skill。每次修改本 skill 后，必须先通过契约测试，再汇报完成。
+本 repo 是 wiki-curation skill 的单源（下游工作区如 D:/openclaw-workspace 通过根 AGENTS.md 指向 `D:/wiki-curation/SKILL.md` 使用本 skill）。每次修改本 skill 后，必须先通过契约测试，再汇报完成。
 
 ## 本地契约测试（每次提交前必跑）
 
 ```powershell
-cd D:\openclaw-workspace\skills\wiki-curation
+cd D:\wiki-curation
 python -m pytest scripts/ -q
 python eval/run_eval.py --deterministic
 ```
@@ -95,7 +95,7 @@ chmod +x ../../.git/hooks/pre-commit
 - 根因：Python 可能仍在加载旧的 `.pyc` 文件。
 - 处理：
   1. `cli.py` 已禁用 bytecode 写入并在启动时清理 `__pycache__`，通常无需手动干预。
-  2. 若仍遇到可疑行为，可手动清理：`find skills/wiki-curation/scripts -type d -name __pycache__ -exec rm -rf {} +`
+  2. 若仍遇到可疑行为，可手动清理：`find scripts -type d -name __pycache__ -exec rm -rf {} +`
   3. 契约测试脚本（`run_contract_tests.ps1` / `.sh`）每次运行前也会清理缓存，确保测试的是当前源码。
 
 相关回归记录：`wiki/failures/2026-07-09_005_linkedin-handler-invalid-command.md`

@@ -12,7 +12,7 @@ Place the skill directory at `skills/wiki-curation/` in your project root, along
 
 ```markdown
 # CLAUDE.md (excerpt)
-- wiki / 知识 / 记录 / 检索 / 分析 → `AGENTS_WIKI.md` + `skills/wiki-curation/SKILL.md`
+- wiki / 知识 / 记录 / 检索 / 分析 → 项目根 `AGENTS.md` + `skills/wiki-curation/SKILL.md`
 ```
 
 Create `AGENTS_WIKI.md`:

@@ -64,7 +64,7 @@ python eval/run_eval.py --llm
 
 契约测试通过仓库根目录的 `.githooks/pre-commit` 触发。
 
-- **`.githooks/` 是被 Git 跟踪的**，所以会随代码一起推送到 Gitee；其他 clone 下来也能拿到 hook 源码。
+- **`.githooks/` 是被 Git 跟踪的**，所以会随代码一起推送到 GitHub；其他 clone 下来也能拿到 hook 源码。
 - **`.git/hooks/` 默认不被 Git 跟踪**，只存在于本地，所以不能直接把 hook 放在那里。
 - 为了让 Git 使用 `.githooks/` 而不是默认的 `.git/hooks/`，需要在本仓库执行一次：
 

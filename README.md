@@ -15,11 +15,11 @@ Place the skill directory at `skills/wiki-curation/` in your project root, along
 - wiki / 知识 / 记录 / 检索 / 分析 → 项目根 `AGENTS.md` + `skills/wiki-curation/SKILL.md`
 ```
 
-Create `AGENTS_WIKI.md`:
+Create or extend the project-root `AGENTS.md` with a wiki routing entry:
 
 ```markdown
-# AGENTS_WIKI.md — Wiki routing
-- Any wiki/knowledge request → activate `wiki-curation` skill.
+# AGENTS.md (excerpt) — Wiki routing
+- Any wiki/knowledge request → activate `wiki-curation` skill (`skills/wiki-curation/SKILL.md`).
 - Workflow: `add → pop → run → publish` (record.json).
 - Extraction agent: write record.json only; no git, no publish.
 - `python skills/wiki-curation/scripts/cli.py site --serve --pid-file wiki/.site-serve.pid`

@@ -481,6 +481,18 @@ def _copy_assets(out_dir):
         shutil.copytree(asset_src, asset_dst)
 
 
+def _inject_cli_cmd(out_dir):
+    """site.js 中的 __WIKI_CLI_CMD__ 占位符 → 当前 skill 的 cli.py 调用命令（绝对路径，正斜杠）。"""
+    site_js = Path(out_dir) / "assets" / "site.js"
+    if not site_js.exists():
+        return
+    cli_py = (Path(__file__).resolve().parent.parent / "cli.py").as_posix()
+    site_js.write_text(
+        site_js.read_text(encoding="utf-8").replace("__WIKI_CLI_CMD__", f"python {cli_py}"),
+        encoding="utf-8",
+    )
+
+
 def build_site(db_path, wiki_dir, out_dir=None, export=False):
     """构建 wiki 站点。
 
@@ -607,6 +619,7 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
 
     # 复制静态资源
     _copy_assets(out_dir)
+    _inject_cli_cmd(out_dir)
 
     return out_dir
 

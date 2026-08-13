@@ -317,7 +317,7 @@ async function init() {
         const id = btn.dataset.surveyid;
         const cell = btn.closest('td.col-survey');
         const span = container.querySelector(`[data-surveystatus="${id}"]`);
-        const cliCmd = `python skills/wiki-curation/scripts/cli.py --json survey --id ${id}`;
+        const cliCmd = `__WIKI_CLI_CMD__ --json survey --id ${id}`;
         const setMsg = (msgHtml) => {
           if (cell) cell.innerHTML = msgHtml;
           else if (span) span.innerHTML = msgHtml;

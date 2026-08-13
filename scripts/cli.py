@@ -41,6 +41,7 @@ _clear_stale_pycache(SCRIPT_DIR)
 
 from scripts.lib import run_cmd
 from scripts import paths
+from scripts.bootstrap import init_workspace
 from scripts.site.build import build_site
 from scripts.site.serve import serve
 
@@ -746,12 +747,34 @@ def cmd_doctor(args) -> int:
     return 0 if result.get("ok") else 1
 
 
+def cmd_init(args) -> int:
+    ws = paths.get_workspace()
+    try:
+        data = init_workspace(ws)
+    except FileNotFoundError as e:
+        _print_result({"ok": False, "error": "TEMPLATE_MISSING",
+                       "message": f"模板文件缺失（skill 安装损坏？）: {e.filename}",
+                       "next_cmd": "重新 clone 或 git pull skill repo"}, args.json)
+        return 1
+    if args.json:
+        _print_result({"ok": True, "data": data}, True)
+    else:
+        print(f"✅ wiki 工作区已就绪: {data['workspace']}")
+        print(f"   wiki.db: {data['db_path']}")
+        print(f"   created: {len(data['created'])} 项; skipped（已存在，未覆盖）: {len(data['skipped'])} 项")
+        print("\n===== 将以下片段接入工作区根 AGENTS.md =====\n")
+        print(data["agents_snippet"])
+    return 0
+
+
 def cmd_manifest(args) -> int:
     manifest = {
         "version": "3.5",
         "entry": "python skills/wiki-curation/scripts/cli.py",
         "global_flags": ["--json", "--quiet", "--workspace PATH"],
         "commands": [
+            {"name": "init", "args": [],
+             "description": "初始化 wiki 工作区骨架（目录/wiki.db/模板，幂等）+ 输出 AGENTS.md 接入片段"},
             {"name": "run", "args": ["--id", "--max-depth", "--force-collect"],
              "description": "执行已 add+pop 的任务：record 记录提取 → spawn"},
             {"name": "add", "args": ["--input", "--input-type", "--source-type", "--id", "--no-recall"],
@@ -1003,6 +1026,8 @@ def main():
     p_doc.add_argument("--since")
     p_doc.add_argument("--fix-plan", action="store_true")
 
+    sub.add_parser("init", help="初始化 wiki 工作区骨架（目录/wiki.db/模板，幂等）+ 输出 AGENTS.md 接入片段")
+
     sub.add_parser("manifest", help="输出命令清单")
 
     args = parser.parse_args()
@@ -1011,6 +1036,7 @@ def main():
         os.environ["WIKI_WORKSPACE"] = str(Path.cwd() / "wiki")
 
     handlers = {
+        "init": cmd_init,
         "run": cmd_run, "article": cmd_article, "classify": cmd_classify,
         "collect": cmd_collect, "interpret": cmd_interpret,
         "verify-output": cmd_verify_output,

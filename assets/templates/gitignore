@@ -1,0 +1,6 @@
+# Wiki 站点生成产物（由 cli.py site / site --serve 自动生成）
+site_dist/
+
+# 临时目录
+.temp/
+*.log

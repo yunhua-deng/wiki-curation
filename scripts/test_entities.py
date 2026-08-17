@@ -92,3 +92,49 @@ def test_watched_hits(db):
 def test_flatten_entities():
     assert flatten_entities({"company": ["A"], "author": ["B"], "product": [], "series": []}) == ["A", "B"]
     assert flatten_entities(None) == []
+
+
+# ---------- Task 2: cli.py entities 子命令契约测试 ----------
+
+import subprocess
+import sys
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+CLI = SCRIPT_DIR / "cli.py"
+
+
+def _cli(*args):
+    r = subprocess.run([sys.executable, str(CLI), "--json", *args], capture_output=True)
+    return r.returncode, json.loads(r.stdout.decode("utf-8"))
+
+
+def test_cli_entities_watch_list_name_flow(tmp_path):
+    ws = tmp_path / "wiki"
+    rc, out = _cli("--workspace", str(ws), "init")
+    assert rc == 0 and out["ok"]
+    conftest.seed_entry(ws / "data" / "wiki.db", "2026-08-01_aaaa", status="done")
+    L.set_entry_entities(ws / "data" / "wiki.db", "2026-08-01_aaaa",
+                         {"company": ["Figure AI"], "author": [], "product": [], "series": []})
+
+    rc, out = _cli("--workspace", str(ws), "entities", "--watch", "Figure AI", "--type", "company")
+    assert rc == 0 and out["ok"] and out["data"]["already_watched"] is False
+
+    rc, out = _cli("--workspace", str(ws), "entities", "--watched")
+    assert rc == 0 and out["data"]["count"] == 1
+
+    rc, out = _cli("--workspace", str(ws), "entities", "--name", "figure ai")
+    assert rc == 0 and out["data"]["slug"] == "figure-ai" and out["data"]["watched"] is True
+
+    rc, out = _cli("--workspace", str(ws), "entities")
+    names = [e["name"] for e in out["data"]["entities"]]
+    assert "Figure AI" in names
+
+    rc, out = _cli("--workspace", str(ws), "entities", "--unwatch", "Figure AI")
+    assert rc == 0 and out["data"]["removed"] is True
+
+
+def test_cli_entities_not_found(tmp_path):
+    ws = tmp_path / "wiki"
+    _cli("--workspace", str(ws), "init")
+    rc, out = _cli("--workspace", str(ws), "entities", "--name", "Nobody")
+    assert rc == 1 and out["ok"] is False and out["error"] == "ENTITY_NOT_FOUND"

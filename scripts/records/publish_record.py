@@ -174,6 +174,12 @@ def publish_record(args, db_path, wiki_dir, scripts_dir):
     canonical_entities = _canonicalize_entities(record["entities"])
     L.set_entry_entities(db_path, entry_id, canonical_entities)
     n_relations = REL.rewire_relations(db_path, entry_id)
+    # v3.8：watched 实体 hint（只提示，不自动刷新摘要）
+    try:
+        from scripts.entity_summary import flatten_entities, watched_hits
+        watched_hit = watched_hits(db_path, flatten_entities(canonical_entities))
+    except Exception:
+        watched_hit = []
 
     # === entry 更新 ===
     entry = wiki_index.get_entry(db_path, entry_id) or {}
@@ -204,6 +210,8 @@ def publish_record(args, db_path, wiki_dir, scripts_dir):
         result = {"ok": True, "id": entry_id, "mode": "record", "status": "done",
                   "links": n_links, "relations": n_relations,
                   "record": paths.record_rel(entry_id)}
+        if watched_hit:
+            result["watched_entities"] = watched_hit
         if workflow_warnings:
             result["warnings"] = workflow_warnings
         _out_json(result)

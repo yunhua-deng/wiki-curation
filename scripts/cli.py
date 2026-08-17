@@ -623,6 +623,51 @@ def cmd_post(args) -> int:
         return 1
 
 
+def cmd_entities(args) -> int:
+    """entities：实体综合层——list / --name 聚合 / watch 管理 / --summary 摘要。"""
+    from scripts import entity_summary as ES
+    try:
+        ws = paths.get_workspace()
+        db = paths.db_path(ws)
+        if getattr(args, "watch", None):
+            r = ES.watch_entity(db, args.watch,
+                                type=getattr(args, "entity_type", "") or "",
+                                note=getattr(args, "note", "") or "")
+            _print_result({"ok": True, "data": r}, args.json)
+            return 0
+        if getattr(args, "unwatch", None):
+            removed = ES.unwatch_entity(db, args.unwatch)
+            _print_result({"ok": True, "data": {"name": args.unwatch, "removed": removed}}, args.json)
+            return 0
+        if getattr(args, "summary", False):
+            # Task 5 接线 auto_write_summary；此处先给出明确错误而非静默
+            _print_result({"ok": False, "error": "NOT_IMPLEMENTED",
+                           "message": "entities --summary 尚未接线"}, args.json)
+            return 1
+        if getattr(args, "watched", False):
+            items = ES.list_watched(db)
+            _print_result({"ok": True, "data": {"watched": items, "count": len(items)}}, args.json)
+            return 0
+        if getattr(args, "name", None):
+            agg = ES.aggregate_entity(db, args.name, ws)
+            _print_result({"ok": True, "data": agg}, args.json)
+            return 0
+        # 默认：--list
+        idx = ES.entity_index(db)
+        watched_names = {w["name"] for w in ES.list_watched(db)}
+        items = [{"name": n, "type": s["type"], "record_count": len(s["entries"]),
+                  "watched": n in watched_names}
+                 for n, s in sorted(idx.items(), key=lambda kv: -len(kv[1]["entries"]))]
+        _print_result({"ok": True, "data": {"entities": items, "count": len(items)}}, args.json)
+        return 0
+    except ES.EntityError as e:
+        _print_result({"ok": False, "error": e.code, "message": str(e)}, args.json)
+        return 1
+    except Exception as e:
+        _print_result({"ok": False, "error": "ENTITIES_FAILED", "message": str(e)}, args.json)
+        return 1
+
+
 def cmd_track(args) -> int:
     """track：实体跟踪主题——create / refresh / list / due / archive。"""
     try:
@@ -775,6 +820,8 @@ def cmd_manifest(args) -> int:
         "commands": [
             {"name": "init", "args": [],
              "description": "初始化 wiki 工作区骨架（目录/wiki.db/模板，幂等）+ 输出 AGENTS.md 接入片段"},
+            {"name": "entities", "args": ["--list", "--name", "--watch", "--unwatch", "--watched", "--summary"],
+             "description": "实体综合层：聚合/list、watch 清单、可选 LLM 摘要"},
             {"name": "run", "args": ["--id", "--max-depth", "--force-collect"],
              "description": "执行已 add+pop 的任务：record 记录提取 → spawn"},
             {"name": "add", "args": ["--input", "--input-type", "--source-type", "--id", "--no-recall"],
@@ -1004,6 +1051,16 @@ def main():
     p_post.add_argument("--ignore", help="忽略一条分析建议（anchor entry id）")
     p_post.add_argument("--auto", action="store_true", help="headless 写作 + 校验 + 落位 + 站点重建")
 
+    p_ent = sub.add_parser("entities", help="实体综合层：list / --name 聚合 / --watch 管理 / --summary 摘要")
+    p_ent.add_argument("--list", action="store_true")
+    p_ent.add_argument("--name")
+    p_ent.add_argument("--watch")
+    p_ent.add_argument("--unwatch")
+    p_ent.add_argument("--watched", action="store_true")
+    p_ent.add_argument("--summary", action="store_true")
+    p_ent.add_argument("--type", dest="entity_type", default="")
+    p_ent.add_argument("--note", default="")
+
     p_track = sub.add_parser("track", help="实体跟踪：--name 创建 / --refresh 更新 / --list / --due / --archive")
     p_track.add_argument("--name")
     p_track.add_argument("--kind", default="person")
@@ -1037,6 +1094,7 @@ def main():
 
     handlers = {
         "init": cmd_init,
+        "entities": cmd_entities,
         "run": cmd_run, "article": cmd_article, "classify": cmd_classify,
         "collect": cmd_collect, "interpret": cmd_interpret,
         "verify-output": cmd_verify_output,

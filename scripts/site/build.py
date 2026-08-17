@@ -30,6 +30,7 @@ from scripts.records.schema import load_record
 from scripts.wiki_index.store import list_entries
 from scripts.site.templates import render_pages
 from scripts.site.entities import build_entity_index
+from scripts.site.entity_pages import build_entity_pages
 
 
 REFERENCES_DIR = Path(__file__).resolve().parent.parent.parent / "references"
@@ -586,7 +587,7 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
     # v3.3：清理陈旧 data 产物（search_index/themes/trends 等已废弃文件）
     current_data = {"entries.json", "tags.json", "sources.json", "entities.json",
                     "graph.json", "timeline.json", "posts.json", "surveys.json",
-                    "tracking.json"}
+                    "tracking.json", "entity_pages.json"}
     for f in data_dir.glob("*.json"):
         if f.name not in current_data:
             f.unlink()
@@ -595,6 +596,12 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
     posts = _build_posts(wiki_dir, db_path)
     (data_dir / "posts.json").write_text(
         json.dumps(posts, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
+    )
+
+    # v3.8：实体聚合页（确定性，零 LLM；摘要嵌读 wiki/entities/）
+    entity_pages = build_entity_pages(db_path, wiki_dir)
+    (data_dir / "entity_pages.json").write_text(
+        json.dumps(entity_pages, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )
 
     # v3.7：实体跟踪索引

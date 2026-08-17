@@ -14,10 +14,8 @@ Single tier, single path:
 - **Record**: `add → pop → run → publish` → `record.json` — link graph (explicit + inferred URLs), TL;DR, X-style summary, tags, entities. Every ingestion goes through this.
 - **Recall**: `add` auto-surfaces similar past entries; `recall --input "..."` queries anytime (4-layer: url_exact → shared_link → entity → fts).
 - **Analyze**: `analyze --topic "X"` clusters evidence across records (feeds posts); `--discover` finds emerging hot topics.
-- **Post**: `post --topic X / --records a,b / --suggest` — blog-style technical posts grounded in wiki evidence; `--auto` runs headless writing + validation + publish. Shown in the site Posts view with hub-based suggestions.
-- **Track**: `track --name "X" [--auto]` — entity (person) tracking topics: deterministic record association, headless digest, periodic `track --refresh` (`--due` for cron). Site Tracking view + entity-chip trigger.
-- **Survey**: `survey --id X --auto` end-to-end — the system fetches the record's links, a headless agent writes `artifacts/{slug}/survey/survey.md`, and publish happens automatically; step-by-step also supported (`survey --id X` collect+queue → agent writes → `--publish`). The site records table has a 🧭 column: click to trigger (auto pipeline) / view (new tab), with live state icons.
-- **Site**: built static HTML served locally — compact table, timeline view, inline detail expansion, trends reader.
+- **Entities**: `entities --list / --name X / --watch X / --summary --name X|--watched` — entity aggregation pages built deterministically from wiki.db (site Entities view); optional LLM summary per entity (`wiki/entities/{slug}/summary.md`). Watched entities get a refresh hint in publish output.
+- **Site**: built static HTML served locally — two views: Records and Entities (Posts/Tracking frozen, see Legacy commands).
 
 Core principle: **extraction by agent, linking by system.** The LLM reads materials and writes `record.json`; similarity, relations, URL verification are deterministic code.
 
@@ -45,6 +43,7 @@ wiki/
 │   └── survey/                # deep-survey: survey.md (agent) + survey.json/status.json/task.json (system) + raw/
 ├── posts/                   # blog-style posts (markdown, auto-listed on site)
 ├── tracking/{slug}/         # entity tracking topics: topic.json + digest.md + raw/
+├── entities/{slug}/         # entity summaries (optional LLM): summary.md + meta.json
 ├── site/                    # built static site
 └── wiki.html                # semantic index
 ```
@@ -109,6 +108,7 @@ All commands support `--json`. `--workspace PATH` overrides `$WIKI_WORKSPACE`.
 | Command | Purpose |
 |---|---|
 | `init` | Bootstrap wiki workspace skeleton（dirs + wiki.db + templates，幂等），输出 AGENTS.md 接入片段 |
+| `entities [--list] [--name X] [--watch X|--unwatch X|--watched] [--summary]` | Entity aggregation + watch list + optional LLM summary |
 | `add --input "..." [--no-recall]` | Enqueue; auto-recalls similar past entries |
 | `pop --limit N` | Dequeue pending → running |
 | `run --id <slug>` | Classify + collect + emit record extraction task |
@@ -126,6 +126,12 @@ All commands support `--json`. `--workspace PATH` overrides `$WIKI_WORKSPACE`.
 | `star --id <slug>` | Star canonical GitHub repos (needs `GITHUB_TOKEN`) |
 | `doctor [--quick] [--fix-plan]` | Health: queue/db/files/git/record-tier/entities |
 | `stats` / `list` / `sync` / `requeue` / `delete` / `update` / `manifest` | Store utilities |
+
+## Legacy commands (frozen)
+
+`survey` / `post` / `track` 已冻结：代码与存量内容（`artifacts/{id}/survey/`、`posts/`、`tracking/`）保留可用，但站点不再展示其 tab，也不再主动扩展。背景：wiki 转为 agent 优先——record 是骨干（客观记录），entity 综合层是唯一综合出口；真人通过 agent 消费 wiki。新的综合需求用 `entities`。
+
+tracking 与 entities 的分工：`track` = 遗留的关注实体专题（外部源刷新 + LLM digest，冻结）；`entities` = 全部实体的自动聚合 + 可选摘要（当前主线）。
 
 ## Architecture
 

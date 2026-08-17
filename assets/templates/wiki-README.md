@@ -12,6 +12,7 @@ wiki/
 │   └── survey/          # 深度综述：survey.md + raw/
 ├── posts/               # 基于 wiki 证据的博客式文章
 ├── tracking/{slug}/     # 实体（人物）追踪专题
+├── entities/{slug}/     # 实体综合层：可选 LLM 摘要（summary.md + meta.json）
 ├── data/wiki.db         # SQLite + FTS5：条目、链接、关系、队列（状态真相源，须提交 Git）
 ├── site/                # 构建好的静态站点（本地生成）
 ├── failures/            # 工作流失败案例库（模板：failures/TEMPLATE.md）

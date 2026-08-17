@@ -9,7 +9,7 @@ from pathlib import Path
 from scripts import paths
 from scripts.wiki_index import ensure_schema
 
-SKELETON_DIRS = ["artifacts", "data", "posts", "tracking", "failures", "docs"]
+SKELETON_DIRS = ["artifacts", "data", "posts", "tracking", "entities", "failures", "docs"]
 
 # assets/templates/ 下的源文件名 → wiki/ 下的目标相对路径
 TEMPLATES = {

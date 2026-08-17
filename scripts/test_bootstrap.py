@@ -10,7 +10,7 @@ from scripts.bootstrap import init_workspace
 SCRIPT_DIR = Path(__file__).resolve().parent
 CLI = SCRIPT_DIR / "cli.py"
 
-SKELETON_DIRS = ["artifacts", "data", "posts", "tracking", "failures", "docs"]
+SKELETON_DIRS = ["artifacts", "data", "posts", "tracking", "entities", "failures", "docs"]
 
 
 def test_init_creates_skeleton(tmp_path):

@@ -104,6 +104,7 @@ MIGRATIONS = [
     ('v3_add_source_prompt', 'ALTER TABLE entries ADD COLUMN source_prompt TEXT'),
     ('v5_add_watched', 'ALTER TABLE entries ADD COLUMN watched INTEGER DEFAULT 0'),
     ('v5_add_watched_at', 'ALTER TABLE entries ADD COLUMN watched_at TEXT'),
+    ('v7_entity_watch', "CREATE TABLE IF NOT EXISTS entity_watch (name TEXT PRIMARY KEY, type TEXT DEFAULT '', note TEXT DEFAULT '', created_at TEXT NOT NULL)"),
 ]
 
 VALID_STATUSES = {"pending", "running", "done", "failed", "orphan", "verified_brief"}

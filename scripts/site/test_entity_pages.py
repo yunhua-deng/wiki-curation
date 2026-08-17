@@ -85,3 +85,33 @@ def test_entity_page_tracking_crosslink(tmp_path):
     out = build_site(db, ws, out_dir=tmp_path / "site_out")
     pages = json.loads((out / "data" / "entity_pages.json").read_text(encoding="utf-8"))
     assert pages["figure-ai"]["tracking_slug"] == "figure-ai"
+
+
+
+def test_nav_has_only_records_and_entities(tmp_path):
+    ws = _ws(tmp_path)
+    db = ws / "data" / "wiki.db"
+    ensure_schema(db)
+    _seed(db)
+    out = build_site(db, ws, out_dir=tmp_path / "site_out")
+    html = (out / "index.html").read_text(encoding="utf-8")
+    assert 'id="nav-entities"' in html
+    assert 'id="nav-posts"' not in html
+    assert 'id="nav-tracking"' not in html
+    assert 'id="entities-view"' in html
+    # 冻结视图容器保留（doc.html ?v=posts|tracking 深链仍回列表）
+    assert 'id="posts-view"' in html and 'id="tracking-view"' in html
+
+
+def test_doc_reader_supports_entity_kind(tmp_path):
+    ws = _ws(tmp_path)
+    db = ws / "data" / "wiki.db"
+    ensure_schema(db)
+    _seed(db)
+    out = build_site(db, ws, out_dir=tmp_path / "site_out")
+    doc = (out / "doc.html").read_text(encoding="utf-8")
+    assert "kind === 'entity'" in doc
+    assert "entities/" in doc and "summary.md" in doc
+    site_js = (out / "assets" / "site.js").read_text(encoding="utf-8")
+    assert "entity_pages.json" in site_js
+    assert "nav-entities" in site_js

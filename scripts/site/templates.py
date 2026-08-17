@@ -29,8 +29,7 @@ _INDEX_CONTENT = """
   <div class="stats" id="stats"></div>
   <div class="nav-pills">
     <button id="nav-records" class="active">📋 Records</button>
-    <button id="nav-posts">📝 Posts</button>
-    <button id="nav-tracking">🎯 Tracking</button>
+    <button id="nav-entities">🏷️ Entities</button>
   </div>
 </div>
 <div id="records-view">
@@ -45,6 +44,10 @@ _INDEX_CONTENT = """
   <label class="watch-only" title="只看特别关注"><input type="checkbox" id="filter-watch"> ★ 关注</label>
 </div>
 <div id="table-container"></div>
+</div>
+<div id="entities-view" style="display:none">
+  <div id="entities-list"></div>
+  <div id="entity-detail"></div>
 </div>
 <div id="posts-view" style="display:none">
   <div class="post-trigger">
@@ -274,9 +277,12 @@ async function initDoc() {
     return;
   }
 
-  // post / tracking markdown
-  el('doc-back-list').href = '/site/' + (kind === 'tracking' ? '?v=tracking' : '?v=posts');
-  const src = kind === 'tracking' ? 'tracking/' + slug + '/digest.md' : 'posts/' + slug + '.md';
+  // post / tracking / entity markdown
+  el('doc-back-list').href = '/site/' + (kind === 'tracking' ? '?v=tracking'
+    : kind === 'entity' ? '?v=entities' : '?v=posts');
+  const src = kind === 'tracking' ? 'tracking/' + slug + '/digest.md'
+    : kind === 'entity' ? 'entities/' + slug + '/summary.md'
+    : 'posts/' + slug + '.md';
   try {
     const res = await fetch('/' + src);
     if (!res.ok) throw new Error(src + ': HTTP ' + res.status);

@@ -218,3 +218,7 @@ a:hover{text-decoration:underline}
 /* Detail toolbar (v3.11) */
 .detail-tools{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center;margin:0 0 .4rem}
 .tool-sep{color:var(--muted)}
+
+/* Entity detail card (v3.8) */
+.entity-detail-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; margin-top: 1rem; }
+.entity-detail-card h4 { margin: .9rem 0 .3rem; }

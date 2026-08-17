@@ -63,12 +63,14 @@ function getParam(name) {
 
 // ================= init =================
 async function init() {
-  const [entries, tags, postsData, trackingData] = await Promise.all([
+  const [entries, tags, postsData, trackingData, entityPages] = await Promise.all([
     loadJSON('/site/data/entries.json'),
     loadJSON('/site/data/tags.json').catch(() => ({})),
     loadJSON('/site/data/posts.json').catch(() => ({ items: [], suggestions: [] })),
     loadJSON('/site/data/tracking.json').catch(() => []),
+    loadJSON('/site/data/entity_pages.json').catch(() => ({})),
   ]);
+  const entityPageMap = entityPages || {};
 
   // stats
   const withRec = entries.filter(e => e.has_record).length;
@@ -645,21 +647,64 @@ async function init() {
   }
   bindCardNav(trackingList, 'tracking');
 
-  // --- nav ---
+  // --- entities view（v3.8） ---
+  function renderEntities(pages) {
+    const list = document.getElementById('entities-list');
+    const items = Object.values(pages || {}).sort((a, b) => b.record_count - a.record_count);
+    if (!items.length) { list.innerHTML = '<p class="empty">No entities yet</p>'; return; }
+    list.innerHTML = items.map(p => `
+      <div class="tracking-card entity-card" data-slug="${escapeHtml(p.slug)}">
+        <h3>${p.watched ? '★ ' : ''}${escapeHtml(p.name)}
+          ${p.summary ? `<a class="doc-link" href="/site/doc.html?kind=entity&slug=${encodeURIComponent(p.slug)}" target="_blank" rel="noopener" title="摘要独立页（新 tab）">🔗</a>` : ''}
+        </h3>
+        <div class="trend-meta">${escapeHtml(p.type)} · ${p.record_count} records${p.summary ? ' · 📝 摘要' : ''}${p.tracking_slug ? ' · 🎯 tracking' : ''}</div>
+      </div>`).join('');
+    list.querySelectorAll('.entity-card').forEach(card => {
+      card.addEventListener('click', (ev) => {
+        if (ev.target.closest('a')) return;
+        renderEntityDetail(pages[card.dataset.slug]);
+      });
+    });
+  }
+
+  function renderEntityDetail(p) {
+    const el = document.getElementById('entity-detail');
+    if (!p) { el.innerHTML = ''; return; }
+    const recs = p.records.map(r =>
+      `<li><a class="rec-link" href="/site/doc.html?kind=record&id=${encodeURIComponent(r.id)}" target="_blank" rel="noopener">${escapeHtml(r.id)}</a>（${escapeHtml(r.date || '?')}）${escapeHtml(r.title)}</li>`).join('');
+    const tl = p.timeline.map(t => `${escapeHtml(t.month)} (${t.count})`).join(' · ');
+    const co = p.co_entities.map(c => escapeHtml(c.name)).join(', ');
+    const links = p.links.map(l =>
+      `<li><a href="${escapeHtml(l.url)}" target="_blank" rel="noopener">${escapeHtml(l.url)}</a></li>`).join('');
+    el.innerHTML = `
+      <div class="entity-detail-card">
+        <h2>${escapeHtml(p.name)} <span class="muted">${escapeHtml(p.type)}</span></h2>
+        ${p.summary ? `<p><a href="/site/doc.html?kind=entity&slug=${encodeURIComponent(p.slug)}" target="_blank" rel="noopener">📝 阅读 LLM 摘要</a></p>` : ''}
+        <h4>时间线</h4><p class="muted">${tl || '—'}</p>
+        <h4>关联记录（${p.record_count}）</h4><ul>${recs}</ul>
+        <h4>共现实体</h4><p class="muted">${co || '—'}</p>
+        <h4>Canonical 链接</h4><ul>${links || '<li class="muted">—</li>'}</ul>
+      </div>`;
+    el.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  renderEntities(entityPageMap);
+
+  // --- nav（v3.8：Posts/Tracking 冻结，导航只留 Records + Entities；?v=posts|tracking 深链保留） ---
   document.getElementById('nav-records').addEventListener('click', () => switchView('records'));
-  document.getElementById('nav-posts').addEventListener('click', () => switchView('posts'));
-  document.getElementById('nav-tracking').addEventListener('click', () => switchView('tracking'));
+  document.getElementById('nav-entities').addEventListener('click', () => switchView('entities'));
 
   function switchView(view) {
-    for (const v of ['records', 'posts', 'tracking']) {
-      document.getElementById('nav-' + v).classList.toggle('active', view === v);
-      document.getElementById(v + '-view').style.display = view === v ? '' : 'none';
+    for (const v of ['records', 'entities', 'posts', 'tracking']) {
+      const nav = document.getElementById('nav-' + v);
+      if (nav) nav.classList.toggle('active', view === v);
+      const viewEl = document.getElementById(v + '-view');
+      if (viewEl) viewEl.style.display = view === v ? '' : 'none';
     }
   }
 
-  // v3.10: ?v=posts|tracking 初始视图（doc.html 返回列表链接用）
   const v0 = getParam('v');
-  if (v0 === 'posts' || v0 === 'tracking') switchView(v0);
+  if (v0 === 'posts' || v0 === 'tracking' || v0 === 'entities') switchView(v0);
 }
 
 if (document.readyState === 'loading') {

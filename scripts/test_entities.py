@@ -138,3 +138,69 @@ def test_cli_entities_not_found(tmp_path):
     _cli("--workspace", str(ws), "init")
     rc, out = _cli("--workspace", str(ws), "entities", "--name", "Nobody")
     assert rc == 1 and out["ok"] is False and out["error"] == "ENTITY_NOT_FOUND"
+
+
+# ---------- Task 5: LLM 摘要管线契约测试 ----------
+
+from scripts.entity_summary import auto_write_summary, validate_summary_md
+
+
+def _ws_db(tmp_path):
+    ws = tmp_path / "wiki"
+    (ws / "data").mkdir(parents=True)
+    (ws / "artifacts").mkdir(parents=True)
+    db = ws / "data" / "wiki.db"
+    ensure_schema(db)
+    conftest.seed_entry(db, "2026-08-01_aaaa", status="done")
+    L.set_entry_entities(db, "2026-08-01_aaaa",
+                         {"company": ["Figure AI"], "author": [], "product": [], "series": []})
+    return ws, db
+
+
+def test_validate_summary_md():
+    agg = {"name": "Figure AI", "records": [{"id": "2026-08-01_aaaa"}]}
+    ok, errors = validate_summary_md("# Figure AI\n\n见 2026-08-01_aaaa。", agg)
+    assert ok and not errors
+    ok, errors = validate_summary_md("无标题无记录", agg)
+    assert not ok and len(errors) >= 2  # 缺 H1 + 缺记录引用
+    ok, errors = validate_summary_md("# 别的标题\n\n2026-08-01_aaaa", agg)
+    assert not ok  # H1 不含实体名
+
+
+def test_auto_write_summary_with_fake_runner(tmp_path):
+    ws, db = _ws_db(tmp_path)
+
+    def fake_runner(prompt, ws_arg, timeout=900):
+        out = Path(ws_arg) / "entities" / "figure-ai" / "summary.new.md"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text("# Figure AI\n\n人形机器人公司。关联记录：2026-08-01_aaaa。", encoding="utf-8")
+        return {"ok": True}
+
+    r = auto_write_summary("Figure AI", ws, db, runner=fake_runner)
+    assert r["ok"] and r["revision"] == 1 and r["slug"] == "figure-ai"
+    assert (ws / "entities" / "figure-ai" / "summary.md").exists()
+    meta = json.loads((ws / "entities" / "figure-ai" / "meta.json").read_text(encoding="utf-8"))
+    assert meta["status"] == "done" and meta["revision"] == 1
+    # revision 自增
+    r2 = auto_write_summary("Figure AI", ws, db, runner=fake_runner)
+    assert r2["revision"] == 2
+    # 站点已重建且嵌入摘要
+    pages = json.loads((ws / "site" / "data" / "entity_pages.json").read_text(encoding="utf-8"))
+    assert "人形机器人公司" in pages["figure-ai"]["summary"]
+
+
+def test_auto_write_summary_invalid_marks_failed(tmp_path):
+    ws, db = _ws_db(tmp_path)
+
+    def bad_runner(prompt, ws_arg, timeout=900):
+        out = Path(ws_arg) / "entities" / "figure-ai" / "summary.new.md"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text("# Figure AI\n\n没有引用任何记录 id。", encoding="utf-8")
+        return {"ok": True}
+
+    with pytest.raises(EntityError) as ei:
+        auto_write_summary("Figure AI", ws, db, runner=bad_runner)
+    assert ei.value.code == "SUMMARY_VERIFY_FAILED"
+    assert not (ws / "entities" / "figure-ai" / "summary.md").exists()
+    meta = json.loads((ws / "entities" / "figure-ai" / "meta.json").read_text(encoding="utf-8"))
+    assert meta["status"] == "failed"

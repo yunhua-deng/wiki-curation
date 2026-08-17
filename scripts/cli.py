@@ -640,9 +640,23 @@ def cmd_entities(args) -> int:
             _print_result({"ok": True, "data": {"name": args.unwatch, "removed": removed}}, args.json)
             return 0
         if getattr(args, "summary", False):
-            # Task 5 接线 auto_write_summary；此处先给出明确错误而非静默
-            _print_result({"ok": False, "error": "NOT_IMPLEMENTED",
-                           "message": "entities --summary 尚未接线"}, args.json)
+            if getattr(args, "watched", False):
+                names = [w["name"] for w in ES.list_watched(db)]
+                written, failed = [], []
+                for n in names:
+                    try:
+                        written.append(ES.auto_write_summary(n, ws, db))
+                    except Exception as e:
+                        failed.append({"name": n, "error": str(e)})
+                _print_result({"ok": not failed,
+                               "data": {"written": written, "failed": failed}}, args.json)
+                return 0 if not failed else 1
+            if getattr(args, "name", None):
+                r = ES.auto_write_summary(args.name, ws, db)
+                _print_result({"ok": True, "data": r}, args.json)
+                return 0
+            _print_result({"ok": False, "error": "MISSING_ARGS",
+                           "message": "entities --summary 需要 --name X 或 --watched"}, args.json)
             return 1
         if getattr(args, "watched", False):
             items = ES.list_watched(db)
@@ -820,7 +834,7 @@ def cmd_manifest(args) -> int:
         "commands": [
             {"name": "init", "args": [],
              "description": "初始化 wiki 工作区骨架（目录/wiki.db/模板，幂等）+ 输出 AGENTS.md 接入片段"},
-            {"name": "entities", "args": ["--list", "--name", "--watch", "--unwatch", "--watched", "--summary"],
+            {"name": "entities", "args": ["--list", "--name", "--watch", "--unwatch", "--watched", "--summary", "--type", "--note"],
              "description": "实体综合层：聚合/list、watch 清单、可选 LLM 摘要"},
             {"name": "run", "args": ["--id", "--max-depth", "--force-collect"],
              "description": "执行已 add+pop 的任务：record 记录提取 → spawn"},

@@ -227,3 +227,9 @@ a:hover{text-decoration:underline}
 .ent-rec-group summary:hover{color:var(--accent)}
 .ent-rec-group ul{margin:.2rem 0 .5rem;padding-left:1.2rem;list-style:none}
 .ent-rec-group li{padding:.1rem 0;font-size:.85rem}
+
+/* Entity 详情弹出卡片 (v3.20) */
+.ent-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;padding:4vh 1rem;z-index:100;overflow-y:auto}
+.ent-modal{position:relative;max-width:860px;width:100%;max-height:88vh;overflow-y:auto;margin-top:0}
+.ent-modal-close{position:absolute;top:.6rem;right:.6rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--muted);cursor:pointer;padding:.1rem .5rem;font-size:.85rem}
+.ent-modal-close:hover{color:var(--ink);border-color:var(--accent)}

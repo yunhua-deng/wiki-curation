@@ -57,15 +57,12 @@ async function init() {
   ]);
   const entityPageMap = entityPages || {};
 
-  // stats
+  // stats（v3.20：posts/tracking 冻结，计数移除）
   const withRec = entries.filter(e => e.has_record).length;
-  const postCount = ((postsData && postsData.items) || []).length;
-  const trackingCount = (trackingData || []).length;
   document.getElementById('stats').innerHTML = `
     <div class="stat"><b>${withRec}</b> records</div>
     <div class="stat"><b>${entries.filter(e => e.watched).length}</b> watching</div>
-    <div class="stat"><b>${postCount}</b> posts</div>
-    <div class="stat"><b>${trackingCount}</b> tracking</div>
+    <div class="stat"><b>${Object.keys(entityPageMap).length}</b> entities</div>
   `;
 
   // type filter
@@ -172,11 +169,11 @@ async function init() {
           for (const [k,v] of Object.entries(e.entities)) {
             if (!v.length) continue;
             const chips = v.map(name =>
-              `<span class="ent-chip" data-entname="${escapeHtml(name)}" data-entkind="${escapeHtml(k === 'author' ? 'person' : k)}" title="🎯 点击发起跟踪（tracking topic）">${escapeHtml(name)}</span>`
+              `<span class="ent-chip" data-entname="${escapeHtml(name)}" title="点击跳转到实体页">${escapeHtml(name)}</span>`
             ).join(' ');
             entBits.push(`${k}: ${chips}`);
           }
-          if (entBits.length) html += `<p><strong>Entities</strong> <span class="muted ent-hint">（点名字可发起跟踪）</span> ${entBits.join(' · ')}</p>`;
+          if (entBits.length) html += `<p><strong>Entities</strong> <span class="muted ent-hint">（点击名字跳转到实体页）</span> ${entBits.join(' · ')}</p>`;
         }
         if (e.source && e.source.direct_source) {
           const ds = String(e.source.direct_source);
@@ -235,29 +232,11 @@ async function init() {
 
 
 
-    // v3.7: entity chip → create tracking topic via POST /api/track
+    // v3.20: entity chip → 跳转实体页（新 tab，实体详情以弹出卡片打开）
     container.querySelectorAll('.ent-chip').forEach(chip => {
-      chip.addEventListener('click', async (ev) => {
+      chip.addEventListener('click', (ev) => {
         ev.stopPropagation();
-        const name = chip.dataset.entname;
-        const kind = chip.dataset.entkind || 'person';
-        if (!window.confirm('为「' + name + '」创建跟踪主题？将自动关联已入库记录并生成跟踪页（可能发起一次 headless 写作）。')) return;
-        const oldTitle = chip.title;
-        chip.classList.add('pending');
-        try {
-          const res = await fetch('/api/track', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, kind }),
-          });
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok || !data.ok) throw new Error((data && data.message) || ('HTTP ' + res.status));
-          chip.classList.remove('pending');
-          chip.classList.add('tracked');
-          chip.title = data.exists ? `已有跟踪主题：${data.slug}` : `已创建跟踪主题：${data.slug}（digest 生成中，见 Tracking 页）`;
-        } catch (err) {
-          chip.classList.remove('pending');
-          chip.title = '发起失败（服务不支持？请重启 site --serve）：' + err.message;
-        }
+        window.open('/site/?v=entities&e=' + encodeURIComponent(chip.dataset.entname), '_blank');
       });
     });
 
@@ -647,22 +626,33 @@ async function init() {
       `<span class="link-domain">${escapeHtml(d)}</span> ` + ls.map(l => linkBadge(l)).join('')
     ).join('<br>');
     el.innerHTML = `
-      <div class="entity-detail-card">
-        <h2>${p.watched ? '★ ' : ''}${escapeHtml(p.name)} <span class="badge badge-other">${escapeHtml(p.type)}</span></h2>
-        <p class="trend-meta">${p.record_count} records · 活跃 ${escapeHtml(span)}${p.tracking_slug ? ' · 🎯 tracking' : ''}</p>
-        ${p.summary ? `<div class="summary-block"><p>${escapeHtml(excerpt)}</p></div>
-          <p><a href="/site/doc.html?kind=entity&slug=${encodeURIComponent(p.slug)}" target="_blank" rel="noopener">📝 阅读摘要全文</a></p>` : ''}
-        <h4>时间线</h4>
-        <div class="tl-wrap"><div class="tl-chart">${bars}</div></div>
-        <h4>关联记录（${p.record_count}）</h4>${recGroups || '<p class="muted">—</p>'}
-        <h4>共现实体</h4><p>${co || '<span class="muted">—</span>'}</p>
-        <h4>Canonical 链接</h4><p>${linkBits || '<span class="muted">—</span>'}</p>
+      <div class="ent-modal-backdrop">
+        <div class="entity-detail-card ent-modal">
+          <button class="ent-modal-close" title="关闭（Esc）">✕</button>
+          <h2>${p.watched ? '★ ' : ''}${escapeHtml(p.name)} <span class="badge badge-other">${escapeHtml(p.type)}</span></h2>
+          <p class="trend-meta">${p.record_count} records · 活跃 ${escapeHtml(span)}${p.tracking_slug ? ' · 🎯 tracking' : ''}</p>
+          ${p.summary ? `<div class="summary-block"><p>${escapeHtml(excerpt)}</p></div>
+            <p><a href="/site/doc.html?kind=entity&slug=${encodeURIComponent(p.slug)}" target="_blank" rel="noopener">📝 阅读摘要全文</a></p>` : ''}
+          <h4>时间线</h4>
+          <div class="tl-wrap"><div class="tl-chart">${bars}</div></div>
+          <h4>关联记录（${p.record_count}）</h4>${recGroups || '<p class="muted">—</p>'}
+          <h4>共现实体</h4><p>${co || '<span class="muted">—</span>'}</p>
+          <h4>Canonical 链接</h4><p>${linkBits || '<span class="muted">—</span>'}</p>
+        </div>
       </div>`;
+    // 弹卡关闭：✕ / 点击遮罩 / Esc（重渲染前清掉上一个 Esc 监听，避免累积）
+    const close = () => { el.innerHTML = ''; if (el._escHandler) { document.removeEventListener('keydown', el._escHandler); el._escHandler = null; } };
+    if (el._escHandler) document.removeEventListener('keydown', el._escHandler);
+    el._escHandler = (ev) => { if (ev.key === 'Escape') close(); };
+    document.addEventListener('keydown', el._escHandler);
+    el.querySelector('.ent-modal-backdrop').addEventListener('click', (ev) => {
+      if (ev.target.classList.contains('ent-modal-backdrop')) close();
+    });
+    el.querySelector('.ent-modal-close').addEventListener('click', close);
     el.querySelectorAll('.co-ent').forEach(chip => chip.addEventListener('click', () => {
       const target = Object.values(pages || {}).find(x => x.name === chip.dataset.coname);
       if (target) renderEntityDetail(target, pages);
     }));
-    el.scrollIntoView({ behavior: 'smooth' });
   }
 
   renderEntities(entityPageMap);
@@ -683,8 +673,10 @@ async function init() {
   const v0 = getParam('v');
   if (v0 === 'posts' || v0 === 'tracking' || v0 === 'entities') switchView(v0);
   const e0 = getParam('e');
-  if (v0 === 'entities' && e0 && entityPageMap[e0]) {
-    renderEntityDetail(entityPageMap[e0], entityPageMap);
+  if (v0 === 'entities' && e0) {
+    // v3.20：e 参数支持 slug 或实体名（records/doc 页的 chip 跳转按名字来）
+    const target = entityPageMap[e0] || Object.values(entityPageMap).find(x => x.name === e0);
+    if (target) renderEntityDetail(target, entityPageMap);
   }
 }
 

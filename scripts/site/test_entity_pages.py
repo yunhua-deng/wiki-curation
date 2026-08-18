@@ -199,3 +199,22 @@ def test_entity_ux_followups(tmp_path):
     assert "byDomain" in site_js           # canonical 链接按域名分组
     doc = (out / "doc.html").read_text(encoding="utf-8")
     assert "&quot;" in doc                 # doc.html 的 esc() 同步修复
+
+
+def test_ux_polish_stats_chips_modal(tmp_path):
+    """UX 调整：stats 去掉 posts/tracking；record 实体 chips 改跳实体页（不再发起 track）；实体详情改弹出卡片。"""
+    ws = _ws(tmp_path)
+    db = ws / "data" / "wiki.db"
+    ensure_schema(db)
+    _seed(db)
+    out = build_site(db, ws, out_dir=tmp_path / "site_out")
+    site_js = (out / "assets" / "site.js").read_text(encoding="utf-8")
+    assert " posts</div>" not in site_js and " tracking</div>" not in site_js  # stats 移除 posts/tracking
+    assert "/api/track" not in site_js       # chip 不再发起跟踪
+    assert "?v=entities&e=" in site_js       # chip 跳实体页深链
+    assert "ent-modal" in site_js            # 实体详情弹出卡片
+    doc = (out / "doc.html").read_text(encoding="utf-8")
+    assert "/api/track" not in doc           # doc.html 记录页 chip 同步改
+    assert "?v=entities&e=" in doc
+    css = (out / "assets" / "site.css").read_text(encoding="utf-8")
+    assert ".ent-modal" in css

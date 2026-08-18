@@ -18,7 +18,7 @@ _BASE_TEMPLATE = """<!DOCTYPE html>
   <footer class="site-footer"><p>Wiki · {generated_at}</p></footer>
 </div>
 <script src="assets/marked.min.js"></script>
-<script src="assets/site.js?v=3.19"></script>
+<script src="assets/site.js?v=3.20"></script>
 </body>
 </html>
 """
@@ -198,7 +198,7 @@ async function initDoc() {
         lh+='</p>'; html+=lh; }
       if(tags.length) html += `<p><strong>Tags</strong> ${tags.map(t=>`<span class="badge badge-tag">${esc(t)}</span>`).join(' ')}</p>`;
       const entBits=[];
-      for(const [k,v] of Object.entries(entities)) if(v&&v.length) entBits.push(`${k}: ${v.map(n=>`<span class="ent-chip" data-entname="${esc(n)}" data-entkind="${esc(k==='author'?'person':k)}" title="🎯 发起跟踪">${esc(n)}</span>`).join(' ')}`);
+      for(const [k,v] of Object.entries(entities)) if(v&&v.length) entBits.push(`${k}: ${v.map(n=>`<span class="ent-chip" data-entname="${esc(n)}" title="点击跳转到实体页">${esc(n)}</span>`).join(' ')}`);
       if(entBits.length) html += `<p><strong>Entities</strong> ${entBits.join(' · ')}</p>`;
       if((e._related||[]).length){ html += `<p class="related-head"><strong>Related</strong></p><ul class="related-list">`;
         html += e._related.map(r=>`<li>${recLink(r.id)} <span class="rel-title">${esc(r.title||'')}</span> <span class="rel-score muted">${r.score}</span></li>`).join('');
@@ -210,16 +210,10 @@ async function initDoc() {
       if(e && e.has_record) html += `<p class="link-add" data-linkadd="${esc(e.id)}"><button class="link-add-toggle">＋ 添加链接</button></p>`;
       html += `<p><a href="/site/raw.html?id=${encodeURIComponent(id)}" target="_blank" rel="noopener">📁 Raw materials</a></p>`;
       el('doc-body').innerHTML = html;
-      // entity chips → tracking
-      document.querySelectorAll('.ent-chip').forEach(chip=>chip.addEventListener('click', async (ev)=>{
+      // entity chips → 跳转实体页（新 tab，实体详情以弹出卡片打开）
+      document.querySelectorAll('.ent-chip').forEach(chip=>chip.addEventListener('click', (ev)=>{
         ev.stopPropagation();
-        if(!window.confirm('为「'+chip.dataset.entname+'」创建跟踪主题？将自动关联已入库记录并生成跟踪页（可能发起一次 headless 写作）。')) return;
-        try{
-          const r=await fetch('/api/track',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:chip.dataset.entname,kind:chip.dataset.entkind})});
-          const d=await r.json().catch(()=>({}));
-          chip.title=(r.ok&&d.ok)?(d.exists?('已有跟踪：'+d.slug):('已创建：'+d.slug)):((d.message)||'失败');
-          chip.classList.add('tracked');
-        }catch(_){ chip.title='发起失败（请重启 site --serve）'; }
+        window.open('/site/?v=entities&e=' + encodeURIComponent(chip.dataset.entname), '_blank');
       }));
       // add-link form
       document.querySelectorAll('[data-linkadd]').forEach(wrap=>{

@@ -611,21 +611,49 @@ async function init() {
   function renderEntityDetail(p, pages) {
     const el = document.getElementById('entity-detail');
     if (!p) { el.innerHTML = ''; return; }
-    const recs = p.records.map(r =>
-      `<li><a class="rec-link" href="/site/doc.html?kind=record&id=${encodeURIComponent(r.id)}" target="_blank" rel="noopener">${escapeHtml(r.id)}</a>（${escapeHtml(r.date || '?')}）${escapeHtml(r.title)}</li>`).join('');
-    const tl = p.timeline.map(t => `${escapeHtml(t.month)} (${t.count})`).join(' · ');
-    const co = p.co_entities.map(c => escapeHtml(c.name)).join(', ');
-    const links = p.links.map(l =>
-      `<li><a href="${escapeHtml(l.url)}" target="_blank" rel="noopener">${escapeHtml(l.url)}</a></li>`).join('');
+    // 头部：名称 + 类型 + watched + 记录数 + 活跃区间
+    const months = p.timeline.map(t => t.month).sort();
+    const span = months.length ? `${months[0]} – ${months[months.length - 1]}` : '—';
+    // 摘要：内联首段 + 独立页链接
+    const excerpt = p.summary ? p.summary.split(/\n\s*\n/)[0].trim() : '';
+    // 时间线：纯 CSS 迷你柱状图
+    const maxC = Math.max(...p.timeline.map(t => t.count), 1);
+    const bars = p.timeline.map(t =>
+      `<div class="tl-bar" style="height:${Math.round(t.count / maxC * 48) + 4}px" title="${escapeHtml(t.month)}: ${t.count} records"><span class="tl-label">${escapeHtml(t.month.slice(2))}</span></div>`
+    ).join('');
+    // 关联记录：按月份分组（≤3 组全展开，否则仅最新组展开）
+    const byMonth = {};
+    for (const r of p.records) { const mk = (r.date || '?').slice(0, 7); (byMonth[mk] = byMonth[mk] || []).push(r); }
+    const mks = Object.keys(byMonth).sort().reverse();
+    const recGroups = mks.map((mk, i) => {
+      const open = mks.length <= 3 || i === 0;
+      return `<details class="ent-rec-group"${open ? ' open' : ''}><summary>${escapeHtml(mk)}（${byMonth[mk].length}）</summary><ul>` +
+        byMonth[mk].map(r =>
+          `<li><span class="muted">${escapeHtml(r.date || '?')}</span> <a href="/site/doc.html?kind=record&id=${encodeURIComponent(r.id)}" target="_blank" rel="noopener">${escapeHtml(r.title || r.id)}</a></li>`
+        ).join('') + '</ul></details>';
+    }).join('');
+    // 共现实体：可点击 chips，点击跳到该实体详情
+    const co = p.co_entities.map(c =>
+      `<span class="ent-chip co-ent" data-coname="${escapeHtml(c.name)}" title="查看该实体">${escapeHtml(c.name)} ×${c.count}</span>`
+    ).join(' ');
+    // canonical 链接：复用 linkBadge 图标风格
+    const linkBits = p.links.map(l => linkBadge(l)).join(' ');
     el.innerHTML = `
       <div class="entity-detail-card">
-        <h2>${escapeHtml(p.name)} <span class="muted">${escapeHtml(p.type)}</span></h2>
-        ${p.summary ? `<p><a href="/site/doc.html?kind=entity&slug=${encodeURIComponent(p.slug)}" target="_blank" rel="noopener">📝 阅读 LLM 摘要</a></p>` : ''}
-        <h4>时间线</h4><p class="muted">${tl || '—'}</p>
-        <h4>关联记录（${p.record_count}）</h4><ul>${recs}</ul>
-        <h4>共现实体</h4><p class="muted">${co || '—'}</p>
-        <h4>Canonical 链接</h4><ul>${links || '<li class="muted">—</li>'}</ul>
+        <h2>${p.watched ? '★ ' : ''}${escapeHtml(p.name)} <span class="badge badge-other">${escapeHtml(p.type)}</span></h2>
+        <p class="trend-meta">${p.record_count} records · 活跃 ${escapeHtml(span)}${p.tracking_slug ? ' · 🎯 tracking' : ''}</p>
+        ${p.summary ? `<div class="summary-block"><p>${escapeHtml(excerpt)}</p></div>
+          <p><a href="/site/doc.html?kind=entity&slug=${encodeURIComponent(p.slug)}" target="_blank" rel="noopener">📝 阅读摘要全文</a></p>` : ''}
+        <h4>时间线</h4>
+        <div class="tl-wrap"><div class="tl-chart">${bars}</div></div>
+        <h4>关联记录（${p.record_count}）</h4>${recGroups || '<p class="muted">—</p>'}
+        <h4>共现实体</h4><p>${co || '<span class="muted">—</span>'}</p>
+        <h4>Canonical 链接</h4><p>${linkBits || '<span class="muted">—</span>'}</p>
       </div>`;
+    el.querySelectorAll('.co-ent').forEach(chip => chip.addEventListener('click', () => {
+      const target = Object.values(pages || {}).find(x => x.name === chip.dataset.coname);
+      if (target) renderEntityDetail(target, pages);
+    }));
     el.scrollIntoView({ behavior: 'smooth' });
   }
 
@@ -646,6 +674,10 @@ async function init() {
 
   const v0 = getParam('v');
   if (v0 === 'posts' || v0 === 'tracking' || v0 === 'entities') switchView(v0);
+  const e0 = getParam('e');
+  if (v0 === 'entities' && e0 && entityPageMap[e0]) {
+    renderEntityDetail(entityPageMap[e0], entityPageMap);
+  }
 }
 
 if (document.readyState === 'loading') {

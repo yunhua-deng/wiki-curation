@@ -164,3 +164,23 @@ def test_entities_view_has_search_controls(tmp_path):
     assert "ent-search" in site_js
     assert "ent-filter-type" in site_js
     assert "ent-filter-watch" in site_js
+
+
+def test_entity_detail_structured(tmp_path):
+    """实体详情面板：结构化渲染（时间线柱图/按月分组记录/共现 chips 交叉导航/深链）。"""
+    ws = _ws(tmp_path)
+    db = ws / "data" / "wiki.db"
+    ensure_schema(db)
+    _seed(db)
+    out = build_site(db, ws, out_dir=tmp_path / "site_out")
+    site_js = (out / "assets" / "site.js").read_text(encoding="utf-8")
+    assert "tl-chart" in site_js          # 时间线柱状图
+    assert "ent-rec-group" in site_js     # 记录按月分组
+    assert "co-ent" in site_js            # 共现实体交叉导航 chips
+    assert "getParam('e')" in site_js     # ?v=entities&e=<slug> 深链
+    css = (out / "assets" / "site.css").read_text(encoding="utf-8")
+    assert ".tl-bar" in css
+    assert ".ent-rec-group" in css
+    # survey 残留样式已清理
+    assert ".survey-btn" not in css
+    assert ".col-survey" not in css

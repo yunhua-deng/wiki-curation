@@ -120,10 +120,6 @@ a:hover{text-decoration:underline}
 .markdown-body code { background: var(--accent-soft); padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.85em; }
 
 /* Survey 综述 */
-.survey-btn{display:inline-block;padding:.15rem .55rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--ink);font-size:.8rem;cursor:pointer;text-decoration:none}
-.survey-btn:hover{border-color:var(--accent);color:var(--accent);text-decoration:none}
-.survey-btn:disabled{opacity:.5;cursor:default}
-.survey-status code{background:var(--surface);border:1px solid var(--border);padding:.05rem .3rem;border-radius:4px;font-size:.75rem}
 .survey-nav{margin-bottom:.5rem}
 .markdown-body{max-width:860px}
 .markdown-body h1{font-size:1.4rem}
@@ -131,14 +127,6 @@ a:hover{text-decoration:underline}
 .markdown-body h3{font-size:1rem;margin-top:1.2rem}
 .markdown-body blockquote{color:var(--muted);border-left:3px solid var(--border);margin:0;padding-left:.8rem}
 .markdown-body pre{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:.8rem;overflow-x:auto}
-
-/* Survey column (v3.6) */
-.wiki-table .col-survey{width:44px;text-align:center}
-.survey-cell{font-size:1rem;text-decoration:none;cursor:pointer;background:none;border:none;padding:0;line-height:1.4}
-.survey-cell-ghost{opacity:.4}
-.survey-cell-ghost:hover{opacity:1}
-.survey-cell-state{cursor:default;font-size:.95rem}
-.survey-cell code, .col-survey code{font-size:.65rem}
 
 /* Add-link form (v3.7) */
 .link-add-toggle{font-size:.75rem;padding:.05rem .45rem;border:1px dashed var(--border);border-radius:var(--radius);background:none;color:var(--muted);cursor:pointer}
@@ -222,3 +210,20 @@ a:hover{text-decoration:underline}
 /* Entity detail card (v3.8) */
 .entity-detail-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; margin-top: 1rem; }
 .entity-detail-card h4 { margin: .9rem 0 .3rem; }
+
+/* Entities 列表控制 + 分区 (v3.18) */
+.ent-section{font-size:.95rem;margin:1rem 0 .5rem}
+.ent-total{font-size:.8rem;margin:.5rem 0}
+
+/* Entity 时间线柱状图 (v3.18) */
+.tl-wrap{padding-bottom:1.4rem;overflow-x:auto}
+.tl-chart{display:flex;align-items:flex-end;gap:3px;min-height:56px;padding:.3rem 0}
+.tl-bar{flex:0 0 18px;background:var(--accent-soft);border:1px solid var(--accent);border-radius:3px 3px 0 0;position:relative;cursor:default}
+.tl-bar:hover{background:var(--accent)}
+.tl-label{position:absolute;bottom:-1.1rem;left:50%;transform:translateX(-50%) rotate(-45deg);transform-origin:left top;font-size:.6rem;color:var(--muted);white-space:nowrap}
+
+/* Entity 记录按月分组 (v3.18) */
+.ent-rec-group summary{cursor:pointer;font-size:.85rem;color:var(--muted)}
+.ent-rec-group summary:hover{color:var(--accent)}
+.ent-rec-group ul{margin:.2rem 0 .5rem;padding-left:1.2rem;list-style:none}
+.ent-rec-group li{padding:.1rem 0;font-size:.85rem}

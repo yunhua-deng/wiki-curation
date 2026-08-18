@@ -46,6 +46,11 @@ _INDEX_CONTENT = """
 <div id="table-container"></div>
 </div>
 <div id="entities-view" style="display:none">
+  <div class="controls">
+    <input type="search" id="ent-search" placeholder="Search entities..." autocomplete="off">
+    <select id="ent-filter-type"><option value="">All types</option></select>
+    <label class="watch-only" title="只看 watched 实体"><input type="checkbox" id="ent-filter-watch"> ★ Watched</label>
+  </div>
   <div id="entities-list"></div>
   <div id="entity-detail"></div>
 </div>

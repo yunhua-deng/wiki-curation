@@ -548,27 +548,67 @@ async function init() {
   }
   bindCardNav(trackingList, 'tracking');
 
-  // --- entities view（v3.8） ---
+  // --- entities view：搜索 + 筛选为主；默认 watched 置顶 + Top 50 ---
   function renderEntities(pages) {
     const list = document.getElementById('entities-list');
     const items = Object.values(pages || {}).sort((a, b) => b.record_count - a.record_count);
+    const searchEl = document.getElementById('ent-search');
+    const typeSel = document.getElementById('ent-filter-type');
+    const watchOnly = document.getElementById('ent-filter-watch');
     if (!items.length) { list.innerHTML = '<p class="empty">No entities yet</p>'; return; }
-    list.innerHTML = items.map(p => `
-      <div class="tracking-card entity-card" data-slug="${escapeHtml(p.slug)}">
+    [...new Set(items.map(p => p.type).filter(Boolean))].sort()
+      .forEach(t => { const o = document.createElement('option'); o.value = t; o.textContent = t; typeSel.appendChild(o); });
+
+    function cardHtml(p) {
+      return `<div class="tracking-card entity-card" data-slug="${escapeHtml(p.slug)}">
         <h3>${p.watched ? '★ ' : ''}${escapeHtml(p.name)}
           ${p.summary ? `<a class="doc-link" href="/site/doc.html?kind=entity&slug=${encodeURIComponent(p.slug)}" target="_blank" rel="noopener" title="摘要独立页（新 tab）">🔗</a>` : ''}
         </h3>
         <div class="trend-meta">${escapeHtml(p.type)} · ${p.record_count} records${p.summary ? ' · 📝 摘要' : ''}${p.tracking_slug ? ' · 🎯 tracking' : ''}</div>
-      </div>`).join('');
-    list.querySelectorAll('.entity-card').forEach(card => {
-      card.addEventListener('click', (ev) => {
-        if (ev.target.closest('a')) return;
-        renderEntityDetail(pages[card.dataset.slug]);
+      </div>`;
+    }
+
+    function bindCards() {
+      list.querySelectorAll('.entity-card').forEach(card => {
+        card.addEventListener('click', (ev) => {
+          if (ev.target.closest('a')) return;
+          renderEntityDetail(pages[card.dataset.slug], pages);
+        });
       });
-    });
+    }
+
+    function renderList() {
+      const q = (searchEl.value || '').toLowerCase().trim();
+      const t = typeSel.value;
+      const w = watchOnly.checked;
+      if (!q && !t && !w) {
+        const watched = items.filter(p => p.watched);
+        const top = items.filter(p => !p.watched).slice(0, 50);
+        let html = '';
+        if (watched.length) html += `<h3 class="ent-section">★ Watched（${watched.length}）</h3>` + watched.map(cardHtml).join('');
+        html += `<h3 class="ent-section">Top ${top.length}（按记录数）</h3>` + top.map(cardHtml).join('');
+        html += `<p class="muted ent-total">共 ${items.length} 个实体，用搜索/筛选查看全部</p>`;
+        list.innerHTML = html;
+      } else {
+        const matched = items.filter(p =>
+          (!q || p.name.toLowerCase().includes(q)) &&
+          (!t || p.type === t) &&
+          (!w || p.watched));
+        if (!matched.length) { list.innerHTML = '<p class="empty">No matching entities</p>'; return; }
+        const shown = matched.slice(0, 100);
+        list.innerHTML = shown.map(cardHtml).join('') +
+          `<p class="muted ent-total">共 ${matched.length} 个匹配${matched.length > 100 ? '，显示前 100' : ''}</p>`;
+      }
+      bindCards();
+    }
+
+    searchEl.addEventListener('input', renderList);
+    typeSel.addEventListener('change', renderList);
+    watchOnly.addEventListener('change', renderList);
+    renderList();
   }
 
-  function renderEntityDetail(p) {
+  function renderEntityDetail(p, pages) {
     const el = document.getElementById('entity-detail');
     if (!p) { el.innerHTML = ''; return; }
     const recs = p.records.map(r =>

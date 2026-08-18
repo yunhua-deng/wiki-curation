@@ -147,3 +147,20 @@ def test_doc_reader_has_no_survey_entry(tmp_path):
     assert "/api/survey" not in doc
     # survey.html 深链页仍然生成
     assert (out / "survey.html").exists()
+
+
+def test_entities_view_has_search_controls(tmp_path):
+    """entities 视图提供搜索/类型筛选/watched-only 控制条与筛选渲染逻辑。"""
+    ws = _ws(tmp_path)
+    db = ws / "data" / "wiki.db"
+    ensure_schema(db)
+    _seed(db)
+    out = build_site(db, ws, out_dir=tmp_path / "site_out")
+    html = (out / "index.html").read_text(encoding="utf-8")
+    assert 'id="ent-search"' in html
+    assert 'id="ent-filter-type"' in html
+    assert 'id="ent-filter-watch"' in html
+    site_js = (out / "assets" / "site.js").read_text(encoding="utf-8")
+    assert "ent-search" in site_js
+    assert "ent-filter-type" in site_js
+    assert "ent-filter-watch" in site_js

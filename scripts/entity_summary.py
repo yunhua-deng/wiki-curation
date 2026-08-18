@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from scripts import paths
-from scripts.tracking import slugify_name
+from scripts.lib import slugify_name
 
 ENTITY_BUCKETS = ("company", "author", "product", "series")
 
@@ -170,7 +170,7 @@ def aggregate_entity(db_path, name, ws=None) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# LLM 摘要管线（可选，显式触发；复刻 tracking digest 模式）
+# LLM 摘要管线（可选，显式触发）
 # ---------------------------------------------------------------------------
 _RECORD_ID_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}_[\w-]+")
 

@@ -6,6 +6,7 @@ lib.py — Wiki 工作流公共工具函数。
 generate_task.py 等脚本使用。
 """
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -13,6 +14,14 @@ import time
 from pathlib import Path
 
 from scripts import paths
+
+
+def slugify_name(name: str) -> str:
+    """实体名 → 目录 slug（小写、空格转连字符；CJK 保留）。"""
+    s = (name or "").strip().lower()
+    s = re.sub(r"\s+", "-", s)
+    s = re.sub(r"[^a-z0-9一-鿿_-]", "", s)
+    return (s or "topic").strip("-_")[:48]
 def get_workspace(fallback_script_path: str = None) -> Path:
     """解析 wiki 工作区根目录。"""
     return paths.get_workspace(fallback_script_path)
@@ -108,7 +117,7 @@ def run_cmd(cmd, timeout=120, retries=1, backoff=2.0, cwd=None, env=None) -> dic
 def headless_write_runner(prompt: str, ws, timeout: int = 900) -> dict:
     """headless `claude -p` 执行写作任务（acceptEdits；工作目录=wiki 工作区）。
 
-    供 survey / post / tracking 等"agent 写文件"场景共用。
+    供 entities LLM 摘要等"agent 写文件"场景共用。
     prompt 应约束 agent 只读材料、只写目标文件；其他需授权操作在 headless 下自动拒绝。
     """
     import subprocess

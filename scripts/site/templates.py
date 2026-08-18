@@ -18,7 +18,7 @@ _BASE_TEMPLATE = """<!DOCTYPE html>
   <footer class="site-footer"><p>Wiki · {generated_at}</p></footer>
 </div>
 <script src="assets/marked.min.js"></script>
-<script src="assets/site.js?v=3.20"></script>
+<script src="assets/site.js?v=3.21"></script>
 </body>
 </html>
 """
@@ -53,18 +53,6 @@ _INDEX_CONTENT = """
   </div>
   <div id="entities-list"></div>
   <div id="entity-detail"></div>
-</div>
-<div id="posts-view" style="display:none">
-  <div class="post-trigger">
-    <input type="text" id="post-topic-input" placeholder="输入主题，基于 wiki 证据写一篇 post…">
-    <button id="post-topic-btn">✍️ 发起写作</button>
-    <span id="post-trigger-status" class="muted"></span>
-  </div>
-  <div id="post-suggest"></div>
-  <div id="post-list"></div>
-</div>
-<div id="tracking-view" style="display:none">
-  <div id="tracking-list"></div>
 </div>
 """
 
@@ -110,39 +98,6 @@ if (document.readyState==='loading') document.addEventListener('DOMContentLoaded
 """
 
 
-_SURVEY_CONTENT = r"""
-<div id="survey-loading" class="muted">Loading...</div>
-<div id="survey-view" style="display:none">
-  <p class="survey-nav"><a href="/site/">← Wiki</a> · <a id="survey-record-link" href="#">View record</a></p>
-  <article id="survey-body" class="markdown-body"></article>
-  <p class="muted" id="survey-meta"></p>
-</div>
-<script>
-async function initSurvey() {
-  const id = new URLSearchParams(window.location.search).get('id');
-  if (!id) { document.getElementById('survey-loading').textContent = 'Missing id'; return; }
-  try {
-    const res = await fetch('/artifacts/' + encodeURIComponent(id) + '/survey/survey.md');
-    if (!res.ok) throw new Error('survey.md: HTTP ' + res.status);
-    const md = await res.text();
-    document.getElementById('survey-loading').style.display = 'none';
-    document.getElementById('survey-view').style.display = '';
-    document.getElementById('survey-record-link').href = '/site/?q=' + encodeURIComponent(id);
-    const body = document.getElementById('survey-body');
-    body.innerHTML = window.marked ? marked.parse(md) : '<pre>' + md.replace(/</g,'&lt;') + '</pre>';
-    try {
-      const meta = await (await fetch('/artifacts/' + encodeURIComponent(id) + '/survey/survey.json')).json();
-      document.getElementById('survey-meta').textContent =
-        'revision ' + (meta.revision || 1) + ' · updated ' + String(meta.updated_at || '').slice(0, 10) +
-        ' · sources ' + ((meta.sources || []).length);
-    } catch (_) {}
-  } catch (err) { document.getElementById('survey-loading').textContent = 'Load failed: ' + err.message; }
-}
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initSurvey); else initSurvey();
-</script>
-"""
-
-
 _DOC_READER = r"""
 <div id="doc-loading" class="muted">Loading...</div>
 <div id="doc-view" style="display:none">
@@ -166,7 +121,7 @@ function recLink(id){ return `<a class="rec-link" href="/site/doc.html?kind=reco
 
 async function initDoc() {
   const q = new URLSearchParams(window.location.search);
-  const kind = q.get('kind') || 'post';
+  const kind = q.get('kind') || 'record';
   const slug = q.get('slug') || '';
   const id = q.get('id') || '';
   const el = (x) => document.getElementById(x);
@@ -228,7 +183,7 @@ async function initDoc() {
             if(!/^https?:\/\/\S+$/.test(url)){ statusEl.textContent=' URL 需以 http(s) 开头'; return; }
             statusEl.textContent=' 添加中…';
             try{
-              const r=await fetch('/api/record-links',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,url,role,update_survey:false})});
+              const r=await fetch('/api/record-links',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,url,role})});
               const d=await r.json().catch(()=>({}));
               if(!r.ok||!d.ok){ statusEl.textContent=' '+(d.message||('失败 HTTP '+r.status)); return; }
               const badge=document.createElement('a'); badge.className='link-badge'; badge.href=url; badge.target='_blank'; badge.rel='noopener'; badge.title=url+'（manual）'; badge.textContent=ICONS[d.link&&d.link.kind]||ICONS.other;
@@ -244,12 +199,9 @@ async function initDoc() {
     return;
   }
 
-  // post / tracking / entity markdown
-  el('doc-back-list').href = '/site/' + (kind === 'tracking' ? '?v=tracking'
-    : kind === 'entity' ? '?v=entities' : '?v=posts');
-  const src = kind === 'tracking' ? 'tracking/' + slug + '/digest.md'
-    : kind === 'entity' ? 'entities/' + slug + '/summary.md'
-    : 'posts/' + slug + '.md';
+  // entity markdown
+  el('doc-back-list').href = '/site/?v=entities';
+  const src = 'entities/' + slug + '/summary.md';
   try {
     const res = await fetch('/' + src);
     if (!res.ok) throw new Error(src + ': HTTP ' + res.status);
@@ -276,9 +228,6 @@ def render_pages(entries, tags, sources, out_dir):
     )
     (out_dir / "raw.html").write_text(
         _render_page("Raw", _RAW_CONTENT, generated_at), encoding="utf-8"
-    )
-    (out_dir / "survey.html").write_text(
-        _render_page("Survey", _SURVEY_CONTENT, generated_at), encoding="utf-8"
     )
     (out_dir / "doc.html").write_text(
         _render_page("Doc", _DOC_READER, generated_at), encoding="utf-8"

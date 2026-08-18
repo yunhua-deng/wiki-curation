@@ -99,62 +99,6 @@ def audit_md_path(slug: str, depth: str, ws=None) -> Path:
     return audit_dir(slug, ws) / f"{slug}_{depth}_audit.md"
 
 
-# ---------------------------------------------------------------------------
-# survey（记录综述）产物路径（wiki/artifacts/{slug}/survey/...）
-# ---------------------------------------------------------------------------
-def survey_dir(slug: str, ws=None) -> Path:
-    """survey 产物目录：wiki/artifacts/{slug}/survey"""
-    return entry_dir(slug, ws) / "survey"
-
-
-def survey_raw_dir(slug: str, ws=None) -> Path:
-    """survey 采集材料目录：wiki/artifacts/{slug}/survey/raw"""
-    return survey_dir(slug, ws) / "raw"
-
-
-def survey_md_path(slug: str, ws=None) -> Path:
-    """survey 页面路径：wiki/artifacts/{slug}/survey/survey.md"""
-    return survey_dir(slug, ws) / "survey.md"
-
-
-def survey_json_path(slug: str, ws=None) -> Path:
-    """survey 元数据路径：wiki/artifacts/{slug}/survey/survey.json"""
-    return survey_dir(slug, ws) / "survey.json"
-
-
-def survey_status_path(slug: str, ws=None) -> Path:
-    """survey 状态机路径：wiki/artifacts/{slug}/survey/status.json"""
-    return survey_dir(slug, ws) / "status.json"
-
-
-def survey_task_path(slug: str, ws=None) -> Path:
-    """survey 任务 payload 路径：wiki/artifacts/{slug}/survey/task.json"""
-    return survey_dir(slug, ws) / "task.json"
-
-
-# ---------------------------------------------------------------------------
-# posts / tracking（wiki 工作区级目录）
-# ---------------------------------------------------------------------------
-def posts_dir(ws=None) -> Path:
-    """技术 post 目录：wiki/posts"""
-    return _resolve_ws(ws) / "posts"
-
-
-def post_staging_dir(ws=None) -> Path:
-    """post 暂存目录（校验通过后才落位 posts/）：wiki/posts/_staging"""
-    return posts_dir(ws) / "_staging"
-
-
-def tracking_dir(ws=None) -> Path:
-    """实体跟踪主题根目录：wiki/tracking"""
-    return _resolve_ws(ws) / "tracking"
-
-
-def tracking_topic_dir(slug: str, ws=None) -> Path:
-    """单个跟踪主题目录：wiki/tracking/{slug}"""
-    return tracking_dir(ws) / slug
-
-
 def entities_dir(ws=None) -> Path:
     """实体综合层目录：wiki/entities"""
     return _resolve_ws(ws) / "entities"

@@ -48,16 +48,14 @@ function getParam(name) {
 
 // ================= init =================
 async function init() {
-  const [entries, tags, postsData, trackingData, entityPages] = await Promise.all([
+  const [entries, tags, entityPages] = await Promise.all([
     loadJSON('/site/data/entries.json'),
     loadJSON('/site/data/tags.json').catch(() => ({})),
-    loadJSON('/site/data/posts.json').catch(() => ({ items: [], suggestions: [] })),
-    loadJSON('/site/data/tracking.json').catch(() => []),
     loadJSON('/site/data/entity_pages.json').catch(() => ({})),
   ]);
   const entityPageMap = entityPages || {};
 
-  // stats（v3.20：posts/tracking 冻结，计数移除）
+  // stats
   const withRec = entries.filter(e => e.has_record).length;
   document.getElementById('stats').innerHTML = `
     <div class="stat"><b>${withRec}</b> records</div>
@@ -310,7 +308,7 @@ async function init() {
           try {
             const res = await fetch('/api/record-links', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id, url, role, update_survey: false }),
+              body: JSON.stringify({ id, url, role }),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok || !data.ok) { statusEl.textContent = ' ' + ((data && data.message) || ('失败 HTTP ' + res.status)); return; }
@@ -355,178 +353,6 @@ async function init() {
   if (watchOnly) watchOnly.addEventListener('change', render);
   render();
 
-  // ============ v3.7: Posts 视图（trends 改造）+ Tracking 视图 ============
-  const postItems = (postsData && postsData.items) || [];
-  const suggestions = (postsData && postsData.suggestions) || [];
-  const trackingItems = trackingData || [];
-
-  // v3.10: 卡片点击直接进入独立 URL（SPA reader 已退役）
-  function bindCardNav(containerEl, kind) {
-    containerEl.querySelectorAll('.post-card, .tracking-card').forEach(card => {
-      card.addEventListener('click', (ev) => {
-        if (ev.target.closest('a, button')) return;
-        window.open('/site/doc.html?kind=' + kind + '&slug=' + encodeURIComponent(card.dataset.slug), '_blank');
-      });
-    });
-  }
-
-  // --- posts view: trigger bar + suggestions + month-grouped list ---
-  const postList = document.getElementById('post-list');
-  const sgBox = document.getElementById('post-suggest');
-  const trigStatus = document.getElementById('post-trigger-status');
-
-  async function startPost(payload) {
-    if (trigStatus) trigStatus.textContent = ' ⏳ 已发起，写作中（约 2-4 分钟）…';
-    try {
-      const res = await fetch('/api/post', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.ok) {
-        if (trigStatus) trigStatus.textContent = ' ' + ((data && data.message) || ('失败 HTTP ' + res.status));
-        return;
-      }
-      if (data.exists) {
-        if (trigStatus) trigStatus.textContent = ` 已存在同主题 post：${data.stem}`;
-        return;
-      }
-      const before = postItems.length;
-      const t0 = Date.now();
-      const timer = setInterval(async () => {
-        try {
-          const fresh = await loadJSON('/site/data/posts.json?ts=' + Date.now()).catch(() => null);
-          const items = (fresh && fresh.items) || [];
-          if (items.length > before) {
-            clearInterval(timer);
-            if (trigStatus) trigStatus.textContent = ' ✓ 已完成（已刷新列表）';
-            renderPosts(items);
-            return;
-          }
-          if (Date.now() - t0 > 480000) {
-            clearInterval(timer);
-            if (trigStatus) trigStatus.textContent = ' 仍在写作，请稍后手动刷新页面';
-          }
-        } catch (_) {}
-      }, 15000);
-    } catch (err) {
-      if (trigStatus) trigStatus.textContent = ' 当前 wiki 服务不支持在线发起（请重启 site --serve），或改用 CLI/agent';
-    }
-  }
-
-  const topicInput = document.getElementById('post-topic-input');
-  const topicBtn = document.getElementById('post-topic-btn');
-  if (topicBtn && topicInput) {
-    topicBtn.addEventListener('click', () => {
-      const t = (topicInput.value || '').trim();
-      if (!t) { if (trigStatus) trigStatus.textContent = ' 请先输入主题'; return; }
-      startPost({ topic: t });
-    });
-    topicInput.addEventListener('keydown', (e2) => { if (e2.key === 'Enter') topicBtn.click(); });
-  }
-
-  const freshSuggestions = suggestions.filter(s => !s.covered);
-  if (freshSuggestions.length) {
-    sgBox.innerHTML = '<h3 class="suggest-head">💡 分析建议（高关联记录）</h3>' + freshSuggestions.map((s, i) => `
-      <div class="suggest-card">
-        <div class="suggest-title">${escapeHtml(s.title || s.anchor)}</div>
-        <div class="muted suggest-meta">${escapeHtml(s.anchor)} · ${s.degree} 条关联 · score ${s.score}</div>
-        <div class="suggest-actions">
-          <button class="suggest-go" data-sg="${i}">✍️ 一键写作</button>
-          <button class="suggest-dismiss" data-sg="${i}" title="我不需要这个分析建议">✕ 忽略</button>
-          <code class="suggest-cmd" title="点击复制">${escapeHtml(s.suggested_cmd)}</code>
-        </div>
-      </div>
-    `).join('');
-    sgBox.querySelectorAll('.suggest-cmd').forEach(c => {
-      c.addEventListener('click', () => {
-        navigator.clipboard && navigator.clipboard.writeText(c.textContent);
-        c.classList.add('copied');
-        setTimeout(() => c.classList.remove('copied'), 800);
-      });
-    });
-    sgBox.querySelectorAll('.suggest-go').forEach(b => {
-      b.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        const s = freshSuggestions[Number(b.dataset.sg)];
-        b.disabled = true;
-        startPost({ records: s.records });
-      });
-    });
-    sgBox.querySelectorAll('.suggest-dismiss').forEach(b => {
-      b.addEventListener('click', async (ev) => {
-        ev.stopPropagation();
-        const s = freshSuggestions[Number(b.dataset.sg)];
-        b.disabled = true;
-        try {
-          const res = await fetch('/api/post-ignore', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ anchor: s.anchor }),
-          });
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok || !data.ok) { b.disabled = false; b.title = '忽略失败：' + ((data && data.message) || res.status); return; }
-          b.closest('.suggest-card').remove();
-        } catch (err) {
-          b.disabled = false;
-          b.title = '忽略失败（服务不支持？请重启 site --serve）';
-        }
-      });
-    });
-  } else {
-    sgBox.style.display = 'none';
-  }
-
-  function renderPosts(items) {
-    if (!items.length) { postList.innerHTML = '<p class="empty">No posts yet</p>'; return; }
-    const groups = {};
-    for (const p of items) {
-      const mk = (p.date || 'unknown').slice(0, 7) || 'unknown';
-      (groups[mk] = groups[mk] || []).push(p);
-    }
-    const mks = Object.keys(groups).sort().reverse();
-    postList.innerHTML = mks.map(mk => {
-      const gid = `pm-${mk.replace('-', '')}`;
-      return `<div class="month-group" data-month="${mk}">
-        <h3 class="month-header" data-target="${gid}">${mk} · ${groups[mk].length} posts ▾</h3>
-        <div class="month-body" id="${gid}">
-        ${groups[mk].map(t => `
-          <div class="post-card" data-slug="${escapeHtml(t.slug)}">
-            <h3>${escapeHtml(t.title)} <a class="doc-link" href="/site/doc.html?kind=post&slug=${encodeURIComponent(t.slug)}" target="_blank" rel="noopener" title="独立页面（新 tab）">🔗</a></h3>
-            <div class="trend-meta">${escapeHtml(t.date || '')}${t.trigger ? ' · ' + escapeHtml(t.trigger) : ''}</div>
-            <p class="muted">${escapeHtml(t.excerpt || '')}</p>
-          </div>`).join('')}
-        </div>
-      </div>`;
-    }).join('');
-    postList.querySelectorAll('.month-header').forEach(h => {
-      h.addEventListener('click', () => {
-        const g = h.parentElement;
-        g.classList.toggle('collapsed');
-        h.textContent = h.textContent.replace('▸', '▾').replace('▾', g.classList.contains('collapsed') ? '▸' : '▾');
-      });
-    });
-    bindCardNav(postList, 'post');
-  }
-
-  renderPosts(postItems);
-
-  // --- tracking list ---
-  const trackingList = document.getElementById('tracking-list');
-  if (trackingItems.length) {
-    trackingList.innerHTML = trackingItems.map(t => {
-      const due = t.next_due && t.next_due <= new Date().toISOString().slice(0, 10);
-      return `
-      <div class="tracking-card" data-slug="${escapeHtml(t.slug)}">
-        <h3>🎯 ${escapeHtml(t.name)} <a class="doc-link" href="/site/doc.html?kind=tracking&slug=${encodeURIComponent(t.slug)}" target="_blank" rel="noopener" title="独立页面（新 tab）">🔗</a></h3>
-        <div class="trend-meta">${escapeHtml(t.kind)} · ${t.record_count} records · 上次刷新 ${escapeHtml(t.last_at || '—')}${due ? ' · <span class="badge badge-pending">到期</span>' : ''}${t.has_digest ? '' : ' · <span class="badge badge-running">生成中</span>'}</div>
-        <p class="muted">${escapeHtml(t.excerpt || '')}</p>
-      </div>`;
-    }).join('');
-  } else {
-    trackingList.innerHTML = '<p class="empty">No tracking topics yet</p>';
-  }
-  bindCardNav(trackingList, 'tracking');
-
   // --- entities view：搜索 + 筛选为主；默认 watched 置顶 + Top 50 ---
   function renderEntities(pages) {
     const list = document.getElementById('entities-list');
@@ -543,7 +369,7 @@ async function init() {
         <h3>${p.watched ? '★ ' : ''}${escapeHtml(p.name)}
           ${p.summary ? `<a class="doc-link" href="/site/doc.html?kind=entity&slug=${encodeURIComponent(p.slug)}" target="_blank" rel="noopener" title="摘要独立页（新 tab）">🔗</a>` : ''}
         </h3>
-        <div class="trend-meta">${escapeHtml(p.type)} · ${p.record_count} records${p.summary ? ' · 📝 摘要' : ''}${p.tracking_slug ? ' · 🎯 tracking' : ''}</div>
+        <div class="trend-meta">${escapeHtml(p.type)} · ${p.record_count} records${p.summary ? ' · 📝 摘要' : ''}</div>
       </div>`;
     }
 
@@ -630,7 +456,7 @@ async function init() {
         <div class="entity-detail-card ent-modal">
           <button class="ent-modal-close" title="关闭（Esc）">✕</button>
           <h2>${p.watched ? '★ ' : ''}${escapeHtml(p.name)} <span class="badge badge-other">${escapeHtml(p.type)}</span></h2>
-          <p class="trend-meta">${p.record_count} records · 活跃 ${escapeHtml(span)}${p.tracking_slug ? ' · 🎯 tracking' : ''}</p>
+          <p class="trend-meta">${p.record_count} records · 活跃 ${escapeHtml(span)}</p>
           ${p.summary ? `<div class="summary-block"><p>${escapeHtml(excerpt)}</p></div>
             <p><a href="/site/doc.html?kind=entity&slug=${encodeURIComponent(p.slug)}" target="_blank" rel="noopener">📝 阅读摘要全文</a></p>` : ''}
           <h4>时间线</h4>
@@ -657,12 +483,12 @@ async function init() {
 
   renderEntities(entityPageMap);
 
-  // --- nav（v3.8：Posts/Tracking 冻结，导航只留 Records + Entities；?v=posts|tracking 深链保留） ---
+  // --- nav（Records + Entities） ---
   document.getElementById('nav-records').addEventListener('click', () => switchView('records'));
   document.getElementById('nav-entities').addEventListener('click', () => switchView('entities'));
 
   function switchView(view) {
-    for (const v of ['records', 'entities', 'posts', 'tracking']) {
+    for (const v of ['records', 'entities']) {
       const nav = document.getElementById('nav-' + v);
       if (nav) nav.classList.toggle('active', view === v);
       const viewEl = document.getElementById(v + '-view');
@@ -671,7 +497,7 @@ async function init() {
   }
 
   const v0 = getParam('v');
-  if (v0 === 'posts' || v0 === 'tracking' || v0 === 'entities') switchView(v0);
+  if (v0 === 'entities') switchView(v0);
   const e0 = getParam('e');
   if (v0 === 'entities' && e0) {
     // v3.20：e 参数支持 slug 或实体名（records/doc 页的 chip 跳转按名字来）

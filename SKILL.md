@@ -13,9 +13,9 @@ Single tier, single path:
 
 - **Record**: `add → pop → run → publish` → `record.json` — link graph (explicit + inferred URLs), TL;DR, X-style summary, tags, entities. Every ingestion goes through this.
 - **Recall**: `add` auto-surfaces similar past entries; `recall --input "..."` queries anytime (4-layer: url_exact → shared_link → entity → fts).
-- **Analyze**: `analyze --topic "X"` clusters evidence across records (feeds posts); `--discover` finds emerging hot topics.
+- **Analyze**: `analyze --topic "X"` clusters evidence across records; `--discover` finds emerging hot topics.
 - **Entities**: `entities --list / --name X / --watch X / --summary --name X|--watched` — entity aggregation pages built deterministically from wiki.db (site Entities view); optional LLM summary per entity (`wiki/entities/{slug}/summary.md`). Watched entities get a refresh hint in publish output.
-- **Site**: built static HTML served locally — two views: Records and Entities (Posts/Tracking frozen, see Legacy commands).
+- **Site**: built static HTML served locally — two views: Records and Entities.
 
 Core principle: **extraction by agent, linking by system.** The LLM reads materials and writes `record.json`; similarity, relations, URL verification are deterministic code.
 
@@ -39,10 +39,7 @@ wiki/
 ├── data/wiki.db             # SQLite: entries + links + relations + FTS5
 ├── artifacts/{id}/
 │   ├── record.json          # THE record (only artifact the agent writes)
-│   ├── raw/                 # fetched source materials
-│   └── survey/                # deep-survey: survey.md (agent) + survey.json/status.json/task.json (system) + raw/
-├── posts/                   # blog-style posts (markdown, auto-listed on site)
-├── tracking/{slug}/         # entity tracking topics: topic.json + digest.md + raw/
+│   └── raw/                 # fetched source materials
 ├── entities/{slug}/         # entity summaries (optional LLM): summary.md + meta.json
 ├── site/                    # built static site
 └── wiki.html                # semantic index
@@ -115,23 +112,14 @@ All commands support `--json`. `--workspace PATH` overrides `$WIKI_WORKSPACE`.
 | `publish --id <slug>` | Validate record.json, store links/relations/entities, rebuild site |
 | `recall --input "..." [--limit N]` | 4-layer similarity recall with reasons |
 | `search "query"` | FTS5 full-text search |
-| `analyze --topic "..." [--emit-task]` | Evidence cluster across records; optional post task |
+| `analyze --topic "..."` | Evidence cluster across records |
 | `analyze --dedup` | Duplicate candidate pairs (same_url / shared_link) |
-| `analyze --discover [--days N]` | Emerging hot tags/entities (alias-aware, marks existing coverage) |
-| `survey --id X [--force] [--task\|--publish\|--status] [--queue]` | Deep-survey a record: fetch links + emit survey task / publish / status / agent queue |
-| `add-link --id X --url U [--role R] [--update-survey]` | Add a manually-found link to a record's link graph (origin=manual); optionally regenerate its survey |
-| `post --topic X \| --records a,b \| --suggest [--auto]` | Blog-style post from wiki evidence (fusion/topic/suggest) |
-| `track --name X [--kind] [--refresh S] [--due] [--auto]` | Entity tracking topics: create/refresh/due/archive |
+| `analyze --discover [--days N]` | Emerging hot tags/entities (alias-aware) |
+| `add-link --id X --url U [--role R]` | Add a manually-found link to a record's link graph (origin=manual) |
 | `verify-links --id <slug>` | Lazy curl-HEAD link reachability |
 | `star --id <slug>` | Star canonical GitHub repos (needs `GITHUB_TOKEN`) |
 | `doctor [--quick] [--fix-plan]` | Health: queue/db/files/git/record-tier/entities |
 | `stats` / `list` / `sync` / `requeue` / `delete` / `update` / `manifest` | Store utilities |
-
-## Legacy commands (frozen)
-
-`survey` / `post` / `track` 已冻结：代码与存量内容（`artifacts/{id}/survey/`、`posts/`、`tracking/`）保留可用，但站点不再展示其 tab，也不再主动扩展。背景：wiki 转为 agent 优先——record 是骨干（客观记录），entity 综合层是唯一综合出口；真人通过 agent 消费 wiki。新的综合需求用 `entities`。
-
-tracking 与 entities 的分工：`track` = 遗留的关注实体专题（外部源刷新 + LLM digest，冻结）；`entities` = 全部实体的自动聚合 + 可选摘要（当前主线）。
 
 ## Architecture
 
@@ -152,18 +140,9 @@ publish --id <slug>
    ├─ schema.validate      ← deterministic record validation
    ├─ links.replace        ← links table (fetched backfill)
    ├─ relations.rewire     ← same_url/shared_link/shared_entity/tag_overlap edges
-   ├─ site.build           ← entries.json + timeline + graph + trends
+   ├─ site.build           ← entries.json + timeline + graph
    ▼
 done: record + site + wiki.html refreshed
-
-survey --id X                ← record deep-survey (site button or CLI)
-   ├─ select_survey_links    ← canonical first, skip already-fetched
-   ├─ collect_sources      ← survey/raw/ (max_depth=1)
-   ├─ generate_survey_task   ← task_mode=survey, status=awaiting_agent
-   │
-survey agent                 ← hand-writes survey.md (TL;DR/核心内容/分来源摘要/原始出处)
-   │
-survey --id X --publish      ← structure validation + survey.json + site surveys.json
 ```
 
 ## Orchestrator notes (agent_notes.md)

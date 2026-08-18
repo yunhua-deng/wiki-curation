@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """site/entity_pages.py — 构建实体聚合页数据（确定性，零 LLM）。
 
-数据源：entries.entities 列（publish canonical）+ links 表 + tracking/ 目录 + wiki/entities/ 摘要。
+数据源：entries.entities 列（publish canonical）+ links 表 + wiki/entities/ 摘要。
 输出由 build_site 写入 site/data/entity_pages.json（纯构建产物，可随时重建）。
 """
 import json
@@ -9,29 +9,10 @@ from pathlib import Path
 
 from scripts import wiki_index
 from scripts.entity_summary import ENTITY_BUCKETS, flatten_entities, list_watched
+from scripts.lib import slugify_name
 from scripts.records import links as L
-from scripts.tracking import slugify_name
 
 SUMMARY_CAP = 8000  # 嵌入 entity_pages.json 的摘要字符上限
-
-
-def _tracking_slugs(wiki_dir: Path) -> set:
-    """非 archived 的 tracking 专题 slug 集合（用于互链标记）。"""
-    root = Path(wiki_dir) / "tracking"
-    slugs = set()
-    if not root.exists():
-        return slugs
-    for topic_dir in root.iterdir():
-        tj = topic_dir / "topic.json"
-        if not tj.is_file():
-            continue
-        try:
-            t = json.loads(tj.read_text(encoding="utf-8", errors="replace")) or {}
-        except Exception:
-            continue
-        if t.get("status") != "archived":
-            slugs.add(topic_dir.name)
-    return slugs
 
 
 def _load_summary(wiki_dir: Path, slug: str) -> str:
@@ -57,7 +38,6 @@ def build_entity_pages(db_path, wiki_dir) -> dict:
     all_ents = L.all_entry_entities(db_path)
     links_map = L.get_links_map(db_path)
     watched = {w["name"] for w in list_watched(db_path)}
-    tracking = _tracking_slugs(wiki_dir)
 
     index = {}
     for eid, ents in all_ents.items():
@@ -100,7 +80,6 @@ def build_entity_pages(db_path, wiki_dir) -> dict:
             "co_entities": [{"name": n, "count": c}
                             for n, c in sorted(co.items(), key=lambda kv: -kv[1])[:10]],
             "links": links[:20],
-            "tracking_slug": slug if slug in tracking else "",
             "summary": _load_summary(wiki_dir, slug),
         }
     return pages

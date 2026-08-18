@@ -119,7 +119,7 @@ def test_cli_add_link(tmp_path, monkeypatch, capsys):
     from scripts import cli
     args = type("A", (), {"json": True, "quiet": True, "workspace": str(tmp_path),
                           "id": "rec1", "url": "https://huggingface.co/figure/helix",
-                          "role": "related", "update_survey": False})()
+                          "role": "related"})()
     assert cli.cmd_add_link(args) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["ok"] and out["data"]["link"]["kind"] == "huggingface"
@@ -128,7 +128,7 @@ def test_cli_add_link(tmp_path, monkeypatch, capsys):
     # 重复 → LINK_EXISTS
     args2 = type("A", (), {"json": True, "quiet": True, "workspace": str(tmp_path),
                            "id": "rec1", "url": "https://huggingface.co/figure/helix",
-                           "role": "related", "update_survey": False})()
+                           "role": "related"})()
     assert cli.cmd_add_link(args2) == 1
     out2 = json.loads(capsys.readouterr().out)
     assert out2["error"] == "LINK_EXISTS"

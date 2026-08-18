@@ -39,9 +39,10 @@ def test_build_site_writes_entity_pages(tmp_path):
     assert p["links"] == [{"url": "https://github.com/figure/helix", "kind": "github"}]
     assert p["summary"] == ""
     assert p["watched"] is False
-    # 冻结语义：posts/tracking 数据文件照常生成
-    assert (out / "data" / "posts.json").exists()
-    assert (out / "data" / "tracking.json").exists()
+    # 冻结管线移除：posts/tracking/surveys 数据文件不再生成
+    assert not (out / "data" / "posts.json").exists()
+    assert not (out / "data" / "tracking.json").exists()
+    assert not (out / "data" / "surveys.json").exists()
 
 
 def test_entity_page_embeds_done_summary(tmp_path):
@@ -72,22 +73,6 @@ def test_entity_page_skips_failed_summary(tmp_path):
     assert pages["figure-ai"]["summary"] == ""
 
 
-def test_entity_page_tracking_crosslink(tmp_path):
-    ws = _ws(tmp_path)
-    db = ws / "data" / "wiki.db"
-    ensure_schema(db)
-    _seed(db)
-    tdir = ws / "tracking" / "figure-ai"
-    tdir.mkdir(parents=True)
-    (tdir / "topic.json").write_text(json.dumps(
-        {"slug": "figure-ai", "name": "Figure AI", "kind": "company", "status": "active"}),
-        encoding="utf-8")
-    out = build_site(db, ws, out_dir=tmp_path / "site_out")
-    pages = json.loads((out / "data" / "entity_pages.json").read_text(encoding="utf-8"))
-    assert pages["figure-ai"]["tracking_slug"] == "figure-ai"
-
-
-
 def test_nav_has_only_records_and_entities(tmp_path):
     ws = _ws(tmp_path)
     db = ws / "data" / "wiki.db"
@@ -99,8 +84,8 @@ def test_nav_has_only_records_and_entities(tmp_path):
     assert 'id="nav-posts"' not in html
     assert 'id="nav-tracking"' not in html
     assert 'id="entities-view"' in html
-    # 冻结视图容器保留（doc.html ?v=posts|tracking 深链仍回列表）
-    assert 'id="posts-view"' in html and 'id="tracking-view"' in html
+    # 冻结管线移除：posts/tracking 视图容器不再生成
+    assert 'id="posts-view"' not in html and 'id="tracking-view"' not in html
 
 
 def test_doc_reader_supports_entity_kind(tmp_path):
@@ -110,7 +95,6 @@ def test_doc_reader_supports_entity_kind(tmp_path):
     _seed(db)
     out = build_site(db, ws, out_dir=tmp_path / "site_out")
     doc = (out / "doc.html").read_text(encoding="utf-8")
-    assert "kind === 'entity'" in doc
     assert "entities/" in doc and "summary.md" in doc
     site_js = (out / "assets" / "site.js").read_text(encoding="utf-8")
     assert "entity_pages.json" in site_js
@@ -134,7 +118,7 @@ def test_records_view_has_no_survey_entry(tmp_path):
 
 
 def test_doc_reader_has_no_survey_entry(tmp_path):
-    """doc.html 记录独立页不再出现综述按钮/触发逻辑；survey.html 深链页保留。"""
+    """doc.html 记录独立页不再出现综述按钮/触发逻辑；survey.html 已随冻结管线移除。"""
     ws = _ws(tmp_path)
     db = ws / "data" / "wiki.db"
     ensure_schema(db)
@@ -145,8 +129,8 @@ def test_doc_reader_has_no_survey_entry(tmp_path):
     assert "survey-go" not in doc
     assert "addsurvey" not in doc
     assert "/api/survey" not in doc
-    # survey.html 深链页仍然生成
-    assert (out / "survey.html").exists()
+    # survey.html 不再生成
+    assert not (out / "survey.html").exists()
 
 
 def test_entities_view_has_search_controls(tmp_path):

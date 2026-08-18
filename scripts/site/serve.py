@@ -23,14 +23,6 @@ class SPAHandler(SimpleHTTPRequestHandler):
     """处理目录根路径自动补全 index.html，并为文本响应添加 UTF-8 charset。"""
 
     def do_GET(self):
-        # v3.5：survey 状态 API
-        if self.path.startswith("/api/survey/status"):
-            from urllib.parse import urlparse, parse_qs
-            q = parse_qs(urlparse(self.path).query)
-            from scripts.site import api as site_api
-            code, data = site_api.handle_survey_status(self.directory, (q.get("id") or [""])[0])
-            self._send_json(code, data)
-            return
         # v3.3：根路径与 /index.html 直接跳到站点首页（用户只记端口即可）
         if self.path in ("/", "/index.html"):
             self.send_response(301)
@@ -55,7 +47,6 @@ class SPAHandler(SimpleHTTPRequestHandler):
                                 "message": "request body is not valid JSON (expect UTF-8)"})
 
     def do_POST(self):
-        # v3.5：survey 发起 API（仅 loopback；api 层再校验）
         if self.path.split("?")[0] == "/api/watch":
             payload, err = self._read_json_body()
             if err:
@@ -66,36 +57,6 @@ class SPAHandler(SimpleHTTPRequestHandler):
                 self.directory, payload, client_ip=self.client_address[0])
             self._send_json(code, data)
             return
-        if self.path.split("?")[0] == "/api/post-ignore":
-            payload, err = self._read_json_body()
-            if err:
-                self._send_json(*err)
-                return
-            from scripts.site import api as site_api
-            code, data = site_api.handle_post_ignore(
-                self.directory, payload, client_ip=self.client_address[0])
-            self._send_json(code, data)
-            return
-        if self.path.split("?")[0] == "/api/track":
-            payload, err = self._read_json_body()
-            if err:
-                self._send_json(*err)
-                return
-            from scripts.site import api as site_api
-            code, data = site_api.handle_track(
-                self.directory, payload, client_ip=self.client_address[0])
-            self._send_json(code, data)
-            return
-        if self.path.split("?")[0] == "/api/post":
-            payload, err = self._read_json_body()
-            if err:
-                self._send_json(*err)
-                return
-            from scripts.site import api as site_api
-            code, data = site_api.handle_post(
-                self.directory, payload, client_ip=self.client_address[0])
-            self._send_json(code, data)
-            return
         if self.path.split("?")[0] == "/api/record-links":
             payload, err = self._read_json_body()
             if err:
@@ -103,16 +64,6 @@ class SPAHandler(SimpleHTTPRequestHandler):
                 return
             from scripts.site import api as site_api
             code, data = site_api.handle_add_link(
-                self.directory, payload, client_ip=self.client_address[0])
-            self._send_json(code, data)
-            return
-        if self.path.split("?")[0] == "/api/survey":
-            payload, err = self._read_json_body()
-            if err:
-                self._send_json(*err)
-                return
-            from scripts.site import api as site_api
-            code, data = site_api.handle_survey_request(
                 self.directory, payload, client_ip=self.client_address[0])
             self._send_json(code, data)
             return

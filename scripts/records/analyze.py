@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 """
-scripts/records/analyze.py — 分析层：主题聚簇 + 去重候选 + 趋势任务生成。
+scripts/records/analyze.py — 分析层：主题聚簇 + 去重候选。
 
 确定性部分（本模块）：FTS 种子 + relations 扩展 → ranked cluster + evidence。
-综述写作不归本模块：emit_trend_task 产出 agent 任务 payload。
 """
 import json
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from scripts import paths
 from scripts.records import links as L
 from scripts.records.recall import build_variant_map, _default_variant_map
 from scripts.records.schema import normalize_url
@@ -130,7 +128,7 @@ def cluster(db_path, topic: str, limit: int = 30, variant_map: dict = None) -> d
 
 def discover_topics(db_path, recent_days: int = 14, min_recent: int = 5,
                     top_n: int = 8) -> list[dict]:
-    """自动发现值得写 trends 的主题：近 N 天高频 tag/实体 vs 全库基线。
+    """自动发现近期热点主题：近 N 天高频 tag/实体 vs 全库基线。
 
     打分：recent_count * (1 + log(1 + recency_ratio))，过滤掉全库都热的低判别力项。
     """
@@ -162,28 +160,6 @@ def discover_topics(db_path, recent_days: int = 14, min_recent: int = 5,
             if _recent(e):
                 recent_ent[v] += 1
 
-    existing_trends = set()
-    trends_dir = Path(paths.get_workspace()) / "trends"
-    if trends_dir.exists():
-        for md in trends_dir.glob("*.md"):
-            existing_trends.add(md.stem.lower())
-
-    # 用 alias map 扩展名字的所有变体（仿真 ↔ simulation 等）
-    variant_map = _default_variant_map()
-
-    def _name_variants(name: str) -> set:
-        nl = name.lower()
-        out = {nl, nl.replace(" ", "-")}
-        canon = variant_map.get(nl)
-        if canon:
-            out.add(canon.lower())
-            out.add(canon.lower().replace(" ", "-"))
-        for variant, c in variant_map.items():
-            if c.lower() == nl:
-                out.add(variant)
-                out.add(variant.replace(" ", "-"))
-        return out
-
     candidates = []
     for kind, recent, base in (("tag", recent_tag, base_tag), ("entity", recent_ent, base_ent)):
         for name, cnt in recent.items():
@@ -191,13 +167,10 @@ def discover_topics(db_path, recent_days: int = 14, min_recent: int = 5,
                 continue
             ratio = cnt / base.get(name, 1)
             score = round(cnt * (1 + math.log1p(ratio)), 1)
-            variants = _name_variants(name)
-            covered = any(v in t or t in v for v in variants for t in existing_trends)
             candidates.append({
                 "kind": kind, "name": name,
                 "recent_count": cnt, "base_count": base.get(name, 0),
                 "recency_ratio": round(ratio, 2), "score": score,
-                "trend_covered": covered,
             })
 
     candidates.sort(key=lambda c: (-c["score"], c["name"]))
@@ -231,51 +204,3 @@ def dedup_candidates(db_path, min_score: float = 40, limit: int = 50) -> list[di
             break
     return out
 
-
-def emit_trend_task(cluster: dict, depth: str = "standard") -> dict:
-    """把聚簇证据打包成 agent 趋势综述任务（envelope 与 record 任务同构）。"""
-    topic = cluster["topic"]
-    lines = []
-    for e in cluster["entries"]:
-        links_str = ", ".join(e["canonical_links"][:2])
-        lines.append(f"- `{e['id']}` ({e['date']}, {e['topic_type']}) {e['title']}\n"
-                     f"  TL;DR: {e['tldr']}\n"
-                     f"  tags: {', '.join(t for t in e['tags'] if t)}  links: {links_str}")
-    evidence = "\n".join(lines[:40])
-    hints = cluster.get("hints", {})
-
-    task = f"""你是趋势分析 agent。基于 wiki 知识库中关于「{topic}」的 {cluster['cluster_size']} 条记录，
-写一篇趋势分析文章，输出到 `wiki/trends/`（文件名：`YYYY-MM-DD_<kebab-topic>.md`）。
-
-## 证据集（record.json 结构化摘要，已按相关性排序）
-
-{evidence}
-
-## 聚簇画像
-
-- 高频标签: {', '.join(hints.get('top_tags', []))}
-- 高频实体: {', '.join(hints.get('top_entities', []))}
-- 高频域名: {', '.join(hints.get('top_domains', []))}
-
-## 写作要求
-
-1. 结构：摘要 → 按主题线索分节（不要按条目罗列）→ 趋势判断 → 引用清单
-2. **每个关键论断必须锚定到具体条目**（`id` 引用），引用清单用 bullet 列表（id + 一句话说明）
-3. 需要具体数字/细节证据时，读 `wiki/artifacts/<id>/raw/` 下的原始材料，**禁止编造**
-4. 中文为主，保留英文专名；客观陈述，不灌水
-5. 完成后返回：文章路径 + 引用条目数
-
-## 执行约束
-
-- 只写 wiki/trends/ 下一个 md 文件，禁止 git 操作，禁止修改 wiki.db
-"""
-    return {
-        "task": task,
-        "taskName": f"trend-{topic[:30]}",
-        "mode": "run",
-        "task_mode": "trend",
-        "cleanup": "keep",
-        "context": "isolated",
-        "topic": topic,
-        "cluster_size": cluster["cluster_size"],
-    }

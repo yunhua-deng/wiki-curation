@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""test_records_analyze.py — 分析层（cluster / dedup / emit_trend_task）契约测试。"""
+"""test_records_analyze.py — 分析层（cluster / dedup / discover）契约测试。"""
 import pytest
 
 from scripts.wiki_index.schema import ensure_schema
@@ -62,21 +62,8 @@ def test_dedup_candidates(kb):
     assert pair["evidence"].get("url")
 
 
-def test_emit_trend_task_envelope(kb):
-    c = AZ.cluster(kb, "Helix", variant_map={})
-    task = AZ.emit_trend_task(c)
-    assert task["task_mode"] == "trend"
-    assert task["mode"] == "run"
-    assert "wiki/trends/" in task["task"]
-    assert "Helix" in task["task"]
-    assert "禁止编造" in task["task"]
-    assert "fallback" not in task  # skill 不感知模型，跟随调用方
-
-
-def test_discover_topics(kb, monkeypatch):
-    """discover：近窗口热点排序 + 已覆盖主题标记。"""
-    from scripts import paths as _paths
-    monkeypatch.setattr(_paths, "get_workspace", lambda _=None: _paths.Path(kb.parent))
+def test_discover_topics(kb):
+    """discover：近窗口热点排序。"""
     out = AZ.discover_topics(kb, recent_days=3650, min_recent=1, top_n=10)
     assert out, "discover should find topics"
     kinds = {c["kind"] for c in out}

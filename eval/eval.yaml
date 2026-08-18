@@ -41,11 +41,6 @@ tasks:
         path: data.commands
         item: stats
         key: name
-      - name: has survey command
-        type: json_contains
-        path: data.commands
-        item: survey
-        key: name
 
   - id: doctor-quick
     name: CLI doctor --quick returns grade

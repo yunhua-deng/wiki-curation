@@ -283,165 +283,6 @@ def _slim_entry(e: dict) -> dict:
     }
 
 
-def _build_posts(wiki_dir: Path, db_path=None) -> dict:
-    """v3.7：扫描 wiki/posts/*.md，生成 post 索引 + hub 建议（替代旧 trends）。"""
-    posts_dir = Path(wiki_dir) / "posts"
-    items = []
-    if posts_dir.exists():
-        # sort: newest date first, within same date numeric prefix ascending (01<02<...)
-        def _post_key(p):
-            s = p.stem
-            date = s[:10]  # YYYY-MM-DD
-            rest = s[11:] if len(s) > 11 and s[10] == '_' else ''
-            order = 99
-            if rest and rest[:2].isdigit():
-                order = int(rest[:2])
-            return (-_date_ordinal(date), order)
-
-        def _date_ordinal(d):
-            try: return int(d.replace('-', ''))
-            except: return 0
-
-        for md in sorted(posts_dir.glob("*.md"), key=_post_key):
-            if md.parent.name in ("_merged", "_staging"):
-                continue
-            try:
-                text = md.read_text(encoding="utf-8", errors="replace")
-            except Exception:
-                continue
-            title = ""
-            excerpt = ""
-            for line in text.splitlines():
-                s = line.strip()
-                if s.startswith("# ") and not title:
-                    title = s.lstrip("# ").strip()
-                elif s and not s.startswith(("#", ">", "|", "-", "```")) and not excerpt:
-                    excerpt = s[:200]
-            # provenance（auto 模式写入的 meta.json）
-            trigger = {}
-            meta_path = posts_dir / f"{md.stem}.meta.json"
-            if meta_path.exists():
-                try:
-                    trigger = (json.loads(meta_path.read_text(encoding="utf-8", errors="replace")) or {}).get("trigger") or {}
-                except Exception:
-                    trigger = {}
-            items.append({
-                "slug": md.stem,
-                "title": title or md.stem,
-                "date": md.stem[:10] if len(md.stem) >= 10 else "",
-                "excerpt": excerpt,
-                "file": f"posts/{md.name}",
-                "trigger": trigger.get("kind") or "",
-            })
-    suggestions = []
-    if db_path is not None:
-        try:
-            from scripts.posts import suggest_post_topics
-            suggestions = suggest_post_topics(db_path, ws=wiki_dir)
-        except Exception:
-            suggestions = []
-    return {"items": items, "suggestions": suggestions}
-
-
-def _build_tracking(wiki_dir: Path) -> list[dict]:
-    """v3.7：扫描 wiki/tracking/*/topic.json，生成跟踪主题索引（archived 不收录）。"""
-    root = Path(wiki_dir) / "tracking"
-    if not root.exists():
-        return []
-    items = []
-    for topic_dir in sorted(root.iterdir()):
-        tj = topic_dir / "topic.json"
-        if not tj.is_file():
-            continue
-        try:
-            t = json.loads(tj.read_text(encoding="utf-8", errors="replace")) or {}
-        except Exception:
-            continue
-        if t.get("status") == "archived":
-            continue
-        excerpt = ""
-        digest = topic_dir / "digest.md"
-        has_digest = digest.is_file()
-        if has_digest:
-            try:
-                for line in digest.read_text(encoding="utf-8", errors="replace").splitlines():
-                    s = line.strip()
-                    if s and not s.startswith(("#", ">", "|", "-", "```")):
-                        excerpt = s[:200]
-                        break
-            except Exception:
-                pass
-        refresh = t.get("refresh") or {}
-        items.append({
-            "slug": t.get("slug") or topic_dir.name,
-            "name": t.get("name") or topic_dir.name,
-            "kind": t.get("kind") or "person",
-            "record_count": len(t.get("records") or []),
-            "last_at": (refresh.get("last_at") or "")[:10],
-            "next_due": (refresh.get("next_due") or "")[:10],
-            "has_digest": has_digest,
-            "excerpt": excerpt,
-        })
-    return items
-
-
-def _build_surveys(wiki_dir: Path) -> list[dict]:
-    """v3.5：扫描 artifacts/*/survey/survey.md，生成综述索引。"""
-    artifacts = Path(wiki_dir) / "artifacts"
-    if not artifacts.exists():
-        return []
-    items = []
-    for entry_dir in sorted(artifacts.iterdir()):
-        md = entry_dir / "survey" / "survey.md"
-        if not md.is_file():
-            continue
-        meta = {}
-        meta_path = entry_dir / "survey" / "survey.json"
-        if meta_path.exists():
-            try:
-                meta = json.loads(meta_path.read_text(encoding="utf-8", errors="replace")) or {}
-            except Exception:
-                meta = {}
-        try:
-            text = md.read_text(encoding="utf-8", errors="replace")
-        except Exception:
-            continue
-        excerpt = ""
-        for line in text.splitlines():
-            s = line.strip()
-            if s and not s.startswith(("#", ">", "|", "-", "```")):
-                excerpt = s[:200]
-                break
-        items.append({
-            "slug": entry_dir.name,
-            "title": meta.get("title") or entry_dir.name,
-            "date": str(meta.get("updated_at") or meta.get("created_at") or "")[:10],
-            "excerpt": excerpt,
-            "bytes": md.stat().st_size,
-        })
-    return items
-
-
-def _survey_states(wiki_dir: Path) -> dict:
-    """v3.6：扫描 artifacts/*/survey/status.json，返回 slug → 状态字符串。"""
-    states = {}
-    artifacts = Path(wiki_dir) / "artifacts"
-    if not artifacts.exists():
-        return states
-    for entry_dir in sorted(artifacts.iterdir()):
-        st_path = entry_dir / "survey" / "status.json"
-        if not st_path.is_file():
-            continue
-        try:
-            data = json.loads(st_path.read_text(encoding="utf-8", errors="replace")) or {}
-        except Exception:
-            continue
-        state = data.get("state") or ""
-        if state:
-            states[entry_dir.name] = state
-    return states
-
-
 def _write_html_index(entries: list[dict], wiki_dir: Path) -> Path:
     """v3.3：重新生成 wiki/wiki.html 静态语义索引（id/date/type/title/tldr/tags）。"""
     rows = []
@@ -532,19 +373,6 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
     display_entries = [_slim_entry(e) for e in entries]
     for de in display_entries:
         de["_related"] = related_map.get(de["id"], [])
-    # v3.5：综述索引 + has_survey 注入（须先于 entries.json 落盘）
-    # v3.6：survey_state 注入（collecting/writing/awaiting_agent/failed/done）
-    surveys = _build_surveys(wiki_dir)
-    survey_states = _survey_states(wiki_dir)
-    survey_map = {d["slug"]: d for d in surveys}
-    for de in display_entries:
-        sv = survey_map.get(de["id"])
-        de["has_survey"] = bool(sv)
-        if sv:
-            de["survey"] = {"date": sv["date"], "excerpt": sv["excerpt"]}
-        st = survey_states.get(de["id"]) or ("done" if sv else "")
-        if st:
-            de["survey_state"] = st
     (data_dir / "entries.json").write_text(
         json.dumps(display_entries, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )
@@ -586,17 +414,10 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
 
     # v3.3：清理陈旧 data 产物（search_index/themes/trends 等已废弃文件）
     current_data = {"entries.json", "tags.json", "sources.json", "entities.json",
-                    "graph.json", "timeline.json", "posts.json", "surveys.json",
-                    "tracking.json", "entity_pages.json"}
+                    "graph.json", "timeline.json", "entity_pages.json"}
     for f in data_dir.glob("*.json"):
         if f.name not in current_data:
             f.unlink()
-
-    # v3.7：post 索引（含 hub 建议；替代旧 trends.json）
-    posts = _build_posts(wiki_dir, db_path)
-    (data_dir / "posts.json").write_text(
-        json.dumps(posts, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
-    )
 
     # v3.8：实体聚合页（确定性，零 LLM；摘要嵌读 wiki/entities/）
     entity_pages = build_entity_pages(db_path, wiki_dir)
@@ -604,22 +425,11 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
         json.dumps(entity_pages, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )
 
-    # v3.7：实体跟踪索引
-    tracking = _build_tracking(wiki_dir)
-    (data_dir / "tracking.json").write_text(
-        json.dumps(tracking, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
-    )
-
-    # v3.5：综述索引（surveys 已在 entries.json 落盘前扫描）
-    (data_dir / "surveys.json").write_text(
-        json.dumps(surveys, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
-    )
-
     # v3.3：重新生成 wiki/wiki.html 静态语义索引
     _write_html_index(display_entries, wiki_dir)
 
-    # 站点已简化为单页结构，清理旧版多页站点的遗留页面（dive.html 为 v3.5 初版命名，已更名 survey.html）
-    for legacy_page in ("browse.html", "graph.html", "clusters.html", "timeline.html", "dive.html"):
+    # 站点已简化为单页结构，清理旧版多页站点的遗留页面（survey.html 已随冻结管线移除）
+    for legacy_page in ("browse.html", "graph.html", "clusters.html", "timeline.html", "dive.html", "survey.html"):
         legacy_path = out_dir / legacy_page
         if legacy_path.exists():
             legacy_path.unlink()

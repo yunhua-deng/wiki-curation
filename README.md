@@ -74,22 +74,6 @@ python scripts/cli.py site --serve --pid-file wiki/.site-serve.pid
 
 Design principle: **extraction by agent, linking by system.** Similarity scoring, relation edges, URL canonilization, and record validation are all deterministic code — hallucinations can't poison the graph.
 
-## Deep-diving a record
-
-From the site: the records table has a **🧭** column — click it on any record and the local server runs the whole pipeline in the background (collect links → headless agent writes `survey.md` → validate + publish); the cell shows live states (⏳ collecting / ✍️ writing) and becomes a link that opens the survey page in a new tab. If no writer is available (`sessions_spawn`/`claude` not on PATH), the survey stays queued (`awaiting_agent`) for an agent to drain.
-
-From CLI / agents:
-
-```bash
-python scripts/cli.py --json survey --id <slug> --auto     # end-to-end: collect → write → publish
-python scripts/cli.py --json survey --id <slug>            # collect + emit survey task only
-python scripts/cli.py --json survey --queue                # agent worklist
-# agent writes wiki/artifacts/<slug>/survey/survey.md, then:
-python scripts/cli.py --json survey --id <slug> --publish  # validate + index into site
-```
-
-The survey page summarizes and integrates the fetched sources (no commentary, no wholesale copying); each source section ends with `更多内容请看：<url>` back to the original.
-
 ## Command reference
 
 All commands support `--json` for agent consumption.
@@ -101,13 +85,10 @@ All commands support `--json` for agent consumption.
 | `run --id <slug>` | Classify + collect + emit extraction task payload |
 | `publish --id <slug>` | Validate record, store links/relations, rebuild site |
 | `recall --input X` | 4-layer similarity recall with reasons |
-| `analyze --topic "..." [--emit-task]` | Evidence cluster + optional trend article task |
+| `analyze --topic "..."` | Evidence cluster across records |
 | `analyze --dedup` | Duplicate candidate pairs |
 | `analyze --discover [--days N]` | Emerging hot topics (alias-aware) |
-| `post --topic X \| --records a,b \| --suggest [--auto]` | Blog-style post from wiki evidence (fusion/topic/suggest) |
-| `track --name X [--kind] [--refresh S] [--due] [--auto]` | Entity tracking topics: create/refresh/due/archive |
-| `survey --id X [--force] [--task\|--publish\|--status] [--queue]` | Deep-survey a record: fetch links + emit survey task / publish / status / queue |
-| `add-link --id X --url U [--role R] [--update-survey]` | Add a manually-found link to a record's link graph (origin=manual); optionally regenerate its survey |
+| `add-link --id X --url U [--role R]` | Add a manually-found link to a record's link graph (origin=manual) |
 | `verify-links --id <slug>` | curl-HEAD reachability check |
 | `star --id <slug>` | Star canonical GitHub repos (needs `GITHUB_TOKEN`) |
 | `doctor [--quick]` | Health: queue/db/files/git/record-tier/entities |
@@ -120,10 +101,7 @@ wiki/
 ├── data/wiki.db             # SQLite: entries + links + relations + FTS5
 ├── artifacts/{id}/
 │   ├── record.json          # THE record
-│   ├── raw/                 # fetched source materials
-│   └── survey/                # deep-survey page: survey.md + survey.json + status.json + raw/
-├── posts/                   # blog-style posts (auto-listed on site)
-├── tracking/{slug}/         # entity tracking topics: topic.json + digest.md + raw/
+│   └── raw/                 # fetched source materials
 └── site/                    # built static site
 ```
 

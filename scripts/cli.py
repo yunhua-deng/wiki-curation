@@ -442,7 +442,7 @@ def cmd_verify_links(args) -> int:
 
 
 def cmd_analyze(args) -> int:
-    """analyze：主题聚簇 / 去重候选 / 趋势综述任务生成。"""
+    """analyze：主题聚簇 / 去重候选。"""
     try:
         from scripts.records import analyze as AZ
         db = paths.db_path(paths.get_workspace())
@@ -459,8 +459,6 @@ def cmd_analyze(args) -> int:
                            "message": "analyze 需要 --topic，或使用 --dedup"}, args.json)
             return 1
         result = AZ.cluster(db, args.topic, limit=args.limit)
-        if getattr(args, "emit_task", False):
-            result = {"cluster": result, "trend_task": AZ.emit_trend_task(result)}
         _print_result({"ok": True, "data": result}, args.json)
         return 0
     except Exception as e:
@@ -500,65 +498,14 @@ def cmd_backfill_records(args) -> int:
     return 0
 
 
-def cmd_survey(args) -> int:
-    """survey：记录综述——采集 links + 生成 task / 发布 / 状态 / 队列。"""
-    try:
-        from scripts.records import survey as DV
-        ws = paths.get_workspace()
-        if getattr(args, "queue", False):
-            items = DV.list_survey_queue(ws)
-            _print_result({"ok": True, "data": {"queue": items, "count": len(items)}}, args.json)
-            return 0
-        if not getattr(args, "id", None):
-            _print_result({"ok": False, "error": "MISSING_ID",
-                           "message": "survey 需要 --id（或用 --queue）"}, args.json)
-            return 1
-        if getattr(args, "status", False):
-            _print_result({"ok": True, "data": DV.survey_status(args.id, ws)}, args.json)
-            return 0
-        if getattr(args, "publish", False):
-            result = DV.publish_survey(args.id, ws, paths.db_path(ws))
-            _print_result({"ok": True, "data": result}, args.json)
-            return 0
-        if getattr(args, "task", False):
-            _print_result({"ok": True, "data": DV.generate_survey_task(args.id, ws)}, args.json)
-            return 0
-        if getattr(args, "auto", False):
-            # 端到端：必要时采集 → headless 写作 → 自动发布（网页触发的默认路径）
-            result = DV.auto_execute_survey(args.id, ws, force=args.force)
-            _print_result({"ok": bool(result.get("ok")), "data": result}, args.json)
-            return 0 if result.get("ok") else 1
-        task = DV.collect_survey(args.id, ws, max_links=args.max_links, force=args.force)
-        data = {"task": task, "status": DV.read_status(args.id, ws)}
-        if getattr(args, "spawn_if_possible", False):
-            data["spawn"] = DV.spawn_survey_agent_if_possible(args.id, ws)
-        _print_result({"ok": True, "data": data}, args.json)
-        if not args.json:
-            print(f"\n  survey task 已就绪: {args.id}（status=awaiting_agent）")
-            print(f"  执行后发布: {sys.executable} {SCRIPT_DIR / 'cli.py'} survey --id {args.id} --publish")
-        return 0
-    except Exception as e:
-        from scripts.records.survey import SurveyError
-        if isinstance(e, SurveyError):
-            _print_result({"ok": False, "error": e.code, "message": str(e),
-                           "next_cmd": e.next_cmd}, args.json)
-        else:
-            _print_result({"ok": False, "error": "SURVEY_FAILED", "message": str(e)}, args.json)
-        return 1
-
-
 def cmd_add_link(args) -> int:
-    """add-link：手动添加链接到 record 图谱（可选 --update-survey 联动更新综述）。"""
+    """add-link：手动添加链接到 record 图谱。"""
     try:
         from scripts.records import link_ops
         ws = paths.get_workspace()
         result = link_ops.add_manual_link(args.id, args.url, role=args.role,
                                           ws=ws, db_path=paths.db_path(ws))
         data = dict(result)
-        if getattr(args, "update_survey", False):
-            from scripts.records import survey as SV
-            has_md = paths.survey_md_path(args.id, ws).exists()
-            data["survey"] = SV.auto_execute_survey(args.id, ws, force=has_md)
         _print_result({"ok": True, "data": data}, args.json)
         return 0
     except Exception as e:
@@ -567,59 +514,6 @@ def cmd_add_link(args) -> int:
             _print_result({"ok": False, "error": e.code, "message": str(e)}, args.json)
         else:
             _print_result({"ok": False, "error": "ADD_LINK_FAILED", "message": str(e)}, args.json)
-        return 1
-
-
-def cmd_post(args) -> int:
-    """post：技术 post——topic 取证 / 多记录融合 / hub 建议；--auto 端到端写作发布。"""
-    try:
-        from scripts import posts as POSTS
-        ws = paths.get_workspace()
-        db = paths.db_path(ws)
-        if getattr(args, "suggest", False):
-            items = POSTS.suggest_post_topics(db, ws=ws)
-            _print_result({"ok": True, "data": {"suggestions": items, "count": len(items)}}, args.json)
-            return 0
-        if getattr(args, "ignore", None):
-            result = POSTS.ignore_suggestion(args.ignore, ws)
-            _print_result({"ok": True, "data": result}, args.json)
-            return 0
-        if getattr(args, "merge", None):
-            stems = [x.strip() for x in args.merge.split(",") if x.strip()]
-            if getattr(args, "auto", False):
-                result = POSTS.merge_posts(stems, ws, db)
-                _print_result({"ok": True, "data": result}, args.json)
-                return 0
-            # 无 --auto：输出 merge 任务给 agent 手动执行（staging 文件名）
-            _print_result({"ok": False, "error": "MERGE_NEEDS_AUTO",
-                           "message": "post --merge 需要 --auto（headless 整合写作）"}, args.json)
-            return 1
-        if getattr(args, "records", None):
-            ids = [x.strip() for x in args.records.split(",") if x.strip()]
-            trigger = {"kind": "records", "ids": ids}
-        elif getattr(args, "topic", None):
-            trigger = {"kind": "topic", "topic": args.topic}
-        else:
-            _print_result({"ok": False, "error": "MISSING_TRIGGER",
-                           "message": "post 需要 --topic / --records / --suggest 之一"}, args.json)
-            return 1
-        if getattr(args, "auto", False):
-            result = POSTS.auto_write_post(trigger, ws, db)
-            _print_result({"ok": True, "data": result}, args.json)
-            return 0
-        task = POSTS.generate_post_task(trigger, ws, db, limit=args.limit)
-        _print_result({"ok": True, "data": task}, args.json)
-        if not args.json:
-            print()
-            print(f"  post task 已生成（staging: {task['staging_path']}）")
-            print(f"  端到端自动写作: {sys.executable} {SCRIPT_DIR / 'cli.py'} post ... --auto")
-        return 0
-    except Exception as e:
-        from scripts.posts import PostError
-        if isinstance(e, PostError):
-            _print_result({"ok": False, "error": e.code, "message": str(e)}, args.json)
-        else:
-            _print_result({"ok": False, "error": "POST_FAILED", "message": str(e)}, args.json)
         return 1
 
 
@@ -679,68 +573,6 @@ def cmd_entities(args) -> int:
         return 1
     except Exception as e:
         _print_result({"ok": False, "error": "ENTITIES_FAILED", "message": str(e)}, args.json)
-        return 1
-
-
-def cmd_track(args) -> int:
-    """track：实体跟踪主题——create / refresh / list / due / archive。"""
-    try:
-        from scripts import tracking as TR
-        ws = paths.get_workspace()
-        db = paths.db_path(ws)
-        if getattr(args, "list", False):
-            items = TR.list_topics(ws)
-            out = [{"slug": t["slug"], "name": t["name"], "kind": t.get("kind"),
-                    "records": len(t.get("records") or []),
-                    "next_due": (t.get("refresh") or {}).get("next_due") or "",
-                    "digest_revision": t.get("digest_revision") or 0} for t in items]
-            _print_result({"ok": True, "data": {"topics": out, "count": len(out)}}, args.json)
-            return 0
-        if getattr(args, "due", False):
-            items = TR.due_topics(ws)
-            _print_result({"ok": True, "data": {"due": [t["slug"] for t in items],
-                                                "count": len(items)}}, args.json)
-            return 0
-        if getattr(args, "archive", None):
-            t = TR.archive_topic(args.archive, ws)
-            _print_result({"ok": True, "data": {"slug": t["slug"], "status": t["status"]}}, args.json)
-            return 0
-        if getattr(args, "refresh", None):
-            result = TR.refresh_topic(args.refresh, ws, db, auto=getattr(args, "auto", False))
-            _print_result({"ok": True, "data": result}, args.json)
-            return 0
-        if getattr(args, "name", None):
-            sources = {}
-            for k in ("homepage", "github", "scholar", "arxiv", "blog", "linkedin"):
-                v = getattr(args, k, None)
-                if v:
-                    sources[k] = v
-            # 已存在 → 视为登记来源/更新（幂等）
-            slug = TR.slugify_name(args.name)
-            if TR.load_topic(slug, ws):
-                if sources:
-                    t = TR.update_sources(slug, sources, ws)
-                    _print_result({"ok": True, "data": {"slug": slug, "updated_sources": True,
-                                                        "sources": t["sources"]}}, args.json)
-                else:
-                    _print_result({"ok": True, "data": {"slug": slug, "exists": True}}, args.json)
-                return 0
-            topic = TR.create_topic(args.name, kind=args.kind, sources=sources, ws=ws, db_path=db)
-            data = {"slug": topic["slug"], "records": topic["records"],
-                    "record_count": len(topic["records"])}
-            if getattr(args, "auto", False):
-                data["digest"] = TR.auto_write_digest(topic["slug"], ws, db)
-            _print_result({"ok": True, "data": data}, args.json)
-            return 0
-        _print_result({"ok": False, "error": "MISSING_ARGS",
-                       "message": "track 需要 --name / --refresh / --list / --due / --archive 之一"}, args.json)
-        return 1
-    except Exception as e:
-        from scripts.tracking import TrackError
-        if isinstance(e, TrackError):
-            _print_result({"ok": False, "error": e.code, "message": str(e)}, args.json)
-        else:
-            _print_result({"ok": False, "error": "TRACK_FAILED", "message": str(e)}, args.json)
         return 1
 
 
@@ -844,16 +676,10 @@ def cmd_manifest(args) -> int:
             {"name": "publish", "args": ["--id", "--site-only"], "description": "记录发布：validate record.json + links/relations 入库（--site-only 仅重建站点）"},
             {"name": "recall", "args": ["--input", "--limit"], "description": "四层确定性相似召回"},
             {"name": "verify-links", "args": ["--id", "--limit"], "description": "验证条目链接可达性（curl HEAD）"},
-            {"name": "analyze", "args": ["--topic", "--dedup", "--emit-task", "--limit"], "description": "主题聚簇 / 去重候选 / 趋势综述任务"},
-            {"name": "survey", "args": ["--id", "--force", "--max-links", "--task", "--publish", "--status", "--queue", "--auto", "--spawn-if-possible"],
-             "description": "记录综述：采集 links + 生成 survey task / 发布 / 状态 / 队列（--auto 端到端自动写作发布）"},
-            {"name": "add-link", "args": ["--id", "--url", "--role", "--update-survey"],
-             "description": "手动添加链接到 record 图谱（origin=manual；--update-survey 联动重生成综述）"},
+            {"name": "analyze", "args": ["--topic", "--dedup", "--limit"], "description": "主题聚簇 / 去重候选"},
+            {"name": "add-link", "args": ["--id", "--url", "--role"],
+             "description": "手动添加链接到 record 图谱（origin=manual）"},
             {"name": "watch", "args": ["--id", "--on", "--off"], "description": "特别关注：toggle / 设置 / 无 --id 列出全部"},
-            {"name": "post", "args": ["--topic", "--records", "--suggest", "--merge", "--ignore", "--auto"],
-             "description": "技术 post：主题取证/多记录融合/hub 建议/系列整合/忽略建议（--auto 端到端）"},
-            {"name": "track", "args": ["--name", "--kind", "--refresh", "--list", "--due", "--archive", "--auto"],
-             "description": "实体跟踪主题：创建（关联 records）/ 周期 refresh / 到期清单（--due 供 cron）"},
             {"name": "star", "args": ["--id"], "description": "publish 后标星 canonical GitHub 仓库（需 GITHUB_TOKEN）"},
             {"name": "list", "args": ["--limit", "--status", "--all"], "description": "列出 entries"},
             {"name": "search", "args": ["query", "--limit"], "description": "FTS5 搜索"},
@@ -1025,45 +851,21 @@ def main():
     p_star.add_argument("--id", required=True)
 
     # analyze
-    p_analyze = sub.add_parser("analyze", help="主题聚簇 / 去重候选 / 趋势综述任务")
+    p_analyze = sub.add_parser("analyze", help="主题聚簇 / 去重候选")
     p_analyze.add_argument("--topic", help="分析主题（关键词或实体名）")
     p_analyze.add_argument("--dedup", action="store_true", help="输出去重候选对")
     p_analyze.add_argument("--discover", action="store_true", help="自动发现近期热点主题")
     p_analyze.add_argument("--days", type=int, default=14, help="discover 的近 N 天窗口")
-    p_analyze.add_argument("--emit-task", action="store_true", help="同时生成趋势综述 agent 任务")
     p_analyze.add_argument("--limit", "-n", type=int, default=30)
     p_analyze.add_argument("--min-score", type=float, default=40)
 
     p_backfill = sub.add_parser("backfill-records", help="links/entities 回填")
     p_backfill.add_argument("--id")
 
-    p_survey = sub.add_parser("survey", help="记录综述：采集 links + 生成 survey task / 发布 / 状态 / 队列")
-    p_survey.add_argument("--id")
-    p_survey.add_argument("--force", action="store_true", help="已有 survey.md 或 collecting 状态时强制重跑")
-    p_survey.add_argument("--max-links", type=int, default=5, help="本次最多抓取的 links 数")
-    p_survey.add_argument("--task", action="store_true", help="仅重发 task payload（不重采集）")
-    p_survey.add_argument("--publish", action="store_true", help="校验 survey.md + 写 survey.json + 重建站点")
-    p_survey.add_argument("--status", action="store_true", help="查看 survey 状态")
-    p_survey.add_argument("--queue", action="store_true", help="列出全部 awaiting_agent 的 survey")
-    p_survey.add_argument("--auto", action="store_true",
-                          help="端到端：采集（如需要）→ headless 写作 → 自动发布")
-    p_survey.add_argument("--spawn-if-possible", action="store_true",
-                        help="采集后若 sessions_spawn 可用则自动派发 agent")
-
-    p_addlink = sub.add_parser("add-link", help="手动添加链接到 record 图谱（可选联动更新综述）")
+    p_addlink = sub.add_parser("add-link", help="手动添加链接到 record 图谱")
     p_addlink.add_argument("--id", required=True)
     p_addlink.add_argument("--url", required=True)
     p_addlink.add_argument("--role", choices=["canonical", "related"], default="related")
-    p_addlink.add_argument("--update-survey", action="store_true", help="添加后自动重新生成综述")
-
-    p_post = sub.add_parser("post", help="技术 post：--topic 取证 / --records 融合 / --suggest 建议；--auto 端到端")
-    p_post.add_argument("--topic")
-    p_post.add_argument("--records", help="逗号分隔的 record id 列表")
-    p_post.add_argument("--suggest", action="store_true")
-    p_post.add_argument("--limit", type=int, default=8)
-    p_post.add_argument("--merge", help="逗号分隔的 post stem 列表，整合为一篇（需 --auto）")
-    p_post.add_argument("--ignore", help="忽略一条分析建议（anchor entry id）")
-    p_post.add_argument("--auto", action="store_true", help="headless 写作 + 校验 + 落位 + 站点重建")
 
     p_ent = sub.add_parser("entities", help="实体综合层：list / --name 聚合 / --watch 管理 / --summary 摘要")
     p_ent.add_argument("--list", action="store_true")
@@ -1074,18 +876,6 @@ def main():
     p_ent.add_argument("--summary", action="store_true")
     p_ent.add_argument("--type", dest="entity_type", default="")
     p_ent.add_argument("--note", default="")
-
-    p_track = sub.add_parser("track", help="实体跟踪：--name 创建 / --refresh 更新 / --list / --due / --archive")
-    p_track.add_argument("--name")
-    p_track.add_argument("--kind", default="person")
-    p_track.add_argument("--homepage"); p_track.add_argument("--github")
-    p_track.add_argument("--scholar"); p_track.add_argument("--arxiv")
-    p_track.add_argument("--blog"); p_track.add_argument("--linkedin")
-    p_track.add_argument("--refresh")
-    p_track.add_argument("--archive")
-    p_track.add_argument("--list", action="store_true")
-    p_track.add_argument("--due", action="store_true")
-    p_track.add_argument("--auto", action="store_true", help="headless 写/更新 digest + 站点重建")
 
     p_watch = sub.add_parser("watch", help="特别关注：toggle / --on / --off / 无 --id 列出全部")
     p_watch.add_argument("--id")
@@ -1119,8 +909,8 @@ def main():
         "events": cmd_events, "record-event": cmd_record_event,
         "dedup": cmd_dedup, "recall": cmd_recall, "verify-links": cmd_verify_links,
         "star": cmd_star,
-        "analyze": cmd_analyze, "survey": cmd_survey,
-        "add-link": cmd_add_link, "watch": cmd_watch, "post": cmd_post, "track": cmd_track,
+        "analyze": cmd_analyze,
+        "add-link": cmd_add_link, "watch": cmd_watch,
         "backfill-records": cmd_backfill_records, "doctor": cmd_doctor, "manifest": cmd_manifest,
     }
     if args.command in handlers: return handlers[args.command](args)

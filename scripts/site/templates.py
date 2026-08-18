@@ -18,7 +18,7 @@ _BASE_TEMPLATE = """<!DOCTYPE html>
   <footer class="site-footer"><p>Wiki · {generated_at}</p></footer>
 </div>
 <script src="assets/marked.min.js"></script>
-<script src="assets/site.js?v=3.17"></script>
+<script src="assets/site.js?v=3.18"></script>
 </body>
 </html>
 """
@@ -157,15 +157,6 @@ function linkBadgeD(l){
 function statusBadgeD(s){ const c={done:'done',pending:'pending',running:'running',failed:'failed'}[s]||'other';
   return `<span class="badge badge-${c}">${esc(s||'—')}</span>`; }
 
-function surveyCellD(e){
-  if(e.has_survey) return `<a class="survey-btn" href="/site/survey.html?id=${encodeURIComponent(e.id)}" target="_blank" rel="noopener">🧭 查看综述</a>`;
-  const st=e.survey_state;
-  if(st==='collecting'||st==='writing'||st==='awaiting_agent'||st==='failed')
-    return `<span class="badge badge-${st==='failed'?'failed':st==='awaiting_agent'?'pending':'running'}">综述 ${st==='failed'?'失败':st==='awaiting_agent'?'排队中':'进行中'}</span>`;
-  if(e.has_record) return `<button class="survey-btn" id="survey-go">🧭 发起综述</button> <span id="survey-status" class="muted"></span>`;
-  return '';
-}
-
 function recLink(id){ return `<a class="rec-link" href="/site/doc.html?kind=record&id=${encodeURIComponent(id)}">${esc(id)}</a>`; }
 
 async function initDoc() {
@@ -211,7 +202,6 @@ async function initDoc() {
       if(pv && (pv.matches||[]).length){ html += `<details class="preview-recall"><summary>🔁 发起时召回（${pv.matches.length}）</summary><ul class="related-list">`;
         html += pv.matches.map(m=>`<li>${recLink(m.id)} ${m.title?`<span class="rel-title">${esc(m.title)}</span>`:''} <span class="rel-score muted">${m.score}</span></li>`).join('');
         html += '</ul></details>'; }
-      html += `<p>${surveyCellD(e||{})}</p>`;
       if(e && e.has_record) html += `<p class="link-add" data-linkadd="${esc(e.id)}"><button class="link-add-toggle">＋ 添加链接</button></p>`;
       html += `<p><a href="/site/raw.html?id=${encodeURIComponent(id)}" target="_blank" rel="noopener">📁 Raw materials</a></p>`;
       el('doc-body').innerHTML = html;
@@ -226,51 +216,29 @@ async function initDoc() {
           chip.classList.add('tracked');
         }catch(_){ chip.title='发起失败（请重启 site --serve）'; }
       }));
-      // survey trigger
-      const sg=document.getElementById('survey-go');
-      if(sg) sg.addEventListener('click', async ()=>{
-        sg.disabled=true; const st=document.getElementById('survey-status');
-        st.textContent=' ⏳ 已发起，采集+写作中…';
-        try{
-          const r=await fetch('/api/survey',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
-          const d=await r.json().catch(()=>({}));
-          if(!r.ok||!d.ok){ st.textContent=' '+(d.message||('失败 HTTP '+r.status)); sg.disabled=false; return; }
-          const t0=Date.now();
-          const timer=setInterval(async()=>{
-            try{
-              const s2=await (await fetch('/api/survey/status?id='+encodeURIComponent(id))).json();
-              if(s2.has_survey){ clearInterval(timer); st.innerHTML=` ✓ <a href="/site/survey.html?id=${encodeURIComponent(id)}" target="_blank">查看综述</a>`; return; }
-              const state=s2.status&&s2.status.state;
-              if(state==='failed'){ clearInterval(timer); st.textContent=' 综述失败'; sg.disabled=false; return; }
-              if(Date.now()-t0>600000){ clearInterval(timer); st.textContent=' 仍在进行，可稍后刷新'; }
-            }catch(_){}
-          },5000);
-        }catch(err){ st.textContent=' 服务不支持（请重启 site --serve）'; sg.disabled=false; }
-      });
       // add-link form
       document.querySelectorAll('[data-linkadd]').forEach(wrap=>{
         wrap.querySelector('.link-add-toggle').addEventListener('click', ()=>{
           if(wrap.querySelector('input')) return;
           const form=document.createElement('span'); form.className='link-add-form';
-          form.innerHTML=` <input type="url" placeholder="https://…" size="40"> <select><option value="related">related</option><option value="canonical">canonical</option></select> <button data-act="add">添加</button> <button data-act="addsurvey" title="添加并自动更新综述">添加并更新综述</button> <span class="link-add-status muted"></span>`;
+          form.innerHTML=` <input type="url" placeholder="https://…" size="40"> <select><option value="related">related</option><option value="canonical">canonical</option></select> <button data-act="add">添加</button> <span class="link-add-status muted"></span>`;
           wrap.appendChild(form);
           const input=form.querySelector('input'); const statusEl=form.querySelector('.link-add-status'); input.focus();
-          const submit=async(updateSurvey)=>{
+          const submit=async()=>{
             const url=input.value.trim(); const role=form.querySelector('select').value;
             if(!/^https?:\/\/\S+$/.test(url)){ statusEl.textContent=' URL 需以 http(s) 开头'; return; }
             statusEl.textContent=' 添加中…';
             try{
-              const r=await fetch('/api/record-links',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,url,role,update_survey:updateSurvey})});
+              const r=await fetch('/api/record-links',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,url,role,update_survey:false})});
               const d=await r.json().catch(()=>({}));
               if(!r.ok||!d.ok){ statusEl.textContent=' '+(d.message||('失败 HTTP '+r.status)); return; }
               const badge=document.createElement('a'); badge.className='link-badge'; badge.href=url; badge.target='_blank'; badge.rel='noopener'; badge.title=url+'（manual）'; badge.textContent=ICONS[d.link&&d.link.kind]||ICONS.other;
               const lp=document.querySelector('.markdown-body p strong');
               (lp?lp.parentElement:wrap).appendChild(badge);
-              statusEl.textContent= updateSurvey?' ✓ 已添加，综述更新中（稍后刷新查看）':' ✓ 已添加';
+              statusEl.textContent=' ✓ 已添加';
             }catch(err){ statusEl.textContent=' 服务不支持（请重启 site --serve）'; }
           };
-          form.querySelector('[data-act="add"]').addEventListener('click',()=>submit(false));
-          form.querySelector('[data-act="addsurvey"]').addEventListener('click',()=>submit(true));
+          form.querySelector('[data-act="add"]').addEventListener('click',()=>submit());
         });
       });
     } catch (err) { el('doc-loading').textContent = 'Load failed: ' + err.message; }

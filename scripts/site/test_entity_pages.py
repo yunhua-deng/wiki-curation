@@ -131,3 +131,19 @@ def test_records_view_has_no_survey_entry(tmp_path):
     assert "survey.html" not in site_js
     # add-link 的 CLI fallback 仍保留占位符（build.py 注入依赖）
     assert "python " in site_js and "add-link" in site_js
+
+
+def test_doc_reader_has_no_survey_entry(tmp_path):
+    """doc.html 记录独立页不再出现综述按钮/触发逻辑；survey.html 深链页保留。"""
+    ws = _ws(tmp_path)
+    db = ws / "data" / "wiki.db"
+    ensure_schema(db)
+    _seed(db)
+    out = build_site(db, ws, out_dir=tmp_path / "site_out")
+    doc = (out / "doc.html").read_text(encoding="utf-8")
+    assert "surveyCellD" not in doc
+    assert "survey-go" not in doc
+    assert "addsurvey" not in doc
+    assert "/api/survey" not in doc
+    # survey.html 深链页仍然生成
+    assert (out / "survey.html").exists()

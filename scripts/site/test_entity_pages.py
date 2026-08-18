@@ -115,3 +115,19 @@ def test_doc_reader_supports_entity_kind(tmp_path):
     site_js = (out / "assets" / "site.js").read_text(encoding="utf-8")
     assert "entity_pages.json" in site_js
     assert "nav-entities" in site_js
+
+
+def test_records_view_has_no_survey_entry(tmp_path):
+    """综述冻结：records 视图（site.js）不再出现任何综述入口/触发逻辑。"""
+    ws = _ws(tmp_path)
+    db = ws / "data" / "wiki.db"
+    ensure_schema(db)
+    _seed(db)
+    out = build_site(db, ws, out_dir=tmp_path / "site_out")
+    site_js = (out / "assets" / "site.js").read_text(encoding="utf-8")
+    assert "data-surveyid" not in site_js
+    assert "col-survey" not in site_js
+    assert "/api/survey" not in site_js
+    assert "survey.html" not in site_js
+    # add-link 的 CLI fallback 仍保留占位符（build.py 注入依赖）
+    assert "python " in site_js and "add-link" in site_js

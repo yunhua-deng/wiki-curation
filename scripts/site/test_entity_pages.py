@@ -184,3 +184,18 @@ def test_entity_detail_structured(tmp_path):
     # survey 残留样式已清理
     assert ".survey-btn" not in css
     assert ".col-survey" not in css
+
+
+def test_entity_ux_followups(tmp_path):
+    """终审 follow-up：escapeHtml 转义引号（chip 属性安全）、时间线升序、canonical 域名分组。"""
+    ws = _ws(tmp_path)
+    db = ws / "data" / "wiki.db"
+    ensure_schema(db)
+    _seed(db)
+    out = build_site(db, ws, out_dir=tmp_path / "site_out")
+    site_js = (out / "assets" / "site.js").read_text(encoding="utf-8")
+    assert "&quot;" in site_js            # escapeHtml 转义双引号
+    assert "a.month < b.month" in site_js  # 时间线柱状图升序（旧→新）
+    assert "byDomain" in site_js           # canonical 链接按域名分组
+    doc = (out / "doc.html").read_text(encoding="utf-8")
+    assert "&quot;" in doc                 # doc.html 的 esc() 同步修复

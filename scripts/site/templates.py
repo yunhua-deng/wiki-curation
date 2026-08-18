@@ -18,7 +18,7 @@ _BASE_TEMPLATE = """<!DOCTYPE html>
   <footer class="site-footer"><p>Wiki · {generated_at}</p></footer>
 </div>
 <script src="assets/marked.min.js"></script>
-<script src="assets/site.js?v=3.18"></script>
+<script src="assets/site.js?v=3.19"></script>
 </body>
 </html>
 """
@@ -150,7 +150,7 @@ _DOC_READER = r"""
   <article id="doc-body" class="markdown-body"></article>
 </div>
 <script>
-function esc(text){ const d=document.createElement('div'); d.textContent=text||''; return d.innerHTML; }
+function esc(text){ return String(text??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function renderBoldD(t){ return t.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>'); }
 const ICONS={github:'⌥',arxiv:'📄',huggingface:'🤗',homepage:'🏠',weixin:'💬',linkedin:'💼',docs:'📚',other:'🔗'};
 

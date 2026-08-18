@@ -1,10 +1,10 @@
 /**
  * Wiki Site v3.2 — compact table, inline expansion, month collapse.
  */
+// v3.19: 转义引号——实体名可含双引号（如 "Data Pyramid"），属性上下文（data-coname 等）需要
 function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text || '';
-  return div.innerHTML;
+  return String(text ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 const LINK_ICONS = {
@@ -616,10 +616,11 @@ async function init() {
     const span = months.length ? `${months[0]} – ${months[months.length - 1]}` : '—';
     // 摘要：内联首段 + 独立页链接
     const excerpt = p.summary ? p.summary.split(/\n\s*\n/)[0].trim() : '';
-    // 时间线：纯 CSS 迷你柱状图
-    const maxC = Math.max(...p.timeline.map(t => t.count), 1);
-    const bars = p.timeline.map(t =>
-      `<div class="tl-bar" style="height:${Math.round(t.count / maxC * 48) + 4}px" title="${escapeHtml(t.month)}: ${t.count} records"><span class="tl-label">${escapeHtml(t.month.slice(2))}</span></div>`
+    // 时间线：纯 CSS 迷你柱状图（升序：旧→新）
+    const tlAsc = [...p.timeline].sort((a, b) => a.month < b.month ? -1 : 1);
+    const maxC = Math.max(...tlAsc.map(t => t.count), 1);
+    const bars = tlAsc.map(t =>
+      `<div class="tl-bar" style="height:${Math.round(t.count / maxC * 48) + 4}px" title="${escapeHtml(t.month)}: ${t.count} records"><span class="tl-label">${escapeHtml(/^\d{4}-/.test(t.month) ? t.month.slice(2) : t.month)}</span></div>`
     ).join('');
     // 关联记录：按月份分组（≤3 组全展开，否则仅最新组展开）
     const byMonth = {};
@@ -636,8 +637,15 @@ async function init() {
     const co = p.co_entities.map(c =>
       `<span class="ent-chip co-ent" data-coname="${escapeHtml(c.name)}" title="查看该实体">${escapeHtml(c.name)} ×${c.count}</span>`
     ).join(' ');
-    // canonical 链接：复用 linkBadge 图标风格
-    const linkBits = p.links.map(l => linkBadge(l)).join(' ');
+    // canonical 链接：按域名分组 + linkBadge 图标（同 records 详情风格）
+    const byDomain = {};
+    for (const l of p.links) {
+      try { const d = new URL(l.url).hostname.replace('www.', ''); (byDomain[d] = byDomain[d] || []).push(l); }
+      catch (_) { (byDomain.other = byDomain.other || []).push(l); }
+    }
+    const linkBits = Object.entries(byDomain).map(([d, ls]) =>
+      `<span class="link-domain">${escapeHtml(d)}</span> ` + ls.map(l => linkBadge(l)).join('')
+    ).join('<br>');
     el.innerHTML = `
       <div class="entity-detail-card">
         <h2>${p.watched ? '★ ' : ''}${escapeHtml(p.name)} <span class="badge badge-other">${escapeHtml(p.type)}</span></h2>

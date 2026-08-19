@@ -134,7 +134,7 @@ def test_doc_reader_has_no_survey_entry(tmp_path):
 
 
 def test_entities_view_has_search_controls(tmp_path):
-    """entities 视图提供搜索/类型筛选/watched-only 控制条与筛选渲染逻辑。"""
+    """entities 视图提供搜索/watched-only 控制条；类型下拉已被五组分区取代。"""
     ws = _ws(tmp_path)
     db = ws / "data" / "wiki.db"
     ensure_schema(db)
@@ -142,12 +142,31 @@ def test_entities_view_has_search_controls(tmp_path):
     out = build_site(db, ws, out_dir=tmp_path / "site_out")
     html = (out / "index.html").read_text(encoding="utf-8")
     assert 'id="ent-search"' in html
-    assert 'id="ent-filter-type"' in html
     assert 'id="ent-filter-watch"' in html
+    assert 'id="ent-filter-type"' not in html  # 分组已取代 type 筛选
     site_js = (out / "assets" / "site.js").read_text(encoding="utf-8")
     assert "ent-search" in site_js
-    assert "ent-filter-type" in site_js
     assert "ent-filter-watch" in site_js
+    assert "ent-filter-type" not in site_js
+
+
+def test_entities_view_grouped_sections(tmp_path):
+    """entities 视图：五组分区标题 + 低频（record_count==1）默认隐藏 toggle + group 字段。"""
+    ws = _ws(tmp_path)
+    db = ws / "data" / "wiki.db"
+    ensure_schema(db)
+    _seed(db)
+    out = build_site(db, ws, out_dir=tmp_path / "site_out")
+    pages = json.loads((out / "data" / "entity_pages.json").read_text(encoding="utf-8"))
+    assert pages["figure-ai"]["group"] == "company"   # company bucket 默认规则
+    assert pages["helix"]["group"] == "product"       # product bucket 默认规则
+    site_js = (out / "assets" / "site.js").read_text(encoding="utf-8")
+    for label in ("高校与研究机构", "科技公司", "开源项目", "商业产品", "人物"):
+        assert label in site_js, label
+    assert "ent-toggle" in site_js                    # 低频实体展开 toggle
+    assert "显示仅出现 1 次的实体" in site_js
+    css = (out / "assets" / "site.css").read_text(encoding="utf-8")
+    assert ".ent-toggle" in css
 
 
 def test_entity_detail_structured(tmp_path):

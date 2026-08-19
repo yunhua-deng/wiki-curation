@@ -576,6 +576,30 @@ def cmd_entities(args) -> int:
         return 1
 
 
+def cmd_clean_entities(args) -> int:
+    """clean-entities：批量清洗存量 record.json 实体（alias 归一 + suppress，默认 dry-run）。"""
+    try:
+        from scripts.records.clean_entities import clean_entities
+        from scripts.publish.lock import PublishLock, LockBusyError
+        ws = paths.get_workspace()
+        db = paths.db_path(ws)
+        entry_id = getattr(args, "id", None)
+        if getattr(args, "apply", False):
+            try:
+                with PublishLock(timeout=30):
+                    data = clean_entities(db, ws, entry_id=entry_id, apply=True)
+            except LockBusyError as e:
+                _print_result({"ok": False, "error": "BUSY", "message": str(e)}, args.json)
+                return 1
+        else:
+            data = clean_entities(db, ws, entry_id=entry_id, apply=False)
+        _print_result({"ok": True, "data": data}, args.json)
+        return 0
+    except Exception as e:
+        _print_result({"ok": False, "error": "CLEAN_ENTITIES_FAILED", "message": str(e)}, args.json)
+        return 1
+
+
 def cmd_watch(args) -> int:
     """watch：特别关注——toggle / --on / --off / 无 --id 列出全部。"""
     try:
@@ -680,6 +704,8 @@ def cmd_manifest(args) -> int:
             {"name": "add-link", "args": ["--id", "--url", "--role"],
              "description": "手动添加链接到 record 图谱（origin=manual）"},
             {"name": "watch", "args": ["--id", "--on", "--off"], "description": "特别关注：toggle / 设置 / 无 --id 列出全部"},
+            {"name": "clean-entities", "args": ["--apply", "--id"],
+             "description": "批量清洗存量 record.json 实体（alias 归一 + suppress，默认 dry-run）"},
             {"name": "star", "args": ["--id"], "description": "publish 后标星 canonical GitHub 仓库（需 GITHUB_TOKEN）"},
             {"name": "list", "args": ["--limit", "--status", "--all"], "description": "列出 entries"},
             {"name": "search", "args": ["query", "--limit"], "description": "FTS5 搜索"},
@@ -882,6 +908,12 @@ def main():
     p_watch.add_argument("--on", action="store_true")
     p_watch.add_argument("--off", action="store_true")
 
+    p_clean = sub.add_parser("clean-entities",
+                             help="批量清洗存量 record.json 实体（alias 归一 + suppress，默认 dry-run）")
+    p_clean.add_argument("--apply", action="store_true",
+                         help="实际写回 record.json + 更新 db + 重织 relations + 重建站点（持 PublishLock）")
+    p_clean.add_argument("--id", help="只清洗指定 entry（默认全部 done entries）")
+
     p_doc = sub.add_parser("doctor", help="健康检查")
     p_doc.add_argument("--quick", action="store_true")
     p_doc.add_argument("--since")
@@ -911,6 +943,7 @@ def main():
         "star": cmd_star,
         "analyze": cmd_analyze,
         "add-link": cmd_add_link, "watch": cmd_watch,
+        "clean-entities": cmd_clean_entities,
         "backfill-records": cmd_backfill_records, "doctor": cmd_doctor, "manifest": cmd_manifest,
     }
     if args.command in handlers: return handlers[args.command](args)

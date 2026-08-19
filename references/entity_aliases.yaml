@@ -57,6 +57,11 @@ entities:
       - Robbyant Team
       - 灵波
       - 蚂蚁集团灵波
+      - 蚂蚁灵波科技
+      - LingBot团队
+    蚂蚁集团:
+      - Ant Group
+      - 蚂蚁金服
     极佳科技:
       - GigaWorld
       - 极佳
@@ -78,6 +83,40 @@ entities:
     字节跳动:
       - ByteDance
       - bytedance
+    清华大学:
+      - Tsinghua
+      - Tsinghua University
+    北京大学:
+      - Peking University
+      - PKU
+    浙江大学:
+      - Zhejiang University
+    上海交通大学:
+      - SJTU
+    香港大学:
+      - HKU
+    香港中文大学:
+      - CUHK
+    香港科技大学:
+      - HKUST
+    南京大学:
+      - Nanjing University
+    复旦大学:
+      - Fudan University
+    中山大学:
+      - Sun Yat-sen University
+    南洋理工大学:
+      - NTU
+      - Nanyang Technological University
+    中国科学技术大学:
+      - USTC
+    北京航空航天大学:
+      - BUAA
+      - 北航
+    上海创智学院: []
+    中科院:
+      - CAS
+      - Chinese Academy of Sciences
 
   # --- 产品/模型实体别名 ---
   product:
@@ -96,12 +135,49 @@ entities:
     DINOv3: []
     DINOv2: []
 
+    GR00T N1:
+      - GR00T-N1
+    GR00T N1.5:
+      - GR00T-N1.5
+    GR00T N1.6:
+      - GR00T-N1.6
     GR00T N1.7:
       - GR00T
       - GR00T-1.7
+      - GR00T-N1.7
     MolmoAct2: []
     Pi0: []
     SmolVLA: []
+
+    Qwen3-VL:
+      - Qwen3-VL-2B
+      - Qwen3-VL-4B
+      - Qwen3-VL-8B
+      - Qwen3-VL-30B
+      - Qwen3-VL-32B
+      - Qwen3-VL-235B
+      - Qwen3-VL-30B-A3B
+      - Qwen3-VL-4B-Instruct
+      - Qwen3-VL-8B-Instruct
+      - Qwen3-VL-2B-Instruct
+      - Qwen3-VL-Inst-4B
+      - Qwen3-VL-Instruct
+      - Qwen3-VL-8B-Thinking
+    V-JEPA 2:
+      - V-JEPA2
+      - V-JEPA 2.1
+    HY-World 2.0:
+      - HY-World-2.0
+    SO-ARM101:
+      - SO-ARM-101
+      - SO-101
+      - SO101
+    SO-100:
+      - SO100
+    GPT-5:
+      - GPT-5.2
+      - GPT-5.4
+      - GPT-5.5
 
   # --- 人物/作者实体别名 ---
   # key: canonical 中文或英文名
@@ -138,6 +214,9 @@ series_roots:
     - DINOv2
     - DINOv3
   GR00T:
+    - GR00T N1
+    - GR00T N1.5
+    - GR00T N1.6
     - GR00T N1.7
   Molmo:
     - MolmoAct2
@@ -318,3 +397,120 @@ themes:
       company:
         - Arthur AI
         - Epsilla
+
+# ============================================================
+# 实体抑制（suppress 机制）
+# 消费方：scripts/entity_filter.py（publish / entity_pages / site entities /
+# entity_summary / clean-entities 共用）。顺序：先 alias→canonical，再判抑制。
+# 豁免：本文件任何 canonical key（terms/entities 各桶/series_roots）与
+# references/entity_groups.yaml 显式列出的名字永不抑制。
+# ============================================================
+
+# 精确名单：大小写不敏感完全匹配后，从实体聚合/展示中剔除
+suppress:
+  # --- 自媒体/科技媒体（不是实体，是渠道）---
+  - 机器之心
+  - 新智元
+  - 量子位
+  - 量子位智库
+  - 具身智能之心
+  - 自动驾驶之心
+  - 新浪科技
+  - 腾讯科技
+  - 网易科技
+  - 极客公园
+  - 36氪
+  - 36氪Pro
+  - 智东西
+  - 雷锋网
+  - 雷峰网
+  - IT之家
+  - 虎嗅
+  - 钛媒体
+  - 澎湃新闻
+  - InfoQ
+  - 甲子光年
+  - 光锥智能
+  - 硅星人
+  - 品玩
+  - 爱范儿
+  - APPSO
+  - Founder Park
+  - 极市平台
+  - CVer
+  - PaperWeekly
+  - 人工智能学家
+  - AI前线
+  - AI科技评论
+  - DeepTech深科技
+  - 华尔街见闻
+  - 每日经济新闻
+  - 财联社
+  - 科创板日报
+  - VentureBeat
+  - TechCrunch
+  - The Verge
+  - 机器人大讲堂
+  - 智涌
+  - 大数据文摘
+  - 新皮层
+  - OneFlow
+  - 创业邦
+  - 亿欧网
+  - 猎云网
+  - 投资界
+  - 高工机器人
+  - 晚点LatePost
+  - 晚点Auto
+  # --- 许可证/协议（不是实体）---
+  - Apache-2.0
+  - MIT License
+  - CC BY 4.0
+  # --- 主题词误抽为产品 ---
+  - NeRF/3DGS
+  - Low-level 3D
+  - D/4D
+  - D-3D
+  - D/3D
+  - EO-1
+  # --- 型号组合/范围代号（高频垃圾，pattern 兜底之外的显式名单）---
+  - C0-Backbone
+  - SO-100/101
+  - SO100/101
+  - SO100-Community
+  - DUSt3R/VGGT
+  - VGGT/DUSt3R
+  - VGGT/DA3
+  - DA3/VGGT
+  - DA3/WorldMirror
+  - DUSt3R/MASt3R
+  - DINOv2/v3
+  - SAM1/SAM2
+  - SAM2/SAM3/VIS/VSS
+  - SAM3/IK
+  - Qwen3-VL/Molmo-7B
+  - DM0/GigaBrain/Spirit
+  - G1/SMPL/Teleop/SOMA
+  - Mem0/Honcho
+  - K2/PortalCam
+  - N1/N1.5
+  - N1/N1.5/N1.6/N1.7
+  - K2/K2.5
+  - ROS/ROS2
+  - ROS1/2
+  - ROS1/ROS2
+  - V-JEPA2 ViT
+  - 关联 |
+
+# 正则（re.IGNORECASE，search 语义）：命中即剔除
+suppress_patterns:
+  # 范围/层级代号：C0-C1, L1-L5, M1-M2, S1-S4, Q2-Q3, V1-V3, R1-R6, L2-1, T2-3D, A2-D, ID2-3 等
+  - '^[A-Za-z]{0,2}\d+([-–—/][A-Za-z]{0,3}\d+)+$'
+  # 硬件/配置串：A100/H100、H100-80G、RTX 4090、D415/D435、SO100 等
+  - '^(A100|H100|H200|B200|H20|L20|L40|V100|A800|H800|RTX|4090|Jetson|RK3588|DDR5|FPC64|OS0|FP16|FP32|INT4|D415|D435|UR\d+e?|Dex3|Kinova|Go1|Go2|G1|H1)(\W.*)?$'
+  # 含 markdown/表格碎片字符
+  - '[|*#`\[\]\\✅⭐✗★❌⚠]'
+  # URL 误抽
+  - 'https?://'
+  # 日期误抽：2026-03-30
+  - '^\d{4}-\d{2}-\d{2}$'

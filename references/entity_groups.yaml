@@ -1,0 +1,176 @@
+# entity_groups.yaml — 实体五类分组配置（站点 entities 视图分组展示）
+# group ∈ academia(高校与研究机构) | company(科技公司) | oss(开源项目) | product(商业产品) | person(人物)
+# 未显式映射时的默认规则：
+#   bucket=author → person；bucket=company → company（名称命中 academia_keywords → academia）；
+#   bucket=product/series → product
+# 注意：groups 里显式列出的名字同时也是 suppress 豁免名单（永不抑制）。
+groups:
+  # --- 高校与研究机构 ---
+  斯坦福大学: academia
+  清华大学: academia
+  北京大学: academia
+  香港大学: academia
+  上海交通大学: academia
+  浙江大学: academia
+  上海人工智能实验室: academia
+  复旦大学: academia
+  香港中文大学: academia
+  南洋理工大学: academia
+  南京大学: academia
+  中山大学: academia
+  香港科技大学: academia
+  新加坡国立大学: academia
+  清华智能产业研究院: academia
+  UC Berkeley: academia
+  中国科学技术大学: academia
+  Columbia University: academia
+  UIUC: academia
+  普林斯顿大学: academia
+  北京航空航天大学: academia
+  上海创智学院: academia
+  智源研究院: academia
+  中科院: academia
+  MIT: academia
+  ETH Zürich: academia
+  CMU: academia
+  # --- 科技公司 ---
+  英伟达: company
+  极佳科技: company
+  字节跳动: company
+  蚂蚁灵波: company
+  蚂蚁集团: company
+  群核科技: company
+  World Labs: company
+  枢途科技: company
+  苏度科技: company
+  Google DeepMind: company
+  宇树科技: company
+  Anthropic: company
+  OpenAI: company
+  魔芯科技: company
+  SceniX: company
+  Meta: company
+  Google: company
+  腾讯: company
+  阿里巴巴: company
+  华为: company
+  智元机器人: company
+  银河通用: company
+  星海图: company
+  逐际动力: company
+  Physical Intelligence: company
+  Skild AI: company
+  它石智航: company
+  原力灵机: company
+  智平方: company
+  昆仑万维: company
+  阶跃星辰: company
+  月之暗面: company
+  深度求索: company
+  # --- 开源项目（含开源模型/数据集/基准/工具）---
+  VGGT: oss
+  GR00T: oss
+  GR00T N1.7: oss
+  DINO: oss
+  DINOv2: oss
+  DINOv3: oss
+  Molmo: oss
+  MolmoAct2: oss
+  SmolVLA: oss
+  OpenVLA: oss
+  Pi: oss
+  Pi0: oss
+  Pi0.5: oss
+  Qwen3-VL: oss
+  LingBot: oss
+  LingBot-VLA: oss
+  LingBot-VLA 2.0: oss
+  LingBot-Depth: oss
+  LingBot-Depth 2.0: oss
+  LingBot-Vision: oss
+  SO-ARM101: oss
+  SO-101: oss
+  SO-100: oss
+  LeRobot: oss
+  BEHAVIOR-1K: oss
+  LIBERO-10: oss
+  ORB-SLAM3: oss
+  MASt3R-SfM: oss
+  RDT-1B: oss
+  Cosmos-Predict2.5: oss
+  Prismatic-7B: oss
+  VGGT-SLAM 2.0: oss
+  Matrix-3D: oss
+  V-JEPA 2: oss
+  DeepSeek-R1: oss
+  DeepSeek-V3: oss
+  GLM-5: oss
+  RoboCasa-GR1: oss
+  Real-3DQA: oss
+  PAGE-4D: oss
+  LaST-R1: oss
+  ImageNet-1K: oss
+  MuJoCo: oss
+  Isaac Sim: oss
+  Genesis: oss
+  # --- 商业产品 ---
+  GPT-5: product
+  GPT-4o: product
+  GPT-4: product
+  GPT-3.5: product
+  GPT-3: product
+  GPT-2: product
+  Claude Code: product
+  RT-2: product
+  RT-1: product
+  GEN-1: product
+  GENE-26.5: product
+  GigaWorld-0: product
+  HY-World 2.0: product
+  Being-H0.7: product
+  Marble: product
+  LDA-1B: product
+  VL-3B: product
+  F-85: product
+  GR-1: product
+  # --- 人物 ---
+  李飞飞: person
+  何恺明: person
+  谢赛宁: person
+  翁荔: person
+  贾扬清: person
+  Ziwei Liu: person
+  Yunzhu Li: person
+  Zhaoxi Chen: person
+  Fangzhou Hong: person
+  Wei Yin: person
+  Jim Fan: person
+  苏昊: person
+  Ted Xiao: person
+
+# company bucket 默认归类时的学术机构关键词（命中 → academia）
+academia_keywords:
+  - 大学
+  - 学院
+  - 研究院
+  - 研究所
+  - 实验室
+  - University
+  - Institute
+  - College
+  - School of
+  - Academy
+  - Lab
+  - 实验室
+  - Berkeley
+  - MIT
+  - ETH
+  - CMU
+  - Stanford
+  - Princeton
+  - Harvard
+  - Oxford
+  - Cambridge
+  - CNRS
+  - INRIA
+  - Max Planck

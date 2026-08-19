@@ -90,12 +90,16 @@ def flatten_entities(entities) -> list:
 
 
 def entity_index(db_path) -> dict:
-    """全部 canonical 实体 → {"type": 桶, "entries": [slug...]}。"""
+    """全部 canonical 实体 → {"type": 桶, "entries": [slug...]}（跳过被抑制实体）。"""
+    from scripts import entity_filter as EF
     from scripts.records.links import all_entry_entities
+    suppression = EF.load_suppression()
     index = {}
     for slug, ents in all_entry_entities(db_path).items():
         for b in ENTITY_BUCKETS:
             for name in ents.get(b) or []:
+                if EF.is_suppressed(name, suppression):
+                    continue
                 slot = index.setdefault(name, {"type": b, "entries": []})
                 if slug not in slot["entries"]:
                     slot["entries"].append(slug)
@@ -143,11 +147,13 @@ def aggregate_entity(db_path, name, ws=None) -> dict:
     timeline = [{"month": m, "count": c} for m, c in sorted(months.items(), reverse=True)]
 
     all_ents = L.all_entry_entities(db_path)
+    from scripts import entity_filter as EF
+    suppression = EF.load_suppression()
     co = {}
     for eid in entry_ids:
         for b in ENTITY_BUCKETS:
             for other in (all_ents.get(eid) or {}).get(b) or []:
-                if other != ename:
+                if other != ename and not EF.is_suppressed(other, suppression):
                     slot = co.setdefault(other, {"name": other, "type": b, "count": 0})
                     slot["count"] += 1
     co_entities = sorted(co.values(), key=lambda x: -x["count"])[:10]

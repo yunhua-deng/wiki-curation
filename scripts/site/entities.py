@@ -411,9 +411,12 @@ def extract_entities(entry: dict, wiki_dir: Path, aliases: dict = None) -> dict:
 # ---------------------------------------------------------------------------
 
 def build_entity_index(entries: list[dict], wiki_dir: Path, aliases: dict = None) -> dict:
-    """为所有 entry 构建实体索引。"""
+    """为所有 entry 构建实体索引（跳过被抑制实体）。"""
     if aliases is None:
         aliases = load_aliases()
+
+    from scripts import entity_filter as EF
+    suppression = EF.load_suppression()
 
     wiki_dir = Path(wiki_dir)
     by_entry = {}
@@ -424,15 +427,17 @@ def build_entity_index(entries: list[dict], wiki_dir: Path, aliases: dict = None
         if not slug:
             continue
         entities = extract_entities(entry, wiki_dir, aliases)
+        kept = {etype: [e for e in entities[etype] if not EF.is_suppressed(e, suppression)]
+                for etype in ("company", "author", "product", "series")}
         by_entry[slug] = {
-            "company": entities["company"],
-            "author": entities["author"],
-            "product": entities["product"],
-            "series": entities["series"],
+            "company": kept["company"],
+            "author": kept["author"],
+            "product": kept["product"],
+            "series": kept["series"],
             "normalized_tags": entities["normalized_tags"],
         }
         for etype in ("company", "author", "product", "series"):
-            for entity in entities[etype]:
+            for entity in kept[etype]:
                 by_type[etype][entity].append(slug)
 
     # 把 defaultdict 转成普通 dict 以便 JSON 序列化

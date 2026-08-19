@@ -47,32 +47,24 @@ def _fail(args, db_path, entry_id, error, message, detail=None, next_cmd=None):
 
 
 def _canonicalize_entities(entities: dict) -> dict:
-    """用 entity_aliases.yaml 归一化实体名（系统做，不赌 agent 自觉）。"""
-    try:
-        from scripts.site.entities import load_aliases
-        aliases = load_aliases()
-    except Exception:
-        aliases = {}
-    # 构建 variant→canonical 查找表
-    variant_map = {}
-    for canonical, variants in (aliases.get("terms") or {}).items():
-        for v in [canonical] + (variants or []):
-            variant_map[str(v).strip().lower()] = canonical
-    for _etype, ent_map in (aliases.get("entities") or {}).items():
-        for canonical, variants in (ent_map or {}).items():
-            for v in [canonical] + (variants or []):
-                variant_map[str(v).strip().lower()] = canonical
+    """用 entity_aliases.yaml 归一化实体名并丢弃被抑制名（系统做，不赌 agent 自觉）。
 
-    result = {}
-    for bucket in ("company", "author", "product", "series"):
-        vals = entities.get(bucket) or []
-        seen = []
-        for v in vals:
-            c = variant_map.get(str(v).strip().lower(), str(v).strip())
-            if c and c not in seen:
-                seen.append(c)
-        result[bucket] = seen
-    return result
+    alias 归一 + suppress 与 clean-entities 共用 scripts.entity_filter 的同一套函数。
+    """
+    try:
+        from scripts import entity_filter
+        return entity_filter.canonicalize_entities(entities)
+    except Exception:
+        # 兜底：配置损坏时只做 strip/去重，不阻塞发布
+        result = {}
+        for bucket in ("company", "author", "product", "series"):
+            seen = []
+            for v in (entities or {}).get(bucket) or []:
+                c = str(v).strip()
+                if c and c not in seen:
+                    seen.append(c)
+            result[bucket] = seen
+        return result
 
 
 def _collect_fetched_urls(slug, wiki_dir) -> set:

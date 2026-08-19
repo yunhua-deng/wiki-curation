@@ -178,6 +178,8 @@ a:hover{text-decoration:underline}
 /* Entities 列表控制 + 分区 (v3.18) */
 .ent-section{font-size:.95rem;margin:1rem 0 .5rem}
 .ent-total{font-size:.8rem;margin:.5rem 0}
+.ent-toggle{background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:.8rem;padding:.25rem .6rem;cursor:pointer}
+.ent-toggle:hover{color:var(--accent);border-color:var(--accent)}
 
 /* Entity 时间线柱状图 (v3.18) */
 .tl-wrap{padding-bottom:1.4rem;overflow-x:auto}

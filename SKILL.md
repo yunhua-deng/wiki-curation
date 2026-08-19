@@ -118,6 +118,7 @@ All commands support `--json`. `--workspace PATH` overrides `$WIKI_WORKSPACE`.
 | `add-link --id X --url U [--role R]` | Add a manually-found link to a record's link graph (origin=manual) |
 | `verify-links --id <slug>` | Lazy curl-HEAD link reachability |
 | `star --id <slug>` | Star canonical GitHub repos (needs `GITHUB_TOKEN`) |
+| `clean-entities [--apply] [--id X]` | Batch-clean existing record.json entities (alias normalize + suppress); dry-run by default, `--apply` rewrites records + db + relations + site (PublishLock) |
 | `doctor [--quick] [--fix-plan]` | Health: queue/db/files/git/record-tier/entities |
 | `stats` / `list` / `sync` / `requeue` / `delete` / `update` / `manifest` | Store utilities |
 
@@ -163,7 +164,8 @@ use the orchestrator's analytical framing as reference.
 
 - `references/sources.yaml` — source-type classification, fetch handlers, drill policy
 - `references/record_schema.json` — record.json constraints
-- `references/entity_aliases.yaml` — entity canonical/alias map
+- `references/entity_aliases.yaml` — entity canonical/alias map + `suppress`/`suppress_patterns` 抑制名单（精确 + 正则；canonical key 永不抑制；shared logic in `scripts/entity_filter.py`，publish 与 clean-entities 共用）
+- `references/entity_groups.yaml` — entity 五类分组（academia/company/oss/product/person）+ `academia_keywords` 默认归类关键词；站点 entities 视图按组展示、低频（record_count==1）默认隐藏
 
 ## Bug recording
 

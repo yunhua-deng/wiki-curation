@@ -7,6 +7,7 @@
 import json
 from pathlib import Path
 
+from scripts import entity_filter as EF
 from scripts import wiki_index
 from scripts.entity_summary import ENTITY_BUCKETS, flatten_entities, list_watched
 from scripts.lib import slugify_name
@@ -40,9 +41,13 @@ def build_entity_pages(db_path, wiki_dir) -> dict:
     watched = {w["name"] for w in list_watched(db_path)}
 
     index = {}
+    suppression = EF.load_suppression()
+    group_cfg = EF.load_entity_groups()
     for eid, ents in all_ents.items():
         for b in ENTITY_BUCKETS:
             for name in ents.get(b) or []:
+                if EF.is_suppressed(name, suppression):
+                    continue  # 抑制实体不生页（兜底老数据；新数据 publish 时已过滤）
                 slot = index.setdefault(name, {"type": b, "entries": []})
                 if eid not in slot["entries"]:
                     slot["entries"].append(eid)
@@ -59,7 +64,7 @@ def build_entity_pages(db_path, wiki_dir) -> dict:
             m = date[:7] or "unknown"
             months[m] = months.get(m, 0) + 1
             for other in flatten_entities(all_ents.get(eid)):
-                if other != name:
+                if other != name and not EF.is_suppressed(other, suppression):
                     co[other] = co.get(other, 0) + 1
             for lk in links_map.get(eid) or []:
                 if lk.get("role") != "canonical":
@@ -72,6 +77,7 @@ def build_entity_pages(db_path, wiki_dir) -> dict:
         pages[slug] = {
             "name": name,
             "type": slot["type"],
+            "group": EF.entity_group(name, slot["type"], group_cfg),
             "slug": slug,
             "watched": name in watched,
             "record_count": len(slot["entries"]),

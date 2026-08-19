@@ -1,6 +1,7 @@
 /**
  * Wiki Site v3.2 — compact table, inline expansion, month collapse.
  */
+// v3.21: entities 视图五类分组（高校/公司/开源/产品/人物）+ 单次实体默认隐藏（组内 toggle）
 // v3.19: 转义引号——实体名可含双引号（如 "Data Pyramid"），属性上下文（data-coname 等）需要
 function escapeHtml(text) {
   return String(text ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -353,16 +354,25 @@ async function init() {
   if (watchOnly) watchOnly.addEventListener('change', render);
   render();
 
-  // --- entities view：搜索 + 筛选为主；默认 watched 置顶 + Top 50 ---
+  // --- entities view：五组分区 + 低频（record_count==1）默认隐藏；搜索覆盖全部实体 ---
   function renderEntities(pages) {
     const list = document.getElementById('entities-list');
-    const items = Object.values(pages || {}).sort((a, b) => b.record_count - a.record_count);
+    const items = Object.values(pages || {});
     const searchEl = document.getElementById('ent-search');
-    const typeSel = document.getElementById('ent-filter-type');
     const watchOnly = document.getElementById('ent-filter-watch');
     if (!items.length) { list.innerHTML = '<p class="empty">No entities yet</p>'; return; }
-    [...new Set(items.map(p => p.type).filter(Boolean))].sort()
-      .forEach(t => { const o = document.createElement('option'); o.value = t; o.textContent = t; typeSel.appendChild(o); });
+
+    // 五组分区（顺序固定）；group 由后端 entity_pages.json 给出，缺失时按 type 兜底
+    const GROUPS = [
+      ['academia', '高校与研究机构'],
+      ['company', '科技公司'],
+      ['oss', '开源项目'],
+      ['product', '商业产品'],
+      ['person', '人物'],
+    ];
+    const groupOf = (p) => p.group ||
+      (p.type === 'author' ? 'person' : p.type === 'company' ? 'company' : 'product');
+    const expanded = {}; // group key -> 低频实体是否展开
 
     function cardHtml(p) {
       return `<div class="tracking-card entity-card" data-slug="${escapeHtml(p.slug)}">
@@ -384,31 +394,51 @@ async function init() {
 
     function renderList() {
       const q = (searchEl.value || '').toLowerCase().trim();
-      const t = typeSel.value;
       const w = watchOnly.checked;
-      if (!q && !t && !w) {
-        const watched = items.filter(p => p.watched);
-        const top = items.filter(p => !p.watched).slice(0, 50);
-        let html = '';
-        if (watched.length) html += `<h3 class="ent-section">★ Watched（${watched.length}）</h3>` + watched.map(cardHtml).join('');
-        html += `<h3 class="ent-section">Top ${top.length}（按记录数）</h3>` + top.map(cardHtml).join('');
-        html += `<p class="muted ent-total">共 ${items.length} 个实体，用搜索/筛选查看全部</p>`;
-        list.innerHTML = html;
-      } else {
+      if (q || w) {
+        // 搜索/筛选：覆盖全部实体（含默认隐藏的低频实体）
         const matched = items.filter(p =>
-          (!q || p.name.toLowerCase().includes(q)) &&
-          (!t || p.type === t) &&
-          (!w || p.watched));
+          (!q || p.name.toLowerCase().includes(q)) && (!w || p.watched))
+          .sort((a, b) => b.record_count - a.record_count);
         if (!matched.length) { list.innerHTML = '<p class="empty">No matching entities</p>'; return; }
         const shown = matched.slice(0, 100);
         list.innerHTML = shown.map(cardHtml).join('') +
           `<p class="muted ent-total">共 ${matched.length} 个匹配${matched.length > 100 ? '，显示前 100' : ''}</p>`;
+      } else {
+        // 默认：五组分区，组内 watched 置顶 + record_count 降序；低频（仅 1 次）默认隐藏
+        let html = '';
+        for (const [g, label] of GROUPS) {
+          const inGroup = items.filter(p => groupOf(p) === g);
+          if (!inGroup.length) continue;
+          const byCount = (a, b) => b.record_count - a.record_count;
+          const watched = inGroup.filter(p => p.watched).sort(byCount);
+          const rest = inGroup.filter(p => !p.watched).sort(byCount);
+          const frequent = rest.filter(p => p.record_count > 1);
+          const rare = rest.filter(p => p.record_count === 1);
+          html += `<h3 class="ent-section">${label}（${inGroup.length}）</h3>`;
+          html += watched.concat(frequent).map(cardHtml).join('');
+          if (rare.length) {
+            if (expanded[g]) {
+              html += rare.map(cardHtml).join('') +
+                `<p><button class="ent-toggle" data-group="${g}">隐藏仅出现 1 次的实体（${rare.length}）</button></p>`;
+            } else {
+              html += `<p><button class="ent-toggle" data-group="${g}">显示仅出现 1 次的实体（${rare.length}）</button></p>`;
+            }
+          }
+        }
+        html += `<p class="muted ent-total">共 ${items.length} 个实体，用搜索查看全部</p>`;
+        list.innerHTML = html;
+        list.querySelectorAll('.ent-toggle').forEach(btn => {
+          btn.addEventListener('click', () => {
+            expanded[btn.dataset.group] = !expanded[btn.dataset.group];
+            renderList();
+          });
+        });
       }
       bindCards();
     }
 
     searchEl.addEventListener('input', renderList);
-    typeSel.addEventListener('change', renderList);
     watchOnly.addEventListener('change', renderList);
     renderList();
   }

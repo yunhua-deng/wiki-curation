@@ -30,13 +30,6 @@
       "inputs": ["./tests/fixtures/sample_paper.pdf"],
       "depth": "brief",
       "expected_skip_classify": true
-    },
-    {
-      "name": "append_to_existing",
-      "append_to": "2026-06-20_vla_survey",
-      "inputs": ["https://github.com/new-org/vla-code"],
-      "depth": "brief",
-      "expected_output_path": "wiki/2026-06-20_vla_survey_brief.md"
     }
   ]
 }

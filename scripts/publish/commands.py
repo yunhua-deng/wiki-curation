@@ -13,9 +13,6 @@ from pathlib import Path
 
 from scripts import wiki_index
 from scripts.publish.lock import PublishLock, LockBusyError
-def _refresh_html_index(db_path, wiki_dir, out_path=None):
-    """v3.1: wiki.html 生成已停用；仅刷新站点。"""
-    _refresh_site(db_path, wiki_dir)
 from scripts.site.build import build_site
 
 SKILL_SCRIPTS_DIR = Path(__file__).resolve().parent.parent
@@ -57,10 +54,6 @@ def _publish_article_legacy(args, db_path, wiki_dir, scripts_dir):
 
     wiki_index.record_event(db_path, entry_id, 'DONE', {'file': wiki_path.name, 'depth': depth})
     wiki_index.upsert_task(db_path, entry_id, status='done')
-
-    try: _refresh_html_index(db_path, wiki_dir)
-    except Exception as e:
-        if not args.json: print(f"  ⚠️ Index refresh skipped: {e}")
 
     _refresh_site(db_path, wiki_dir, json_mode=args.json)
     if args.json:
@@ -145,11 +138,13 @@ def cmd_record_event(args, db_path):
 
 
 def cmd_index(args, db_path, wiki_dir):
-    out_path = args.output if getattr(args, 'output', None) else None
+    """重建站点（build_site 会同步重建 wiki/wiki.html 语义索引），输出真实条目数。"""
     try:
-        count = 0; _refresh_html_index(db_path, wiki_dir, out_path=out_path)
-        _refresh_site(db_path, wiki_dir, json_mode=args.json)
-        out = Path(out_path) if out_path else Path(wiki_dir) / 'wiki.html'
+        if not _refresh_site(db_path, wiki_dir, json_mode=args.json):
+            raise RuntimeError(SITE_BUILD_WARN)
+        from scripts.wiki_index.store import list_entries
+        count = len(list_entries(db_path))
+        out = Path(wiki_dir) / 'wiki.html'
         if args.json:
             _out_json({"ok": True, "entries": count, "index": str(out)})
         else:

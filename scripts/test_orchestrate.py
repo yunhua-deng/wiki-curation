@@ -515,7 +515,6 @@ class TestFixturesLoaded:
             "url_plus_keyword",
             "github_repo_deep",
             "local_file",
-            "append_to_existing",
         }
         assert expected.issubset(names), f"missing cases: {expected - names}"
 

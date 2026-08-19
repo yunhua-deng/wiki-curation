@@ -14,8 +14,8 @@ scripts/site/build.py — 从 wiki.db 构建轻量静态 wiki 站点。
     tags.json
     sources.json
     entities.json
-    themes.json
     timeline.json
+    entity_pages.json
 """
 import argparse
 import json
@@ -361,11 +361,6 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
     sources = _build_sources(entries)
     entities = build_entity_index(entries, wiki_dir)
 
-    # v3.1：图谱（含 relations 表织边）
-    from scripts.records.links import get_all_relations
-    from scripts.site.graph import build_graph
-    graph = build_graph(entries, wiki_dir, relation_edges=get_all_relations(db_path))
-
     # v3.4：关联条目（relations 表 top N）注入 entries.json 供详情展示
     related_map = _build_related_map(db_path, entries)
 
@@ -384,9 +379,6 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
     )
     (data_dir / "entities.json").write_text(
         json.dumps(entities, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
-    )
-    (data_dir / "graph.json").write_text(
-        json.dumps(graph, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )
 
     # v3.1 时间线：按月聚合
@@ -412,9 +404,9 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
     # 渲染 HTML 页面
     render_pages(entries, tags, sources, out_dir)
 
-    # v3.3：清理陈旧 data 产物（search_index/themes/trends 等已废弃文件）
+    # v3.3：清理陈旧 data 产物（search_index/themes/trends/graph 等已废弃文件）
     current_data = {"entries.json", "tags.json", "sources.json", "entities.json",
-                    "graph.json", "timeline.json", "entity_pages.json"}
+                    "timeline.json", "entity_pages.json"}
     for f in data_dir.glob("*.json"):
         if f.name not in current_data:
             f.unlink()

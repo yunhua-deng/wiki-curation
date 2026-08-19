@@ -79,11 +79,9 @@ groups:
   SmolVLA: oss
   OpenVLA: oss
   SO-ARM101: oss
-  SO-101: oss
   SO-100: oss
   LeRobot: oss
   BEHAVIOR-1K: oss
-  LIBERO-10: oss
   ORB-SLAM3: oss
   MASt3R-SfM: oss
   RDT-1B: oss
@@ -249,7 +247,6 @@ groups:
   GR-3: product
   GO-1: product
   RLDX-1: product
-  RLDX-1 8B: product
   RLDX-1-PT: product
   RFM-1: product
   VLA-0: product
@@ -304,7 +301,6 @@ academia_keywords:
   - School of
   - Academy
   - Lab
-  - 实验室
   - Berkeley
   - MIT
   - ETH

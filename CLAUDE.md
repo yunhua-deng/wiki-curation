@@ -45,7 +45,8 @@ python eval/run_eval.py --llm
 - `references/` —— agent 需要读取的知识/规则：
   - `sources.yaml`（来源类型、分类规则）
   - `record_schema.json`（record.json 约束常量，records/schema.py 消费）
-  - `entity_aliases.yaml`（实体 canonical/别名映射）
+  - `entity_aliases.yaml`（实体 canonical/别名映射 + suppress 抑制名单）
+  - `entity_groups.yaml`（实体五类分组 + academia_keywords）
 - `assets/` —— 前端静态资源：
   - `assets/site/`（site.js / site.css / marked.min.js）
 

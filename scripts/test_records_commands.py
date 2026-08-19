@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""test_records_commands.py — recall / verify-links / backfill-records / add 自动召回的 CLI 契约测试。"""
+"""test_records_commands.py — recall / verify-links / add 自动召回的 CLI 契约测试。"""
 import json
 from argparse import Namespace
 from unittest import mock

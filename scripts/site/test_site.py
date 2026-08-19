@@ -12,7 +12,6 @@ from pathlib import Path
 import pytest
 
 from scripts.site.build import build_site, _to_list, _article_url, _raw_url
-from scripts.site.graph import build_graph
 from scripts.site import serve as serve_mod
 
 
@@ -108,8 +107,8 @@ def test_build_site_outputs(sample_workspace):
     assert sources["url"]["arxiv"] == ["2026-07-01_alpha"]
     assert sources["url"]["github"] == ["2026-07-01_beta"]
 
-    # graph.json 在 v3.0 恢复生成（含 relations 表织边）；search_index.json 已停止生成
-    assert (out_dir / "data" / "graph.json").exists()
+    # graph.json 已停止生成（graph 链整条移除）；search_index.json 已停止生成
+    assert not (out_dir / "data" / "graph.json").exists()
     assert not (out_dir / "data" / "search_index.json").exists()
 
     # entities.json 是 Phase 1 新增产物
@@ -120,7 +119,7 @@ def test_build_site_outputs(sample_workspace):
     assert "2026-07-01_alpha" in entities["by_entry"]
 
 
-    # v3.1: themes.json / timeline.json 已删除；旧版页面清理照常
+    # themes.json 已停止生成；timeline.json 仍在生成；旧版页面清理照常
     # 旧版多页站点遗留的页面会在重建时被清理
     stale = out_dir / "browse.html"
     stale.write_text("stale", encoding="utf-8")
@@ -128,29 +127,8 @@ def test_build_site_outputs(sample_workspace):
     assert not stale.exists()
 
 
-def test_graph_shared_tag_and_crossref(sample_workspace):
-    wiki_dir, db_path = sample_workspace
-    entries = [
-        {"id": "2026-07-01_alpha", "date": "2026-07-01", "title": "Alpha", "topic_type": "paper", "type": "paper",
-         "depth": "brief", "status": "done", "tags": ["tag-a", "tag-b"],
-         "input_type": "url", "source_type": "arxiv"},
-        {"id": "2026-07-01_beta", "date": "2026-07-01", "title": "Beta", "topic_type": "project", "type": "project",
-         "depth": "brief", "status": "done", "tags": ["tag-b", "tag-c"],
-         "input_type": "url", "source_type": "github"},
-    ]
-    graph = build_graph(entries, wiki_dir)
-    shared = [e for e in graph["edges"] if e["type"] == "shared_tag"]
-    assert len(shared) == 1
-    assert shared[0]["weight"] == 1  # 共享 tag-b
-
-    cross = [e for e in graph["edges"] if e["type"] == "crossref"]
-    assert len(cross) == 1
-    assert cross[0]["source"] == "2026-07-01_beta"
-    assert cross[0]["target"] == "2026-07-01_alpha"
-
-
 def test_build_site_record_fields(sample_workspace):
-    """v3.0：record 条目导出 has_record/links；graph.json 含 relations 边。"""
+    """v3.0：record 条目导出 has_record/links。"""
     import json
     wiki_dir, db_path = sample_workspace
 
@@ -186,12 +164,6 @@ def test_build_site_record_fields(sample_workspace):
     beta = [e for e in entries if e["id"] == "2026-07-01_beta"][0]
     assert beta["has_record"] is False
     assert len(beta["links"]) == 1  # links 表对无 record 条目同样导出
-
-    graph = json.loads((out_dir / "data" / "graph.json").read_text(encoding="utf-8"))
-    rel_edges = [e for e in graph["edges"] if e["type"] == "rel_shared_link"]
-    assert len(rel_edges) == 1
-    assert {rel_edges[0]["source"], rel_edges[0]["target"]} == {"2026-07-01_alpha", "2026-07-01_beta"}
-    assert rel_edges[0]["weight"] == 40
 
 
 def test_serve_pid_file_lifecycle(sample_workspace, tmp_path):

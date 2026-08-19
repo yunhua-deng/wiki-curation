@@ -119,6 +119,8 @@ All commands support `--json`. `--workspace PATH` overrides `$WIKI_WORKSPACE`.
 | `verify-links --id <slug>` | Lazy curl-HEAD link reachability |
 | `star --id <slug>` | Star canonical GitHub repos (needs `GITHUB_TOKEN`) |
 | `clean-entities [--apply] [--id X]` | Batch-clean existing record.json entities (alias normalize + suppress); dry-run by default, `--apply` rewrites records + db + relations + site (PublishLock) |
+| `watch [--id X] [--on\|--off]` | Entry watch-list：toggle / 设置 / 无 --id 列出全部 |
+| `site [--serve] [--export] [--stop]` | 构建静态 wiki 站点（可选启动/停止本地服务） |
 | `doctor [--quick] [--fix-plan]` | Health: queue/db/files/git/record-tier/entities |
 | `stats` / `list` / `sync` / `requeue` / `delete` / `update` / `manifest` | Store utilities |
 
@@ -141,7 +143,7 @@ publish --id <slug>
    ├─ schema.validate      ← deterministic record validation
    ├─ links.replace        ← links table (fetched backfill)
    ├─ relations.rewire     ← same_url/shared_link/shared_entity/tag_overlap edges
-   ├─ site.build           ← entries.json + timeline + graph
+   ├─ site.build           ← entries.json + timeline + entity_pages
    ▼
 done: record + site + wiki.html refreshed
 ```

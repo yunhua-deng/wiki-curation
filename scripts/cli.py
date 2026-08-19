@@ -493,11 +493,6 @@ def cmd_star(args) -> int:
         return 1
 
 
-def cmd_backfill_records(args) -> int:
-    _print_result({"ok": True, "data": {"message": "backfill completed, no-op"}}, args.json)
-    return 0
-
-
 def cmd_add_link(args) -> int:
     """add-link：手动添加链接到 record 图谱。"""
     try:
@@ -684,7 +679,9 @@ def cmd_init(args) -> int:
 
 def cmd_manifest(args) -> int:
     manifest = {
-        "version": "3.5",
+        # CLI manifest 独立语义版本：随命令清单/JSON 契约变更递增，
+        # 与 assets/site.js 注释里的站点版本号（v3.xx）是两套编号，不要对齐。
+        "version": "3.6",
         "entry": "python skills/wiki-curation/scripts/cli.py",
         "global_flags": ["--json", "--quiet", "--workspace PATH"],
         "commands": [
@@ -700,7 +697,7 @@ def cmd_manifest(args) -> int:
             {"name": "publish", "args": ["--id", "--site-only"], "description": "记录发布：validate record.json + links/relations 入库（--site-only 仅重建站点）"},
             {"name": "recall", "args": ["--input", "--limit"], "description": "四层确定性相似召回"},
             {"name": "verify-links", "args": ["--id", "--limit"], "description": "验证条目链接可达性（curl HEAD）"},
-            {"name": "analyze", "args": ["--topic", "--dedup", "--limit"], "description": "主题聚簇 / 去重候选"},
+            {"name": "analyze", "args": ["--topic", "--dedup", "--discover", "--days", "--limit"], "description": "主题聚簇 / 去重候选 / 热点发现"},
             {"name": "add-link", "args": ["--id", "--url", "--role"],
              "description": "手动添加链接到 record 图谱（origin=manual）"},
             {"name": "watch", "args": ["--id", "--on", "--off"], "description": "特别关注：toggle / 设置 / 无 --id 列出全部"},
@@ -712,7 +709,6 @@ def cmd_manifest(args) -> int:
             {"name": "classify", "args": ["--input"], "description": "输入源分类"},
             {"name": "collect", "args": ["--slug", "--input-type", "--source-type", "--input", "--max-depth"],
              "description": "采集原始素材"},
-            {"name": "verify-input", "args": ["--raw", "--input-type", "--source-type"], "description": "材料完整性校验"},
             {"name": "stats", "args": [], "description": "wiki.db 统计"},
             {"name": "sync", "args": ["--rebuild"], "description": "一致性检查/重建"},
             {"name": "index", "args": ["--output"], "description": "刷新 wiki/wiki.html 索引"},
@@ -723,8 +719,8 @@ def cmd_manifest(args) -> int:
             {"name": "update", "args": ["--id", "--topic-type", "--status", "--error", "..."], "description": "更新元数据"},
             {"name": "status", "args": ["--id", "--set", "--error"], "description": "查看/设置状态"},
             {"name": "events", "args": ["--id", "--action", "--limit"], "description": "审计事件"},
+            {"name": "record-event", "args": ["--id", "--action", "--detail"], "description": "手动记录一条审计事件"},
             {"name": "dedup", "args": ["--input"], "description": "重复检查"},
-            {"name": "backfill-records", "args": ["--id"], "description": "老条目 links/entities 回填"},
             {"name": "doctor", "args": ["--quick", "--fix-plan"], "description": "健康检查"},
             {"name": "manifest", "args": [], "description": "输出本清单"},
             {"name": "article", "args": ["--id"], "description": "（已废除 v3.1）→ 独立 article-writer skill"},
@@ -885,9 +881,6 @@ def main():
     p_analyze.add_argument("--limit", "-n", type=int, default=30)
     p_analyze.add_argument("--min-score", type=float, default=40)
 
-    p_backfill = sub.add_parser("backfill-records", help="links/entities 回填")
-    p_backfill.add_argument("--id")
-
     p_addlink = sub.add_parser("add-link", help="手动添加链接到 record 图谱")
     p_addlink.add_argument("--id", required=True)
     p_addlink.add_argument("--url", required=True)
@@ -944,7 +937,7 @@ def main():
         "analyze": cmd_analyze,
         "add-link": cmd_add_link, "watch": cmd_watch,
         "clean-entities": cmd_clean_entities,
-        "backfill-records": cmd_backfill_records, "doctor": cmd_doctor, "manifest": cmd_manifest,
+        "doctor": cmd_doctor, "manifest": cmd_manifest,
     }
     if args.command in handlers: return handlers[args.command](args)
     else: parser.print_help(); return 0

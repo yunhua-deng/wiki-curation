@@ -80,6 +80,7 @@ All commands support `--json` for agent consumption.
 
 | Command | Purpose |
 |---|---|
+| `init` | Bootstrap wiki workspace skeleton (idempotent) |
 | `add --input X [--no-recall]` | Enqueue; auto-recalls similar past entries |
 | `pop --limit N` | Dequeue pending → running |
 | `run --id <slug>` | Classify + collect + emit extraction task payload |
@@ -88,9 +89,13 @@ All commands support `--json` for agent consumption.
 | `analyze --topic "..."` | Evidence cluster across records |
 | `analyze --dedup` | Duplicate candidate pairs |
 | `analyze --discover [--days N]` | Emerging hot topics (alias-aware) |
+| `entities [--list] [--name X] [--watch X\|--unwatch X\|--watched] [--summary]` | Entity aggregation + watch list + optional LLM summary |
+| `clean-entities [--apply] [--id X]` | Batch-clean existing record.json entities (alias normalize + suppress; dry-run by default) |
 | `add-link --id X --url U [--role R]` | Add a manually-found link to a record's link graph (origin=manual) |
 | `verify-links --id <slug>` | curl-HEAD reachability check |
 | `star --id <slug>` | Star canonical GitHub repos (needs `GITHUB_TOKEN`) |
+| `watch [--id X] [--on\|--off]` | Watch-list toggle for entries; no `--id` lists all |
+| `site [--serve] [--export] [--stop]` | Build the static wiki site (optionally serve/stop it) |
 | `doctor [--quick]` | Health: queue/db/files/git/record-tier/entities |
 | `stats` / `list` / `search` / `sync` / `requeue` / `manifest` | Store utilities |
 
@@ -118,7 +123,8 @@ wiki/
 
 - `references/sources.yaml` — source-type classification, fetch handlers, drill policy
 - `references/record_schema.json` — record.json constraints
-- `references/entity_aliases.yaml` — entity canonical/alias map
+- `references/entity_aliases.yaml` — entity canonical/alias map + `suppress`/`suppress_patterns` 抑制名单（精确 + 正则；canonical key 永不抑制）
+- `references/entity_groups.yaml` — entity 五类分组（academia/company/oss/product/person，支持多分组列表）+ `academia_keywords`
 
 ## Verification design
 

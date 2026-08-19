@@ -135,23 +135,3 @@ def cmd_record_event(args, db_path):
         _out_json({"ok": True, "id": args.id, "action": args.action})
     else:
         print(f'Recorded {args.action} for {args.id}')
-
-
-def cmd_index(args, db_path, wiki_dir):
-    """重建站点（build_site 会同步重建 wiki/wiki.html 语义索引），输出真实条目数。"""
-    try:
-        if not _refresh_site(db_path, wiki_dir, json_mode=args.json):
-            raise RuntimeError(SITE_BUILD_WARN)
-        from scripts.wiki_index.store import list_entries
-        count = len(list_entries(db_path))
-        out = Path(wiki_dir) / 'wiki.html'
-        if args.json:
-            _out_json({"ok": True, "entries": count, "index": str(out)})
-        else:
-            print(f'wiki/wiki.html refreshed: {count} entries')
-    except Exception as e:
-        if args.json:
-            _out_json({"ok": False, "error": "INDEX_REFRESH_FAILED", "message": str(e)})
-        else:
-            print(f'❌ Index refresh failed: {e}')
-        sys.exit(1)

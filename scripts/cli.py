@@ -353,13 +353,6 @@ def cmd_publish(args) -> int:
     return 0 if r.get("ok") else 1
 
 
-def cmd_index(args) -> int:
-    extra = (["--output", args.output] if args.output else [])
-    r = _wiki_db_cmd("index", args, extra, timeout=60)
-    _print_result(r, args.json)
-    return 0 if r.get("ok") else 1
-
-
 def cmd_site(args) -> int:
     ws = Path(args.workspace).resolve() if args.workspace else paths.get_workspace()
     db = paths.db_path(ws)
@@ -711,7 +704,6 @@ def cmd_manifest(args) -> int:
              "description": "采集原始素材"},
             {"name": "stats", "args": [], "description": "wiki.db 统计"},
             {"name": "sync", "args": ["--rebuild"], "description": "一致性检查/重建"},
-            {"name": "index", "args": ["--output"], "description": "刷新 wiki/wiki.html 索引"},
             {"name": "site", "args": ["--serve", "--export", "--port", "--open", "--stop", "--pid-file"],
              "description": "构建并启动 wiki 站点"},
             {"name": "requeue", "args": ["--id", "--clear-md"], "description": "重新入队"},
@@ -781,9 +773,6 @@ def main():
     p_pub.add_argument("--site-only", action="store_true",
                        help="只重建站点（entries/timeline/trends JSON），跳过 record 校验/入库")
     p_pub.add_argument("--depth", choices=["brief", "deep"], default=None, help="（保留用于历史文章发布）")
-
-    p_index = sub.add_parser("index", help="刷新 wiki/wiki.html 索引")
-    p_index.add_argument("--output")
 
     p_site = sub.add_parser("site", help="构建并启动 wiki 站点")
     p_site.add_argument("--serve", action="store_true")
@@ -927,7 +916,7 @@ def main():
         "run": cmd_run, "article": cmd_article, "classify": cmd_classify,
         "collect": cmd_collect, "interpret": cmd_interpret,
         "verify-output": cmd_verify_output,
-        "publish": cmd_publish, "index": cmd_index, "site": cmd_site,
+        "publish": cmd_publish, "site": cmd_site,
         "add": cmd_add, "pop": cmd_pop, "list": cmd_list, "search": cmd_search,
         "stats": cmd_stats, "sync": cmd_sync, "requeue": cmd_requeue,
         "delete": cmd_delete, "update": cmd_update, "status": cmd_status,

@@ -41,8 +41,7 @@ wiki/
 │   ├── record.json          # THE record (only artifact the agent writes)
 │   └── raw/                 # fetched source materials
 ├── entities/{slug}/         # entity summaries (optional LLM): summary.md + meta.json
-├── site/                    # built static site
-└── wiki.html                # semantic index
+└── site/                    # built static site
 ```
 
 Set `WIKI_WORKSPACE` or default to `cwd/wiki`.
@@ -145,7 +144,7 @@ publish --id <slug>
    ├─ relations.rewire     ← same_url/shared_link/shared_entity/tag_overlap edges
    ├─ site.build           ← entries.json + timeline + entity_pages
    ▼
-done: record + site + wiki.html refreshed
+done: record + site refreshed
 ```
 
 ## Orchestrator notes (agent_notes.md)

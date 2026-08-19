@@ -137,9 +137,6 @@ def main():
     p_record.add_argument('--action', required=True, choices=sorted({'ENQUEUE', 'FETCH', 'GATE', 'WRITE', 'VERIFY', 'DONE'}))
     p_record.add_argument('--detail', help='JSON or string detail')
 
-    p_index = sub.add_parser('index', help='Regenerate wiki/wiki.html index')
-    p_index.add_argument('--output', help='Output HTML path (default wiki/wiki.html)')
-
     args = parser.parse_args()
 
     dispatch = {
@@ -158,7 +155,6 @@ def main():
         'stats': lambda: store_cmds.cmd_stats(args, DB_PATH),
         'publish': lambda: publish_cmds.cmd_publish(args, DB_PATH, WIKI_DIR, SCRIPTS_DIR),
         'record-event': lambda: publish_cmds.cmd_record_event(args, DB_PATH),
-        'index': lambda: publish_cmds.cmd_index(args, DB_PATH, WIKI_DIR),
     }
 
     if args.command in dispatch:

@@ -283,36 +283,6 @@ def _slim_entry(e: dict) -> dict:
     }
 
 
-def _write_html_index(entries: list[dict], wiki_dir: Path) -> Path:
-    """v3.3：重新生成 wiki/wiki.html 静态语义索引（id/date/type/title/tldr/tags）。"""
-    rows = []
-    for e in entries:
-        tldr = (e.get("summary") or {}).get("tldr") or e.get("overview") or ""
-        tags = ", ".join(e.get("tags") or [])
-        rows.append(
-            f'<tr><td class="id">{e.get("id")}</td><td>{e.get("date")}</td>'
-            f'<td>{e.get("topic_type")}</td><td class="t">{e.get("title")}</td>'
-            f'<td class="m">{tldr}</td><td class="m">{tags}</td></tr>'
-        )
-    html = f"""<!DOCTYPE html>
-<html lang="zh-CN"><head><meta charset="utf-8"><title>Wiki Index</title>
-<style>
-body{{font-family:-apple-system,sans-serif;font-size:13px;color:#1f2328;margin:2rem}}
-table{{border-collapse:collapse;width:100%}}
-td,th{{border-bottom:1px solid #d0d7de;padding:.35rem .5rem;text-align:left;vertical-align:top}}
-.id{{font-family:monospace;color:#656d76;white-space:nowrap}}
-.t{{font-weight:600;max-width:360px}}
-.m{{color:#656d76;max-width:420px}}
-</style></head><body>
-<h1>Wiki Index — {len(entries)} entries</h1>
-<table><thead><tr><th>ID</th><th>Date</th><th>Type</th><th>Title</th><th>TL;DR</th><th>Tags</th></tr></thead>
-<tbody>{"".join(rows)}</tbody></table>
-</body></html>"""
-    out = Path(wiki_dir) / "wiki.html"
-    out.write_text(html, encoding="utf-8")
-    return out
-
-
 def _copy_assets(out_dir):
     """复制 assets/site/ 到 out_dir/assets/。"""
     asset_src = _ASSET_DIR
@@ -416,9 +386,6 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
     (data_dir / "entity_pages.json").write_text(
         json.dumps(entity_pages, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )
-
-    # v3.3：重新生成 wiki/wiki.html 静态语义索引
-    _write_html_index(display_entries, wiki_dir)
 
     # 站点已简化为单页结构，清理旧版多页站点的遗留页面（survey.html 已随冻结管线移除）
     for legacy_page in ("browse.html", "graph.html", "clusters.html", "timeline.html", "dive.html", "survey.html"):

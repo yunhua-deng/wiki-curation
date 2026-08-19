@@ -142,36 +142,51 @@ def canonicalize_entities(entities: dict, aliases_data: dict = None,
 
 
 # ---------------------------------------------------------------------------
-# 五类分组（entity_groups.yaml）
+# 五类分组（entity_groups.yaml，支持多分组：值为字符串或字符串列表）
 # ---------------------------------------------------------------------------
 def load_entity_groups(path=None) -> dict:
-    """加载分组配置：{groups: {name_casefold: group}, academia_keywords: [...]}。"""
+    """加载分组配置：{groups: {name_casefold: [group...]}, academia_keywords: [...]}。
+
+    groups 的值允许字符串或字符串列表（YAML list），统一归一化为列表。
+    """
     data = _load_yaml(Path(path) if path else GROUPS_PATH)
     groups = {}
-    for name, group in (data.get("groups") or {}).items():
-        g = str(group or "").strip()
-        if g in GROUP_VALUES:
-            groups[_casefold(name)] = g
+    for name, value in (data.get("groups") or {}).items():
+        values = value if isinstance(value, list) else [value]
+        valid = []
+        for v in values:
+            g = str(v or "").strip()
+            if g in GROUP_VALUES and g not in valid:
+                valid.append(g)
+        if valid:
+            groups[_casefold(name)] = valid
     keywords = [str(k).casefold() for k in (data.get("academia_keywords") or [])
                 if str(k or "").strip()]
     return {"groups": groups, "academia_keywords": keywords}
 
 
-def entity_group(name, bucket: str, cfg: dict = None) -> str:
-    """实体分组。显式 groups 映射优先；否则按默认规则：
-    bucket=author → person；bucket=company → 命中 academia_keywords（大小写不敏感
-    子串）则 academia 否则 company；bucket=product/series → product。
+def entity_groups_for(name, bucket: str, cfg: dict = None) -> list:
+    """实体分组列表（允许重叠，如 [oss, product] / [company, academia]）。
+
+    显式 groups 映射优先；否则按默认规则产生单元素列表：
+    bucket=author → [person]；bucket=company → 命中 academia_keywords（大小写不敏感
+    子串）则 [academia] 否则 [company]；bucket=product/series → [product]。
     """
     if cfg is None:
         cfg = load_entity_groups()
     g = cfg["groups"].get(_casefold(name))
     if g:
-        return g
+        return list(g)
     if bucket == "author":
-        return "person"
+        return ["person"]
     if bucket == "company":
         n = str(name or "").casefold()
         if any(k in n for k in cfg["academia_keywords"]):
-            return "academia"
-        return "company"
-    return "product"
+            return ["academia"]
+        return ["company"]
+    return ["product"]
+
+
+def entity_group(name, bucket: str, cfg: dict = None) -> str:
+    """向后兼容的单值接口：返回 entity_groups_for() 的第一个分组。"""
+    return entity_groups_for(name, bucket, cfg)[0]

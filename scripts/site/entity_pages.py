@@ -77,7 +77,7 @@ def build_entity_pages(db_path, wiki_dir) -> dict:
         pages[slug] = {
             "name": name,
             "type": slot["type"],
-            "group": EF.entity_group(name, slot["type"], group_cfg),
+            "groups": EF.entity_groups_for(name, slot["type"], group_cfg),
             "slug": slug,
             "watched": name in watched,
             "record_count": len(slot["entries"]),

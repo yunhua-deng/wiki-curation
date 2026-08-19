@@ -151,18 +151,24 @@ def test_entities_view_has_search_controls(tmp_path):
 
 
 def test_entities_view_grouped_sections(tmp_path):
-    """entities 视图：五组分区标题 + 低频（record_count==1）默认隐藏 toggle + group 字段。"""
+    """entities 视图：五组分区标题 + 低频（record_count==1）默认隐藏 toggle + groups 字段（多分组）。"""
     ws = _ws(tmp_path)
     db = ws / "data" / "wiki.db"
     ensure_schema(db)
     _seed(db)
+    conftest.seed_entry(db, "2026-08-02_bbbb", status="done")
+    L.set_entry_entities(db, "2026-08-02_bbbb",
+                         {"company": [], "author": [], "product": ["GR00T N1.7"], "series": []})
     out = build_site(db, ws, out_dir=tmp_path / "site_out")
     pages = json.loads((out / "data" / "entity_pages.json").read_text(encoding="utf-8"))
-    assert pages["figure-ai"]["group"] == "company"   # company bucket 默认规则
-    assert pages["helix"]["group"] == "product"       # product bucket 默认规则
+    assert pages["figure-ai"]["groups"] == ["company"]      # company bucket 默认规则
+    assert pages["helix"]["groups"] == ["product"]          # product bucket 默认规则
+    assert pages["gr00t-n17"]["groups"] == ["oss", "product"]   # 多分组：商业公司开源模型
+    assert "group" not in pages["figure-ai"]                # 单值 group 已下线，改为 groups 列表
     site_js = (out / "assets" / "site.js").read_text(encoding="utf-8")
     for label in ("高校与研究机构", "科技公司", "开源项目", "商业产品", "人物"):
         assert label in site_js, label
+    assert "groupsOf" in site_js and ".includes(g)" in site_js  # 一个实体在每个所属分组各渲染一张卡片
     assert "ent-toggle" in site_js                    # 低频实体展开 toggle
     assert "显示仅出现 1 次的实体" in site_js
     css = (out / "assets" / "site.css").read_text(encoding="utf-8")

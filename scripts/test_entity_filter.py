@@ -90,25 +90,51 @@ def test_canonicalize_alias_first_then_suppress():
 
 
 # ---------------------------------------------------------------------------
-# 分组：默认规则 + 显式映射优先
+# 分组：默认规则 + 显式映射优先 + 多分组（列表值）
 # ---------------------------------------------------------------------------
 def test_entity_group_default_rules():
     cfg = {"groups": {}, "academia_keywords": ["大学", "university", "lab"]}
-    assert EF.entity_group("翁荔", "author", cfg) == "person"
-    assert EF.entity_group("某某大学", "company", cfg) == "academia"
-    assert EF.entity_group("Some University", "company", cfg) == "academia"  # 大小写不敏感子串
-    assert EF.entity_group("Acme Corp", "company", cfg) == "company"
-    assert EF.entity_group("Helix", "product", cfg) == "product"
-    assert EF.entity_group("LingBot", "series", cfg) == "product"
+    assert EF.entity_groups_for("翁荔", "author", cfg) == ["person"]
+    assert EF.entity_groups_for("某某大学", "company", cfg) == ["academia"]
+    assert EF.entity_groups_for("Some University", "company", cfg) == ["academia"]  # 大小写不敏感子串
+    assert EF.entity_groups_for("Acme Corp", "company", cfg) == ["company"]
+    assert EF.entity_groups_for("Helix", "product", cfg) == ["product"]
+    assert EF.entity_groups_for("LingBot", "series", cfg) == ["product"]
 
 
 def test_entity_group_explicit_mapping_wins():
     cfg = EF.load_entity_groups()
-    assert EF.entity_group("蚂蚁灵波", "company", cfg) == "company"
-    assert EF.entity_group("清华大学", "company", cfg) == "academia"
-    assert EF.entity_group("VGGT", "product", cfg) == "oss"      # 显式 oss 覆盖 product 默认
-    assert EF.entity_group("GPT-5", "product", cfg) == "product"
-    assert EF.entity_group("李飞飞", "author", cfg) == "person"
+    assert EF.entity_groups_for("蚂蚁灵波", "company", cfg) == ["company"]
+    assert EF.entity_groups_for("清华大学", "company", cfg) == ["academia"]
+    assert EF.entity_groups_for("GPT-5", "product", cfg) == ["product"]
+    assert EF.entity_groups_for("李飞飞", "author", cfg) == ["person"]
+
+
+def test_entity_groups_multi_value():
+    """多分组：yaml 列表值原样返回（允许重叠）；单值归一化为单元素列表。"""
+    cfg = EF.load_entity_groups()
+    assert EF.entity_groups_for("GR00T N1.7", "product", cfg) == ["oss", "product"]
+    assert EF.entity_groups_for("Meta FAIR", "company", cfg) == ["company", "academia"]
+    assert EF.entity_groups_for("VGGT", "product", cfg) == ["oss"]  # 纯开源单值
+    # 向后兼容单值接口
+    assert EF.entity_group("GR00T N1.7", "product", cfg) == "oss"
+    assert EF.entity_group("某某大学", "company", cfg) == "academia"
+
+
+def test_load_entity_groups_normalizes_values(tmp_path):
+    """groups 值允许字符串或字符串列表；非法 group 名被丢弃。"""
+    p = tmp_path / "g.yaml"
+    p.write_text(
+        "groups:\n"
+        "  A: oss\n"
+        "  B: [oss, product]\n"
+        "  C: [product, bogus, oss]\n"
+        "academia_keywords:\n  - 大学\n",
+        encoding="utf-8")
+    cfg = EF.load_entity_groups(p)
+    assert cfg["groups"]["a"] == ["oss"]
+    assert cfg["groups"]["b"] == ["oss", "product"]
+    assert cfg["groups"]["c"] == ["product", "oss"]  # bogus 被过滤
 
 
 # ---------------------------------------------------------------------------

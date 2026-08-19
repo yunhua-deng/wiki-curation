@@ -362,7 +362,7 @@ async function init() {
     const watchOnly = document.getElementById('ent-filter-watch');
     if (!items.length) { list.innerHTML = '<p class="empty">No entities yet</p>'; return; }
 
-    // 五组分区（顺序固定）；group 由后端 entity_pages.json 给出，缺失时按 type 兜底
+    // 五组分区（顺序固定）；groups 由后端 entity_pages.json 给出（列表，允许重叠），缺失时按 type 兜底
     const GROUPS = [
       ['academia', '高校与研究机构'],
       ['company', '科技公司'],
@@ -370,8 +370,8 @@ async function init() {
       ['product', '商业产品'],
       ['person', '人物'],
     ];
-    const groupOf = (p) => p.group ||
-      (p.type === 'author' ? 'person' : p.type === 'company' ? 'company' : 'product');
+    const groupsOf = (p) => (Array.isArray(p.groups) && p.groups.length) ? p.groups :
+      [p.group || (p.type === 'author' ? 'person' : p.type === 'company' ? 'company' : 'product')];
     const expanded = {}; // group key -> 低频实体是否展开
 
     function cardHtml(p) {
@@ -405,10 +405,11 @@ async function init() {
         list.innerHTML = shown.map(cardHtml).join('') +
           `<p class="muted ent-total">共 ${matched.length} 个匹配${matched.length > 100 ? '，显示前 100' : ''}</p>`;
       } else {
-        // 默认：五组分区，组内 watched 置顶 + record_count 降序；低频（仅 1 次）默认隐藏
+        // 默认：五组分区，一个实体在其所属的每个分组里都渲染一张卡片；
+        // 组内 watched 置顶 + record_count 降序；低频（仅 1 次）默认隐藏（按组成员独立计算）
         let html = '';
         for (const [g, label] of GROUPS) {
-          const inGroup = items.filter(p => groupOf(p) === g);
+          const inGroup = items.filter(p => groupsOf(p).includes(g));
           if (!inGroup.length) continue;
           const byCount = (a, b) => b.record_count - a.record_count;
           const watched = inGroup.filter(p => p.watched).sort(byCount);

@@ -62,6 +62,12 @@ entities:
     蚂蚁集团:
       - Ant Group
       - 蚂蚁金服
+    阿里巴巴集团:
+      - Alibaba Group）
+      - Alibaba Group
+      - 阿里巴巴
+    光轮智能:
+      - 光轮科技
     极佳科技:
       - GigaWorld
       - 极佳
@@ -76,6 +82,7 @@ entities:
     清华智能产业研究院:
       - AIR
       - Tsinghua AIR
+      - 清华大学智能产业研究院
     上海人工智能实验室:
       - Shanghai AI Lab
       - 浦江实验室
@@ -93,6 +100,7 @@ entities:
       - Zhejiang University
     上海交通大学:
       - SJTU
+      - 上海交大
     香港大学:
       - HKU
     香港中文大学:
@@ -132,7 +140,10 @@ entities:
     VGGT:
       - VGGT-omega
       - vggt
-    DINOv3: []
+    DINOv3:
+      - DINOv3-H
+      - DINOv3-7B
+      - DINOv3-ViT-S
     DINOv2: []
 
     GR00T N1:
@@ -145,7 +156,8 @@ entities:
       - GR00T
       - GR00T-1.7
       - GR00T-N1.7
-    MolmoAct2: []
+    MolmoAct2:
+      - MolmoAct2-Think
     Pi0: []
     SmolVLA: []
 
@@ -163,9 +175,12 @@ entities:
       - Qwen3-VL-Inst-4B
       - Qwen3-VL-Instruct
       - Qwen3-VL-8B-Thinking
+      - Qwen3-VL 8B
     V-JEPA 2:
       - V-JEPA2
       - V-JEPA 2.1
+      - V-JEPA2.1
+      - V-JEPA2-Giant
     HY-World 2.0:
       - HY-World-2.0
     SO-ARM101:
@@ -178,6 +193,36 @@ entities:
       - GPT-5.2
       - GPT-5.4
       - GPT-5.5
+    # --- v2 增补 canonical ---
+    Qwen3:
+      - Qwen3-4B
+      - Qwen3-1.7
+      - Qwen3-0.6
+      - Qwen3-4B LLM
+    DeepSeek-R1:
+      - DeepSeek-R1-Distill
+    Depth Anything V3:
+      - DepthAnything-V3
+      - Depth-Anything-V3
+    LIBERO:
+      - LIBERO-10
+      - LIBERO-90
+      - LIBERO-100
+    ViT:
+      - ViT-L/16
+      - ViT-L/14
+      - ViT-H/16
+      - ViT-g/16
+      - ViT-H/14
+      - ViT-B/16
+    RLDX-1:
+      - RLDX-1 8B
+    Gemini Robotics:
+      - Robotics-ER 1.5
+      - Robotics-ER 1.6
+      - ER-1.5
+    Claude:
+      - Claude Fable 5
 
   # --- 人物/作者实体别名 ---
   # key: canonical 中文或英文名
@@ -190,12 +235,18 @@ entities:
     李飞飞:
       - Fei-Fei Li
       - Fei Fei Li
+      - Li Fei-Fei
     何恺明:
       - Kaiming He
     谢赛宁:
       - Saining Xie
     贾扬清:
       - Yangqing Jia
+    Jim Fan:
+      - Linxi "Jim" Fan†
+      - Linxi "Jim" Fan
+      - Linxi Fan
+      - Jim Fan†
 
 # --- 技术系列/产品族根节点 ---
 # key: series canonical 名称
@@ -501,6 +552,68 @@ suppress:
   - ROS1/ROS2
   - V-JEPA2 ViT
   - 关联 |
+  # --- v2 增补：漏网的垃圾/组合/碎片 ---
+  # （'Alibaba Group）' 不在此列——已收编为 阿里巴巴集团 的别名，alias→canonical 先于 suppress 生效）
+  - 机器之心（报道）
+  - 工具/状态/反馈/安全
+  - Main Content
+  - et al.
+  - JtehO7-n9dA0xw
+  - 具身智能研究室
+  - BY-NC-SA 4.0
+  - AGPL-3.0
+  - C0-C1 Backbone
+  - EO-1 vs
+  - Macro-F1
+  - Top-1
+  - MATH-500
+  - M/631M
+  - B-A3B
+  - B-7B
+  - B-72B
+  - Tier-1
+  - K-10K
+  - N-1
+  - H-1
+  - T-1
+  - System-1
+  - System-2
+  - Feed-Forward 3D
+  - Small-scale 3D
+  - Large-scale 3D
+  - D/3D LiDAR
+  - D-to-3D
+  - MPEG-4 Motion
+  - Qwen3-VL backbone
+  - SO-ARM101 MuJoCo
+  - GPT-5.2 baseline
+  - RLDX-1 Technical
+  - GR-1 Tabletop
+  - SO-101 Bench
+  - VL-3B
+  - VL-7B
+  - VL-3B-Instruct
+  - F-85
+  # --- v2 增补：型号组合（两个实体拼一起，无聚合价值）---
+  - GEN-1/DM0
+  - VGGT/DA3/WorldMirror
+  - DINOv2/DINOv3
+  - RT-2/OpenVLA
+  - RT-1/RT-2
+  - StarVLA/MolmoAct2
+  - SONIC/GENE-26.5
+  - RLWRLD/RLDX-1
+  - SigLIP/DINOv2
+  - GPT-4V/Gemini
+  - Dexmal/DW05-Base
+  - DexImit/D2E
+  - DORA-rs/ROS2
+  - SO-100/SO-101
+  - SO-100/SO-ARM-101
+  - GR00T-Dreams/Cosmos
+  - NVIDIA/Isaac-GR00T
+  - PaLM-E/RT-2
+  - RT-2-X 16.5
 
 # 正则（re.IGNORECASE，search 语义）：命中即剔除
 suppress_patterns:

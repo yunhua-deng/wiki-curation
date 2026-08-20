@@ -50,6 +50,7 @@ _INDEX_CONTENT = """
     <input type="search" id="ent-search" placeholder="Search entities..." autocomplete="off">
     <label class="watch-only" title="只看 watched 实体"><input type="checkbox" id="ent-filter-watch"> ★ Watched</label>
   </div>
+  <div class="nav-pills ent-chipbar" id="ent-chipbar"></div>
   <div id="entities-list"></div>
   <div id="entity-detail"></div>
 </div>

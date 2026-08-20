@@ -176,10 +176,20 @@ a:hover{text-decoration:underline}
 .entity-detail-card h4 { margin: .9rem 0 .3rem; }
 
 /* Entities 列表控制 + 分区 (v3.18) */
-.ent-section{font-size:.95rem;margin:1rem 0 .5rem}
+.ent-section{font-size:.95rem;margin:1rem 0 .5rem;cursor:pointer;user-select:none}
+.ent-section:hover{color:var(--accent)}
+.ent-section .ent-caret{color:var(--muted);font-size:.8rem;margin-right:.15rem}
 .ent-total{font-size:.8rem;margin:.5rem 0}
 .ent-toggle{background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:.8rem;padding:.25rem .6rem;cursor:pointer}
 .ent-toggle:hover{color:var(--accent);border-color:var(--accent)}
+
+/* Entities 视图改版 (v3.23)：类型过滤 chips + 可折叠组体 + 网格紧凑卡片 */
+.ent-chipbar{justify-content:flex-start;margin:.25rem 0 .25rem}
+.ent-group-body.collapsed{display:none}
+.ent-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.5rem}
+.ent-grid .entity-card{padding:.4rem .6rem;margin-bottom:0}
+.ent-grid .entity-card h3{font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ent-grid .entity-card .trend-meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* Entity 时间线柱状图 (v3.18) */
 .tl-wrap{padding-bottom:1.4rem;overflow-x:auto}

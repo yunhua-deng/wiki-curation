@@ -171,8 +171,18 @@ def test_entities_view_grouped_sections(tmp_path):
     assert "groupsOf" in site_js and ".includes(g)" in site_js  # 一个实体在每个所属分组各渲染一张卡片
     assert "ent-toggle" in site_js                    # 低频实体展开 toggle
     assert "显示仅出现 1 次的实体" in site_js
+    # v3.23：类型过滤 chips + 分组折叠（localStorage 持久）+ 网格布局
+    assert "ent-chip-filter" in site_js               # 类型过滤 chips（全部/五组，含组计数）
+    assert "wiki.entCollapsed" in site_js             # 分组折叠状态持久化
+    assert "wiki.entExpanded" in site_js              # 低频展开状态持久化
+    assert "localStorage" in site_js
+    assert "ent-grid" in site_js                      # 网格卡片容器
+    html = (out / "index.html").read_text(encoding="utf-8")
+    assert 'id="ent-chipbar"' in html                 # chips 容器
     css = (out / "assets" / "site.css").read_text(encoding="utf-8")
     assert ".ent-toggle" in css
+    assert "grid-template-columns:repeat(auto-fill,minmax(230px,1fr))" in css
+    assert ".ent-group-body.collapsed" in css
 
 
 def test_entity_detail_structured(tmp_path):

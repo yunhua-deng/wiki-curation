@@ -95,7 +95,18 @@ python scripts/cli.py --json run --id <slug>
 python scripts/cli.py --json publish --id <slug>
 ```
 
-Concurrency: with multiple queued entries, run steps 4–5 **in parallel per entry** (one extraction sub-agent per slug). `publish` is serialized per wiki via a `.publish.lock` file lock — on `BUSY`, wait and retry. `pop --limit 3` is the default local batch cap; do not exceed it without explicit user approval.
+Concurrency: with multiple queued entries, run steps 4–5 **in parallel per entry** (one extraction sub-agent per slug). `publish` is serialized per wiki via a `.publish.lock` file lock — on `BUSY`, wait and retry. `pop --limit 3` is the default local batch cap; do not exceed it without explicit user approval. Before declaring a batch done, reconcile completions per **Sub-agent completion reconciliation** below.
+
+## Sub-agent completion reconciliation
+
+Sub-agent completion events are **best-effort** in some harnesses (e.g. OpenClaw's announce can be silently dropped while the requester is mid-turn). Never let the pipeline hang waiting for an event:
+
+1. **Ledger.** When spawning extraction agents (one per popped slug), record the full list of expected slugs. Mark each off as its completion event arrives.
+2. **Timeout fallback.** If any slug is still unmarked after ~10 minutes, reconcile on demand (single check, not a poll loop):
+   - Check child status with the harness's own tool (`subagents list` / task list — whatever the harness provides).
+   - Check the artifact: `wiki/artifacts/<slug>/record.json`. **If the record exists, extraction is done** — proceed to `publish --id <slug>` even if the event never arrived.
+3. **No false completion.** Never tell the user the batch is finished until every ledger entry is marked off or reconciled via artifact check. If events were lost, say so explicitly ("completion event not delivered; reconciled via artifact").
+4. **Late events.** If a completion event arrives after the final reply, follow the harness's late-event rule (OpenClaw: reply `NO_REPLY`) — the ledger must already be closed by then.
 
 ## CLI reference
 

@@ -99,13 +99,18 @@ Concurrency: with multiple queued entries, run steps 4–5 **in parallel per ent
 
 ## Sub-agent completion reconciliation
 
-Sub-agent completion events are **best-effort** in some harnesses (e.g. OpenClaw's announce can be silently dropped while the requester is mid-turn). Never let the pipeline hang waiting for an event:
+Sub-agent completion events are **best-effort** in some harnesses (e.g. OpenClaw's announce can be silently dropped while the requester is mid-turn). Never let the pipeline hang waiting for an event. The deterministic fallback is the `reconcile` CLI command — the artifact (`wiki/artifacts/<slug>/record.json`) is the source of truth, not the event:
+
+```bash
+# Reconcile the full ledger of expected slugs
+python scripts/cli.py --json reconcile --id <slug1> --id <slug2>
+# With no --id, reconciles all status=running entries (manual rescue path)
+python scripts/cli.py --json reconcile
+```
 
 1. **Ledger.** When spawning extraction agents (one per popped slug), record the full list of expected slugs. Mark each off as its completion event arrives.
-2. **Timeout fallback.** If any slug is still unmarked after ~10 minutes, reconcile on demand (single check, not a poll loop):
-   - Check child status with the harness's own tool (`subagents list` / task list — whatever the harness provides).
-   - Check the artifact: `wiki/artifacts/<slug>/record.json`. **If the record exists, extraction is done** — proceed to `publish --id <slug>` even if the event never arrived.
-3. **No false completion.** Never tell the user the batch is finished until every ledger entry is marked off or reconciled via artifact check. If events were lost, say so explicitly ("completion event not delivered; reconciled via artifact").
+2. **Timeout fallback.** If any slug is still unmarked after ~10 minutes, run `reconcile` with the full ledger (single check, not a poll loop). For every slug in the `done` list, proceed to `publish --id <slug>` even if the event never arrived; for `missing` ones, optionally check child status with the harness's own tool (`subagents list` / task list — whatever the harness provides) and keep waiting.
+3. **Mandatory pre-completion gate.** Before telling the user a batch is finished, you MUST run `reconcile` on the full ledger and get `all_done: true` (with every entry published). "I received N events" is not proof of completion — the reconcile output is. If events were lost, say so explicitly ("completion event not delivered; reconciled via artifact").
 4. **Late events.** If a completion event arrives after the final reply, follow the harness's late-event rule (OpenClaw: reply `NO_REPLY`) — the ledger must already be closed by then.
 
 ## CLI reference
@@ -121,6 +126,7 @@ All commands support `--json`. `--workspace PATH` overrides `$WIKI_WORKSPACE`.
 | `run --id <slug>` | Classify + collect + emit record extraction task |
 | `publish --id <slug>` | Validate record.json, store links/relations/entities, rebuild site |
 | `recall --input "..." [--limit N]` | 4-layer similarity recall with reasons |
+| `reconcile [--id X ...]` | 子 agent 完成对账：record.json 事实源 → done/missing（缺省全部 running，只读） |
 | `search "query"` | FTS5 full-text search |
 | `analyze --topic "..."` | Evidence cluster across records |
 | `analyze --dedup` | Duplicate candidate pairs (same_url / shared_link) |

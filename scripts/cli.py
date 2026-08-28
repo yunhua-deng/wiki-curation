@@ -417,6 +417,26 @@ def cmd_recall(args) -> int:
         return 1
 
 
+def cmd_reconcile(args) -> int:
+    """reconcile：子 agent 完成对账——以 record.json 为事实源（只读）。"""
+    try:
+        from scripts.reconcile import reconcile
+        data = reconcile(getattr(args, "id", None))
+        _print_result({"ok": True, "data": data}, args.json)
+        if not args.json:
+            for d in data["done"]:
+                mark = "✅" if d["status"] == "done" else "📦"
+                print(f"  {mark} {d['id']}  status={d['status']} record={d['record_bytes']}B")
+            for m in data["missing"]:
+                print(f"  ⏳ {m['id']}  status={m['status']} record=MISSING")
+            for c in data["next_cmds"]:
+                print(f"  next: {c}")
+        return 0
+    except Exception as e:
+        _print_result({"ok": False, "error": "RECONCILE_FAILED", "message": str(e)}, args.json)
+        return 1
+
+
 def cmd_verify_links(args) -> int:
     try:
         from scripts.records.verify_links import verify_entry_links
@@ -674,7 +694,7 @@ def cmd_manifest(args) -> int:
     manifest = {
         # CLI manifest 独立语义版本：随命令清单/JSON 契约变更递增，
         # 与 assets/site.js 注释里的站点版本号（v3.xx）是两套编号，不要对齐。
-        "version": "3.6",
+        "version": "3.7",
         "entry": "python skills/wiki-curation/scripts/cli.py",
         "global_flags": ["--json", "--quiet", "--workspace PATH"],
         "commands": [
@@ -689,6 +709,8 @@ def cmd_manifest(args) -> int:
             {"name": "pop", "args": ["--limit"], "description": "取出 pending 任务"},
             {"name": "publish", "args": ["--id", "--site-only"], "description": "记录发布：validate record.json + links/relations 入库（--site-only 仅重建站点）"},
             {"name": "recall", "args": ["--input", "--limit"], "description": "四层确定性相似召回"},
+            {"name": "reconcile", "args": ["--id (可重复)"],
+             "description": "子 agent 完成对账：以 record.json 为事实源输出 done/missing（缺省对账全部 running 条目，只读）"},
             {"name": "verify-links", "args": ["--id", "--limit"], "description": "验证条目链接可达性（curl HEAD）"},
             {"name": "analyze", "args": ["--topic", "--dedup", "--discover", "--days", "--limit"], "description": "主题聚簇 / 去重候选 / 热点发现"},
             {"name": "add-link", "args": ["--id", "--url", "--role"],
@@ -854,6 +876,10 @@ def main():
     p_recall.add_argument("--input", "-i", required=True)
     p_recall.add_argument("--limit", "-n", type=int, default=5)
 
+    p_reconcile = sub.add_parser("reconcile", help="子 agent 完成对账：以 record.json 为事实源（只读）")
+    p_reconcile.add_argument("--id", action="append",
+                             help="expected slug（可重复；缺省对账全部 running 条目）")
+
     p_vlinks = sub.add_parser("verify-links", help="验证链接可达性")
     p_vlinks.add_argument("--id", required=True)
     p_vlinks.add_argument("--limit", "-n", type=int, default=20)
@@ -921,7 +947,8 @@ def main():
         "stats": cmd_stats, "sync": cmd_sync, "requeue": cmd_requeue,
         "delete": cmd_delete, "update": cmd_update, "status": cmd_status,
         "events": cmd_events, "record-event": cmd_record_event,
-        "dedup": cmd_dedup, "recall": cmd_recall, "verify-links": cmd_verify_links,
+        "dedup": cmd_dedup, "recall": cmd_recall, "reconcile": cmd_reconcile,
+        "verify-links": cmd_verify_links,
         "star": cmd_star,
         "analyze": cmd_analyze,
         "add-link": cmd_add_link, "watch": cmd_watch,

@@ -1,6 +1,6 @@
 # wiki-curation 维护守则
 
-本 repo 是 wiki-curation skill 的单源（下游工作区如 D:/openclaw-workspace 通过根 AGENTS.md 指向 `D:/wiki-curation/SKILL.md` 使用本 skill）。每次修改本 skill 后，必须先通过契约测试，再汇报完成。
+本 repo 是 wiki-curation skill 的单源。各 agent 通过用户目录下的标准 skill 加载点使用本 skill 的 clone（OpenClaw / Kimi Code: `~/.agents/skills/wiki-curation`，Kimi Code 另有 `~/.kimi-code/skills/wiki-curation`，Claude Code: `~/.claude/skills/wiki-curation`）；工作区只有一个 `D:/wiki-workspace`（所有 agent 共用，也是 OpenClaw 的工作区）。每次修改本 skill 后，必须先通过契约测试，再汇报完成；推送后需在各 clone `git pull` 同步。
 
 ## 本地契约测试（每次提交前必跑）
 

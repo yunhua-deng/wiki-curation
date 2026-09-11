@@ -173,7 +173,7 @@ def _llm_score(prompt: str, model: str | None = None) -> dict:
 
     Provider selection:
       1. Explicit model prefix (e.g. ``kimi/kimi-k2.7-code``,
-         ``deepseek/deepseek-v4-flash``).
+         ``deepseek/deepseek-flash``).
       2. Environment keys in priority order: DeepSeek, Kimi, Anthropic, OpenAI.
     """
     keys = {

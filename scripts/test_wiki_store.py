@@ -34,3 +34,24 @@ def test_search_latin_still_works(db):
 def test_search_no_match(db):
     store.upsert_task(db, "e1", title="具身智能机器人", status="done")
     assert store.search(db, "完全无关的zzzqqq") == []
+
+
+def test_search_long_cjk_query_without_spaces(db):
+    """无空格中文长查询（>= BIGRAM_MIN_CJK 字）：整串短语只命中连续出现的条目，
+    二字组回退后还能召回只含部分词的条目（e2 修复前召回为空）。"""
+    store.upsert_task(db, "e1", title="机器人抓取策略综述",
+                      overview="具身智能抓取任务的方法梳理", tags="robotics", status="done")
+    store.upsert_task(db, "e2", title="具身智能机器人抓取与规划策略综述",
+                      overview="抓取与策略的联合学习", tags="robotics", status="done")
+    assert {e["id"] for e in store.search(db, "机器人抓取策略")} == {"e1", "e2"}
+    assert {e["id"] for e in store.search(db, "机器人")} == {"e1", "e2"}   # 短查询不回归
+    assert {e["id"] for e in store.search(db, "robotics")} == {"e1", "e2"}  # 拉丁查询不回归
+
+
+def test_search_multi_term_keeps_and_semantics(db):
+    """多词查询是 AND 语义；其中一个词展开成二字组 OR 组后表达式仍须可解析。"""
+    store.upsert_task(db, "e1", title="机器人抓取策略综述",
+                      overview="VLA 抓取任务", tags="VLA", status="done")
+    store.upsert_task(db, "e2", title="机器人抓取策略综述",
+                      overview="仅中文条目", tags="robotics", status="done")
+    assert {e["id"] for e in store.search(db, "VLA 机器人抓取策略")} == {"e1"}

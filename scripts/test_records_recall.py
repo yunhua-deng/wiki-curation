@@ -100,6 +100,16 @@ def test_fts_matches_chinese_term(kb):
     assert "e1" in ids
 
 
+def test_fts_matches_long_cjk_query_without_spaces(kb):
+    """无空格中文长查询：整串短语召回为空，二字组回退后应召回只含部分词的条目。"""
+    upsert_task(kb, "e4", source_input="https://example.com/grasp",
+                title="具身智能机器人抓取与规划策略综述", overview="抓取与策略的联合学习",
+                tags="robotics", status="done")
+    assert "e4" in R._fts_matches(kb, "机器人抓取策略")
+    assert "e4" in R._fts_matches(kb, "机器人")              # 短查询不回归
+    assert "e2" in R._fts_matches(kb, "humanoid")           # 拉丁查询不回归
+
+
 def test_fts_url_tokens(kb):
     """URL 也能通过拆出的关键词命中 FTS（host/路径词）。"""
     out = R.recall(kb, "https://example.com/humanoid-vla-news", variant_map=VARIANT_MAP)

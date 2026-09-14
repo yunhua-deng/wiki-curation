@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from scripts.wiki_index.schema import ensure_schema, normalize_topic_type
-from scripts.wiki_index.fts_text import to_index_text, to_match_phrase, split_terms
+from scripts.wiki_index.fts_text import to_index_text, to_match_expr, split_terms
 from scripts import paths
 
 def _row_to_entry(row):
@@ -395,12 +395,16 @@ def delete_entry(db_path, id_or_file):
 
 
 def _escape_fts_query(query: str) -> str:
-    """安全转义 FTS5 查询：切词后每个词包成短语，用空格连接（AND 语义）。
+    """安全转义 FTS5 查询：切词后每个词转成表达式，用 AND 显式连接（AND 语义）。
 
     每个词都被引号包裹，因此用户输入的 FTS 运算符（AND/OR/NEAR/* 等）不会再被
-    解释为运算符，只当作普通文本匹配。
+    解释为运算符，只当作普通文本匹配。长度 >= BIGRAM_MIN_CJK 的无空格中文长串
+    由 to_match_expr 展开成逐字短语 OR 相邻二字组，否则整串短语会召回为空。
+
+    注意：多个词之间必须写显式 AND，不能用空格并列——FTS5 不接受括号组与相邻
+    短语之间的隐式 AND（`("a" OR "b") "c"` 会报 syntax error）。
     """
-    return ' '.join(to_match_phrase(t) for t in split_terms(query))
+    return ' AND '.join(to_match_expr(t) for t in split_terms(query))
 
 
 def search(db_path, query, limit=10):

@@ -94,6 +94,12 @@ def test_fts_match(kb):
     assert any(r["kind"] == "fts" for r in e2["reasons"])
 
 
+def test_fts_matches_chinese_term(kb):
+    """CJK 子串召回：e1 overview 含「人形机器人」，查询「机器人」应命中。"""
+    ids = R._fts_matches(kb, "机器人")
+    assert "e1" in ids
+
+
 def test_fts_url_tokens(kb):
     """URL 也能通过拆出的关键词命中 FTS（host/路径词）。"""
     out = R.recall(kb, "https://example.com/humanoid-vla-news", variant_map=VARIANT_MAP)

@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from scripts.wiki_index.schema import ensure_schema, normalize_topic_type
+from scripts.wiki_index.fts_text import to_index_text, to_match_phrase, split_terms
 from scripts import paths
 
 def _row_to_entry(row):
@@ -141,34 +142,25 @@ def _insert_entry(conn, entry):
     sql = f'INSERT OR REPLACE INTO entries ({cols}) VALUES ({placeholders})'
     conn.execute(sql, _entry_to_row(entry))
     rowid = conn.execute('SELECT rowid FROM entries WHERE id = ?', (entry['id'],)).fetchone()[0]
-    # 使用 INSERT OR REPLACE 维护外部内容 FTS5 索引，避免某些 SQLite 实现上
-    # DELETE + INSERT 触发 'database disk image is malformed'。
-    conn.execute('''
-        INSERT OR REPLACE INTO entries_fts (rowid, id, title, overview, tags)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (rowid, entry['id'], entry.get('title', ''), entry.get('overview', ''), _tags_to_str(entry.get('tags', []))))
+    search_text = to_index_text(entry['id'], entry.get('title', ''),
+                                entry.get('overview', ''), _tags_to_str(entry.get('tags', [])))
+    conn.execute(
+        'INSERT OR REPLACE INTO entries_fts (rowid, id, search_text) VALUES (?, ?, ?)',
+        (rowid, entry['id'], search_text)
+    )
 
 
 def _delete_entry_by_id(conn, eid):
     row = conn.execute('SELECT rowid FROM entries WHERE id = ?', (eid,)).fetchone()
     if row:
-        # 某些 Windows SQLite 对外部内容 FTS5 直接 DELETE 会报 malformed；
-        # 先置空 fts 行再删主表。
-        conn.execute('''
-            INSERT OR REPLACE INTO entries_fts (rowid, id, title, overview, tags)
-            VALUES (?, ?, '', '', '')
-        ''', (row[0], eid))
+        conn.execute('DELETE FROM entries_fts WHERE rowid = ?', (row[0],))
     conn.execute('DELETE FROM entries WHERE id = ?', (eid,))
 
 
 def _delete_entry_by_file(conn, filename):
     row = conn.execute('SELECT rowid FROM entries WHERE file = ?', (filename,)).fetchone()
     if row:
-        eid = conn.execute('SELECT id FROM entries WHERE file = ?', (filename,)).fetchone()[0]
-        conn.execute('''
-            INSERT OR REPLACE INTO entries_fts (rowid, id, title, overview, tags)
-            VALUES (?, ?, '', '', '')
-        ''', (row[0], eid))
+        conn.execute('DELETE FROM entries_fts WHERE rowid = ?', (row[0],))
     conn.execute('DELETE FROM entries WHERE file = ?', (filename,))
 
 
@@ -403,17 +395,12 @@ def delete_entry(db_path, id_or_file):
 
 
 def _escape_fts_query(query: str) -> str:
-    """安全转义 FTS5 查询。"""
-    tokens = []
-    for token in query.split():
-        if not token:
-            continue
-        if re.match(r'^[\w一-鿿]+$', token):
-            tokens.append(token)
-        else:
-            escaped = token.replace('"', '""')
-            tokens.append(f'"{escaped}"')
-    return ' '.join(tokens)
+    """安全转义 FTS5 查询：切词后每个词包成短语，用空格连接（AND 语义）。
+
+    每个词都被引号包裹，因此用户输入的 FTS 运算符（AND/OR/NEAR/* 等）不会再被
+    解释为运算符，只当作普通文本匹配。
+    """
+    return ' '.join(to_match_phrase(t) for t in split_terms(query))
 
 
 def search(db_path, query, limit=10):

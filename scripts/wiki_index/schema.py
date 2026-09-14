@@ -37,9 +37,7 @@ CREATE TABLE IF NOT EXISTS entries (
 
 FTS_SQL = """
 CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
-    id, title, overview, tags,
-    content='entries',
-    content_rowid='rowid'
+    id, search_text
 )
 """
 
@@ -410,6 +408,28 @@ def _migrate_v8_structural_edges(conn):
     _record_schema_version(conn, 'v8_structural_edges')
 
 
+def _migrate_v9_cjk_fts(conn):
+    """v9：CJK 分词——entries_fts 改为独立表，索引文本逐字切开后重建。"""
+    applied = _get_applied_versions(conn)
+    if 'v9_cjk_fts' in applied:
+        return
+
+    from scripts.wiki_index.fts_text import to_index_text
+
+    conn.execute("DROP TABLE IF EXISTS entries_fts")
+    conn.execute(FTS_SQL)
+    rows = conn.execute(
+        'SELECT rowid, id, title, overview, tags FROM entries'
+    ).fetchall()
+    for row in rows:
+        conn.execute(
+            'INSERT INTO entries_fts (rowid, id, search_text) VALUES (?, ?, ?)',
+            (row[0], row[1], to_index_text(row[1], row[2], row[3], row[4])),
+        )
+
+    _record_schema_version(conn, 'v9_cjk_fts')
+
+
 def applied_versions(db_path) -> set:
     """已应用的迁移版本集合（doctor 可观测 schema 迁移状态）。"""
     conn = sqlite3.connect(str(Path(db_path)))
@@ -459,6 +479,9 @@ def ensure_schema(db_path):
 
     # v8：纯收录定位——删除 shared_entity 边与 entity_watch 表
     _migrate_v8_structural_edges(conn)
+
+    # v9：CJK 分词——独立 FTS 表 + 逐字索引
+    _migrate_v9_cjk_fts(conn)
 
     conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_topic_type ON entries(topic_type)")

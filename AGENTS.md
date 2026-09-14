@@ -30,6 +30,7 @@ python eval/run_eval.py --llm
 - 不要提交 `__pycache__`、`.pytest_cache`、`*.egg-info`。
 - 新增依赖必须写入 `pyproject.toml`。
 - `relations` 表只存**结构边**：`same_url` / `shared_link` / `tag_overlap`（实体驱动的 `shared_entity` 边已废除，存量库由 v8 迁移清理）。
+- `entries_fts` 存的是 **CJK 逐字切开**后的 `search_text`，不是原文：索引侧（`store._insert_entry`）与查询侧（`store.search` / `recall._fts_query_or`）必须共用 `scripts/wiki_index/fts_text.py`。两侧不一致时中文子串召回会**静默退化**——v9 之前默认 unicode61 把连续汉字当单个 token，实测「智能」召回率仅 1%（1/186）。
 
 ## publish 与标识符约定
 

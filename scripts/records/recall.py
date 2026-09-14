@@ -16,6 +16,7 @@ from pathlib import Path
 from scripts.records import links as L
 from scripts.records.schema import normalize_url
 from scripts.wiki_index import store as wiki_store
+from scripts.wiki_index.fts_text import to_match_phrase
 
 SCORE_URL_EXACT = 100
 SCORE_SHARED_LINK = 40
@@ -74,18 +75,14 @@ def _default_variant_map() -> dict:
 def _fts_query_or(text: str) -> str:
     """把任意输入转成 FTS5 OR 查询。
 
-    先按非词字符切分（URL 也会拆成 host/路径关键词），每个 token 独立引号包裹，
-    OR 语义保证部分命中也能召回。
+    先按非词字符切分（URL 也会拆成 host/路径关键词），每个 token 经 to_match_phrase
+    转成短语（CJK 逐字成短语，从而子串可命中），OR 语义保证部分命中也能召回。
     """
     tokens = re.findall(r"[\w一-鿿]+", (text or ""))
     # 过滤无判别力的协议/通用 token 与单字符
     stop = {"http", "https", "www", "com", "org", "net", "html", "htm", "s", "abs"}
     tokens = [t for t in tokens if len(t) >= 2 and t.lower() not in stop]
-    parts = []
-    for t in tokens[:12]:
-        escaped = t.replace('"', '""')
-        parts.append(f'"{escaped}"')
-    return " OR ".join(parts)
+    return " OR ".join(to_match_phrase(t) for t in tokens[:12])
 
 
 def _fts_matches(db_path, input_text: str, limit: int = 10) -> list[str]:

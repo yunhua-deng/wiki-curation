@@ -28,8 +28,6 @@ def kb(tmp_path):
     L.replace_relations(db, "e1", [
         {"a": "e1", "b": "e2", "kind": "shared_link", "score": 40,
          "evidence": {"url": "https://arxiv.org/abs/2501.0001"}},
-        {"a": "e1", "b": "e2", "kind": "shared_entity", "score": 20,
-         "evidence": {"entity": "Figure AI"}},
     ])
     return db
 

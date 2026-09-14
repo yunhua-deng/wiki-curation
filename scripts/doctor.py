@@ -8,7 +8,8 @@ Wiki Harness Doctor — record 时代健康自检（v3.2 精简版）。
   3. db consistency       — db 与 artifacts 文件一致性
   4. git status           — wiki/ 未提交变更
   5. record tier          — 最近 done 条目是否有 record.json
-  6. unindexed entities   — 全库 entities 与 entity_aliases 差集（信息性）
+  6. schema version       — 已应用迁移版本（信息性；确认 v8 结构边迁移已落库）
+  7. unindexed entities   — 全库 entities 与 entity_aliases 差集（信息性）
 
 Usage:
   python skills/wiki-curation/scripts/doctor.py [--json] [--quick] [--fix-plan]
@@ -138,13 +139,38 @@ def check_record_tier():
 
 
 # ============================================================
-# 6. 未收录实体（信息性）
+# 6. schema 迁移版本（信息性）
+# ============================================================
+def check_schema_version():
+    """已应用迁移版本（信息性）：确认迁移已落库，如 v8 结构边迁移。"""
+    try:
+        from scripts.wiki_index import schema as SC
+        db_path = paths.db_path()
+        if not db_path.exists():
+            return {'check': 'schema version (wiki.db)', 'passed': True,
+                    'summary': 'SKIP: wiki.db NOT FOUND'}
+        applied = sorted(SC.applied_versions(db_path))
+    except Exception as e:
+        return {'check': 'schema version (wiki.db)', 'passed': False, 'summary': f'Error: {e}'}
+    if not applied:
+        return {'check': 'schema version (wiki.db)', 'passed': False,
+                'summary': 'schema_version empty (未执行建库/迁移)'}
+    return {
+        'check': 'schema version (wiki.db)',
+        'passed': True,
+        'summary': f"{len(applied)} migrations applied, latest={applied[-1]}",
+        'details': applied,
+    }
+
+
+# ============================================================
+# 7. 未收录实体（信息性）
 # ============================================================
 def check_unindexed_entities():
     """全库 entities 列与 entity_aliases.yaml 差集报告。"""
     try:
         from scripts.records import links as L
-        from scripts.site.entities import load_aliases
+        from scripts.entity_filter import load_aliases
         db_path = paths.db_path()
         aliases = load_aliases()
     except Exception as e:
@@ -244,6 +270,7 @@ def main():
     run(check_db_md_consistency)
     run(check_git_status)
     run(check_record_tier)
+    run(check_schema_version)
     run(check_unindexed_entities)
 
     passed = sum(1 for c in checks if c.get('passed', False))

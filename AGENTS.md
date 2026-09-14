@@ -25,10 +25,11 @@ python eval/run_eval.py --llm
 
 ## 关键约束
 
-- 不要破坏 `cli.py --json manifest` / `run` / `doctor` / `stats` / `classify` / `recall` / `analyze` / `publish` / `entities` 的 JSON 契约。
+- 不要破坏 `cli.py --json manifest` / `run` / `doctor` / `stats` / `classify` / `recall` / `analyze` / `publish` 的 JSON 契约；`entities` 只保留只读契约（`--list` / `--name X`，无 watch / 摘要字段）。
 - 仅允许 `cli.py` 包含 `sys.path.insert` 条件引导。
 - 不要提交 `__pycache__`、`.pytest_cache`、`*.egg-info`。
 - 新增依赖必须写入 `pyproject.toml`。
+- `relations` 表只存**结构边**：`same_url` / `shared_link` / `tag_overlap`（实体驱动的 `shared_entity` 边已废除，存量库由 v8 迁移清理）。
 
 ## publish 与标识符约定
 
@@ -45,10 +46,11 @@ python eval/run_eval.py --llm
 - `references/` —— agent 需要读取的知识/规则：
   - `sources.yaml`（来源类型、分类规则）
   - `record_schema.json`（record.json 约束常量，records/schema.py 消费）
-  - `entity_aliases.yaml`（实体 canonical/别名映射 + suppress 抑制名单）
-  - `entity_groups.yaml`（实体五类分组 + academia_keywords）
+  - `entity_aliases.yaml`（实体 canonical/别名映射 + suppress 抑制名单；`scripts/entity_filter.py` 是唯一读取入口，recall 实体层与站点搜索扩展也从这里取）
+  - `entity_groups.yaml`（实体五类分组 + academia_keywords；供 `entity_filter.py` 分组查询与 canonical 豁免）
 - `assets/` —— 前端静态资源：
   - `assets/site/`（site.js / site.css / marked.min.js）
+- 工作区骨架（`scripts/bootstrap.py` 的 `SKELETON_DIRS`）：`artifacts/` / `data/` / `failures/` / `docs/` —— 实体综合层目录 `entities/` 已废除。
 
 > 不再维护 `wiki/configs/` 运行时覆盖目录，避免双源头。
 

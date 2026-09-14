@@ -108,10 +108,11 @@ def test_publish_record_happy_path(tmp_path, monkeypatch):
     ents = L.get_entry_entities(db, "rec1")
     assert ents["company"] == ["Figure AI"] and ents["product"] == ["Helix"]
 
-    # relations 边：shared_link(rec2 arxiv) + shared_entity(Figure AI)
+    # relations 边：shared_link(rec2 arxiv)
     rel = L.get_related(db, "rec1")
     kinds = {r["kind"] for r in rel}
-    assert "shared_link" in kinds and "shared_entity" in kinds
+    assert "shared_link" in kinds
+    assert "shared_entity" not in kinds
     assert all(r["other"] == "rec2" for r in rel)
 
 
@@ -171,7 +172,7 @@ def test_publish_article_legacy_by_depth(tmp_path, monkeypatch):
 
 
 def test_compute_relations_kinds(tmp_path):
-    """compute_relations 四种边类型。"""
+    """compute_relations 三类结构边。"""
     from scripts.wiki_index.schema import ensure_schema
     db = tmp_path / "wiki.db"
     ensure_schema(db)
@@ -192,8 +193,9 @@ def test_compute_relations_kinds(tmp_path):
         by_target.setdefault(other, set()).add(e["kind"])
     assert "same_url" in by_target["b"]
     assert "shared_link" in by_target["c"]
-    assert "shared_entity" in by_target["c"]
     assert "tag_overlap" in by_target["c"]
+    # 共享实体不再产生边
+    assert all("shared_entity" not in kinds for kinds in by_target.values())
 
 
 # ---------- v3.7: add-time RECALL 事件 → record preview 注入 ----------
@@ -247,20 +249,3 @@ def test_cmd_add_persists_recall_event(tmp_path, monkeypatch, capsys):
     assert cli.cmd_add(args) == 0
     events = wiki_index.get_events(paths.db_path(tmp_path), slug="rec9", action="RECALL")
     assert events and json.loads(events[0]["detail"])["matches"][0]["id"] == "rec1"
-
-
-# ---------- Task 2: publish watched 实体 hint ----------
-
-def test_publish_outputs_watched_entity_hint(tmp_path, monkeypatch):
-    _patch_ws(tmp_path, monkeypatch)
-    db = paths.db_path(tmp_path)
-    _seed_record_entry(db, tmp_path)
-    from scripts.entity_summary import watch_entity
-    watch_entity(db, "Figure AI", type="company")
-
-    captured = []
-    with mock.patch("builtins.print", captured.append):
-        publish_cmds.cmd_publish(_publish_args(), db, tmp_path, SCRIPT_DIR)
-
-    data = json.loads(captured[-1])
-    assert data["ok"] and data.get("watched_entities") == ["Figure AI"]

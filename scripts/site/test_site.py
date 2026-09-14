@@ -111,13 +111,9 @@ def test_build_site_outputs(sample_workspace):
     assert not (out_dir / "data" / "graph.json").exists()
     assert not (out_dir / "data" / "search_index.json").exists()
 
-    # entities.json 是 Phase 1 新增产物
-    assert (out_dir / "data" / "entities.json").exists()
-    entities = json.loads((out_dir / "data" / "entities.json").read_text(encoding="utf-8"))
-    assert "by_entry" in entities
-    assert "by_type" in entities
-    assert "2026-07-01_alpha" in entities["by_entry"]
-
+    # 实体可视化层已移除：不再产出 entities.json / entity_pages.json
+    assert not (out_dir / "data" / "entities.json").exists()
+    assert not (out_dir / "data" / "entity_pages.json").exists()
 
     # themes.json 已停止生成；timeline.json 仍在生成；旧版页面清理照常
     # 旧版多页站点遗留的页面会在重建时被清理
@@ -128,7 +124,7 @@ def test_build_site_outputs(sample_workspace):
 
 
 def test_build_site_record_fields(sample_workspace):
-    """v3.0：record 条目导出 has_record/links。"""
+    """v3.0：record 条目导出 has_record/links/entities。"""
     import json
     wiki_dir, db_path = sample_workspace
 
@@ -161,9 +157,13 @@ def test_build_site_record_fields(sample_workspace):
     assert alpha["has_record"] is True
     assert len(alpha["links"]) == 1
     assert alpha["links"][0]["kind"] == "arxiv"
+    # 实体字段保留（站点 Records 搜索框按它匹配），仅不再注入 _related
+    assert alpha["entities"] == record["entities"]
+    assert "_related" not in alpha
     beta = [e for e in entries if e["id"] == "2026-07-01_beta"][0]
     assert beta["has_record"] is False
     assert len(beta["links"]) == 1  # links 表对无 record 条目同样导出
+    assert "_related" not in beta
 
 
 def test_serve_pid_file_lifecycle(sample_workspace, tmp_path):
@@ -231,29 +231,10 @@ def test_render_pages_no_survey_html(tmp_path):
     assert not (out / "survey.html").exists()
     index_html = (out / "index.html").read_text(encoding="utf-8")
     assert "site.js" in index_html
+    # 实体视图入口已移除
+    assert "nav-entities" not in index_html
+    assert "entities-view" not in index_html
 
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-
-
-def test_build_related_map_includes_titles(tmp_path):
-    from scripts.wiki_index.schema import ensure_schema
-    from scripts.records import links as L
-    from scripts.site.build import _build_related_map
-    db = tmp_path / "data" / "wiki.db"
-    db.parent.mkdir(parents=True, exist_ok=True)
-    ensure_schema(db)
-    from scripts import conftest
-    conftest.seed_entry(db, "a1", status="done")
-    conftest.seed_entry(db, "a2", status="done")
-    L.replace_links(db, "a1", [{"url": "https://arxiv.org/abs/2501.0001", "kind": "arxiv"}])
-    L.replace_links(db, "a2", [{"url": "https://arxiv.org/abs/2501.0001", "kind": "arxiv"}])
-    from scripts.records import relations as REL
-    REL.rewire_relations(db, "a1")
-    entries = [{"id": "a1", "title": "Alpha"}, {"id": "a2", "title": "Beta Paper"}]
-    m = _build_related_map(db, entries)
-    assert m["a1"][0]["id"] == "a2" and m["a1"][0]["title"] == "Beta Paper"
-    # 无 entries 时 title 为空字符串（向后兼容）
-    m2 = _build_related_map(db)
-    assert m2["a1"][0]["title"] == ""

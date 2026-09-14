@@ -54,6 +54,15 @@ python scripts/cli.py site --serve --pid-file wiki/.site-serve.pid
 # → http://localhost:8123/site/
 ```
 
+For a single clue after the user has approved the pop, `add → pop --limit 1 → run` collapses into one call:
+
+```bash
+python scripts/cli.py --json ingest --input "https://arxiv.org/abs/2405.12213"
+# → {"ok": true, "data": {"id": <slug>, "added": {...}, "popped": [...], "run": {...}}}
+```
+
+`ingest` never bypasses the user-confirmation gate — it is only a post-approval shortcut.
+
 ## What a record looks like
 
 ```json
@@ -82,6 +91,7 @@ All commands support `--json` for agent consumption.
 |---|---|
 | `init` | Bootstrap wiki workspace skeleton (idempotent) |
 | `add --input X [--no-recall]` | Enqueue; auto-recalls similar past entries |
+| `ingest --input X` | One-shot `add → pop --limit 1 → run`; three sub-results in one JSON object (after user approval) |
 | `pop --limit N` | Dequeue pending → running |
 | `run --id <slug>` | Classify + collect + emit extraction task payload |
 | `publish --id <slug>` | Validate record, store links/relations, rebuild site |
@@ -89,14 +99,14 @@ All commands support `--json` for agent consumption.
 | `analyze --topic "..."` | Evidence cluster across records |
 | `analyze --dedup` | Duplicate candidate pairs |
 | `analyze --discover [--days N]` | Emerging hot topics (alias-aware) |
-| `entities [--list] [--name X] [--watch X\|--unwatch X\|--watched] [--summary]` | Entity aggregation + watch list + optional LLM summary |
+| `entities [--list] [--name X]` | Read-only entity aggregation over `entries.entities` |
 | `clean-entities [--apply] [--id X]` | Batch-clean existing record.json entities (alias normalize + suppress; dry-run by default) |
 | `add-link --id X --url U [--role R]` | Add a manually-found link to a record's link graph (origin=manual) |
 | `verify-links --id <slug>` | curl-HEAD reachability check |
 | `star --id <slug>` | Star canonical GitHub repos (needs `GITHUB_TOKEN`) |
 | `watch [--id X] [--on\|--off]` | Watch-list toggle for entries; no `--id` lists all |
 | `site [--serve] [--export] [--stop]` | Build the static wiki site (optionally serve/stop it) |
-| `doctor [--quick]` | Health: queue/db/files/git/record-tier/entities |
+| `doctor [--quick]` | Health: queue/db/files/git/record-tier/schema-version/entities |
 | `stats` / `list` / `search` / `sync` / `requeue` / `manifest` | Store utilities |
 
 ## Workspace layout
@@ -107,8 +117,10 @@ wiki/
 ├── artifacts/{id}/
 │   ├── record.json          # THE record
 │   └── raw/                 # fetched source materials
-└── site/                    # built static site
+└── site/                    # built static site (Records view)
 ```
+
+`relations` holds structural edges only (`same_url` / `shared_link` / `tag_overlap`).
 
 ## Optional integrations (graceful degradation)
 
@@ -123,8 +135,8 @@ wiki/
 
 - `references/sources.yaml` — source-type classification, fetch handlers, drill policy
 - `references/record_schema.json` — record.json constraints
-- `references/entity_aliases.yaml` — entity canonical/alias map + `suppress`/`suppress_patterns` 抑制名单（精确 + 正则；canonical key 永不抑制）
-- `references/entity_groups.yaml` — entity 五类分组（academia/company/oss/product/person，支持多分组列表）+ `academia_keywords`
+- `references/entity_aliases.yaml` — entity canonical/alias map + `suppress`/`suppress_patterns` suppression lists (exact + regex; canonical keys are never suppressed; shared logic in `scripts/entity_filter.py`, also feeds recall's entity layer)
+- `references/entity_groups.yaml` — entity groups (academia/company/oss/product/person) + `academia_keywords`, consumed by `scripts/entity_filter.py`
 
 ## Verification design
 

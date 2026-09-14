@@ -9,8 +9,7 @@ wiki/
 ├── artifacts/{id}/      # 单条知识的完整产物包（id 由 add 生成且不可变）
 │   ├── record.json      # 结构化知识记录（link graph + TL;DR + tags + entities）
 │   └── raw/             # 采集的原始素材（事实来源）
-├── entities/{slug}/     # 实体综合层：可选 LLM 摘要（summary.md + meta.json）
-├── data/wiki.db         # SQLite + FTS5：条目、链接、关系、队列（状态真相源，须提交 Git）
+├── data/wiki.db         # SQLite + FTS5：条目、链接、结构关系边、队列（状态真相源，须提交 Git）
 ├── site/                # 构建好的静态站点（本地生成）
 ├── failures/            # 工作流失败案例库（模板：failures/TEMPLATE.md）
 └── README.md            # 本文件

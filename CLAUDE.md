@@ -25,10 +25,11 @@ python eval/run_eval.py --llm
 
 ## 关键约束
 
-- 不要破坏 `cli.py --json manifest` / `run` / `doctor` / `stats` / `classify` / `recall` / `analyze` 的 JSON 契约。
+- 不要破坏 `cli.py --json manifest` / `run` / `doctor` / `stats` / `classify` / `recall` / `analyze` / `publish` 的 JSON 契约；`entities` 只保留只读契约（`--list` / `--name X`，无 watch / 摘要字段）。
 - 仅允许 `cli.py` 包含 `sys.path.insert` 条件引导。
 - 不要提交 `__pycache__`、`.pytest_cache`、`*.egg-info`。
 - 新增依赖必须写入 `pyproject.toml`。
+- `relations` 表只存**结构边**：`same_url` / `shared_link` / `tag_overlap`（实体驱动的 `shared_entity` 边已废除，存量库由 v8 迁移清理）。
 
 ## publish 与标识符约定
 

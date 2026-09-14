@@ -136,25 +136,6 @@ def cmd_run(args) -> int:
     return 0 if r.get("ok") else 1
 
 
-def cmd_article(args) -> int:
-    """v3.1：文章写作已废除，输出错误并指引独立 skill。"""
-    msg = "文章写作已于 v3.1 废除。请使用独立的 article-writer skill。当前 wiki skill 仅支持记录提取（record）。"
-    _print_result({"ok": False, "error": "DEPRECATED_MODE", "message": msg}, args.json)
-    return 1
-
-
-def cmd_interpret(args) -> int:
-    msg = "文章写作已于 v3.1 废除。请使用独立的 article-writer skill。"
-    _print_result({"ok": False, "error": "DEPRECATED_MODE", "message": msg}, args.json)
-    return 1
-
-
-def cmd_verify_output(args) -> int:
-    msg = "文章格式校验已于 v3.1 废除。常用 cli.py publish --id <slug> 发布记录。"
-    _print_result({"ok": False, "error": "DEPRECATED_MODE", "message": msg}, args.json)
-    return 1
-
-
 def cmd_classify(args) -> int:
     r = _run_script("classify_source.py", ["--input", args.input],
                     json_mode=args.json, quiet=args.quiet, workspace=args.workspace)
@@ -172,7 +153,11 @@ def cmd_collect(args) -> int:
     return 0 if r.get("ok") else 1
 
 
-def cmd_add(args) -> int:
+def _add_core(args) -> dict:
+    """cmd_add / cmd_ingest 共用：入队 + 本地文件落盘 + 自动召回。
+
+    返回 wiki_db add 的结果 dict；召回结果并入 data["recall"]（失败不影响入库）。
+    """
     extra = []
     if args.input:
         for inp in args.input: extra += ["--input", inp]
@@ -183,8 +168,7 @@ def cmd_add(args) -> int:
     if args.id: extra += ["--id", args.id]
     r = _wiki_db_cmd("add", args, extra)
     if not r.get("ok"):
-        _print_result(r, args.json)
-        return 1
+        return r
 
     entry = r.get("data", {}) or {}
     slug = entry.get("id", "")
@@ -229,19 +213,31 @@ def cmd_add(args) -> int:
         except Exception as e:
             print(f"⚠️ 自动召回失败（不影响入库）: {e}", file=sys.stderr)
 
+    if recall_data is not None:
+        r.setdefault("data", {})["recall"] = recall_data
+    return r
+
+
+def cmd_add(args) -> int:
+    r = _add_core(args)
+    if not r.get("ok"):
+        _print_result(r, args.json)
+        return 1
+
     if args.json:
-        if recall_data is not None:
-            r.setdefault("data", {})["recall"] = recall_data
         _print_result(r, args.json)
-    else:
-        _print_result(r, args.json)
-        if recall_data and recall_data.get("matches"):
-            print("\n🔁 相似历史条目:")
-            for m in recall_data["matches"]:
-                reasons = "; ".join(f"{x['kind']}: {x['detail'][:50]}" for x in m["reasons"][:2])
-                print(f"  - {m['id']} — {m['title'][:50]} (score={m['score']}) [{reasons}]")
-        elif recall_data is not None:
-            print("\n🔁 无相似历史条目")
+        return 0
+
+    # 人读模式：召回结果单独渲染，不进 JSON 摘要
+    recall_data = r["data"].pop("recall", None) if isinstance(r.get("data"), dict) else None
+    _print_result(r, args.json)
+    if recall_data and recall_data.get("matches"):
+        print("\n🔁 相似历史条目:")
+        for m in recall_data["matches"]:
+            reasons = "; ".join(f"{x['kind']}: {x['detail'][:50]}" for x in m["reasons"][:2])
+            print(f"  - {m['id']} — {m['title'][:50]} (score={m['score']}) [{reasons}]")
+    elif recall_data is not None:
+        print("\n🔁 无相似历史条目")
     return 0
 
 
@@ -250,6 +246,65 @@ def cmd_pop(args) -> int:
     r = _wiki_db_cmd("pop", args, extra)
     _print_result(r, args.json)
     return 0 if r.get("ok") else 1
+
+
+def _step_failure(payload: dict, step: dict, default_error: str, default_message: str) -> dict:
+    """把某个子步骤的失败原样映射到 ingest 的顶层错误字段。"""
+    payload["ok"] = False
+    payload["error"] = step.get("error") or default_error
+    payload["message"] = step.get("message") or default_message
+    if step.get("detail") is not None:
+        payload["detail"] = step["detail"]
+    if step.get("next_cmd"):
+        payload["next_cmd"] = step["next_cmd"]
+    return payload
+
+
+def cmd_ingest(args) -> int:
+    """ingest：收录快路径——add → pop --limit 1 → run --id <slug>（一次调用跑完三步）。
+
+    **不绕过确认门**：本命令只压缩「用户已批准 pop」之后的这三次调用；未经用户确认不得使用
+    （见 SKILL.md「User confirmation before pop」）。
+    子步骤复用 add / pop / run 的既有实现，任一失败即原样带出该步错误（不静默降级）：
+    {"ok": bool, "data": {"id": slug, "added": ..., "popped": [...], "run": ...}}。
+    """
+    added_r = _add_core(args)
+    added = added_r.get("data") if added_r.get("ok") else None
+    data = {"id": None, "added": added, "popped": None, "run": None}
+    if not added_r.get("ok"):
+        _print_result(_step_failure({"data": data}, added_r, "ADD_FAILED", "add failed"), args.json)
+        return 1
+
+    slug = (added or {}).get("id") or ""
+    data["id"] = slug
+    if not slug:
+        _print_result({"ok": False, "error": "MISSING_ID",
+                       "message": "add 未返回 entry id", "data": data}, args.json)
+        return 1
+
+    popped_r = _wiki_db_cmd("pop", args, ["--limit", "1"])
+    popped = popped_r.get("data") if popped_r.get("ok") else None
+    data["popped"] = popped
+    if not popped_r.get("ok"):
+        _print_result(_step_failure({"data": data}, popped_r, "POP_FAILED", "pop failed"), args.json)
+        return 1
+
+    popped_ids = [e.get("id") for e in (popped or []) if isinstance(e, dict)]
+    if slug not in popped_ids:
+        _print_result({"ok": False, "error": "POP_MISMATCH",
+                       "message": f"pop --limit 1 未取到刚入队的条目 {slug}"
+                                  "（队列中存在更早的 pending，请先处理它们）",
+                       "data": data}, args.json)
+        return 1
+
+    run_r = _run_script("orchestrate.py", ["run", "--id", slug, "--json"], json_mode=False,
+                        quiet=args.quiet, timeout=180, workspace=args.workspace)
+    data["run"] = run_r.get("data") if run_r.get("ok") else None
+    payload = {"ok": True, "data": data}
+    if not run_r.get("ok"):
+        _step_failure(payload, run_r, "RUN_FAILED", "run failed")
+    _print_result(payload, args.json)
+    return 0 if payload["ok"] else 1
 
 
 def cmd_list(args) -> int:
@@ -526,53 +581,18 @@ def cmd_add_link(args) -> int:
 
 
 def cmd_entities(args) -> int:
-    """entities：实体综合层——list / --name 聚合 / watch 管理 / --summary 摘要。"""
-    from scripts import entity_summary as ES
+    """entities：实体只读查询——默认 --list（聚合概览），--name X 查看单实体。"""
+    from scripts import entities as ES
     try:
         ws = paths.get_workspace()
         db = paths.db_path(ws)
-        if getattr(args, "watch", None):
-            r = ES.watch_entity(db, args.watch,
-                                type=getattr(args, "entity_type", "") or "",
-                                note=getattr(args, "note", "") or "")
-            _print_result({"ok": True, "data": r}, args.json)
-            return 0
-        if getattr(args, "unwatch", None):
-            removed = ES.unwatch_entity(db, args.unwatch)
-            _print_result({"ok": True, "data": {"name": args.unwatch, "removed": removed}}, args.json)
-            return 0
-        if getattr(args, "summary", False):
-            if getattr(args, "watched", False):
-                names = [w["name"] for w in ES.list_watched(db)]
-                written, failed = [], []
-                for n in names:
-                    try:
-                        written.append(ES.auto_write_summary(n, ws, db))
-                    except Exception as e:
-                        failed.append({"name": n, "error": str(e)})
-                _print_result({"ok": not failed,
-                               "data": {"written": written, "failed": failed}}, args.json)
-                return 0 if not failed else 1
-            if getattr(args, "name", None):
-                r = ES.auto_write_summary(args.name, ws, db)
-                _print_result({"ok": True, "data": r}, args.json)
-                return 0
-            _print_result({"ok": False, "error": "MISSING_ARGS",
-                           "message": "entities --summary 需要 --name X 或 --watched"}, args.json)
-            return 1
-        if getattr(args, "watched", False):
-            items = ES.list_watched(db)
-            _print_result({"ok": True, "data": {"watched": items, "count": len(items)}}, args.json)
-            return 0
         if getattr(args, "name", None):
             agg = ES.aggregate_entity(db, args.name, ws)
             _print_result({"ok": True, "data": agg}, args.json)
             return 0
         # 默认：--list
         idx = ES.entity_index(db)
-        watched_names = {w["name"] for w in ES.list_watched(db)}
-        items = [{"name": n, "type": s["type"], "record_count": len(s["entries"]),
-                  "watched": n in watched_names}
+        items = [{"name": n, "type": s["type"], "record_count": len(s["entries"])}
                  for n, s in sorted(idx.items(), key=lambda kv: -len(kv[1]["entries"]))]
         _print_result({"ok": True, "data": {"entities": items, "count": len(items)}}, args.json)
         return 0
@@ -700,12 +720,14 @@ def cmd_manifest(args) -> int:
         "commands": [
             {"name": "init", "args": [],
              "description": "初始化 wiki 工作区骨架（目录/wiki.db/模板，幂等）+ 输出 AGENTS.md 接入片段"},
-            {"name": "entities", "args": ["--list", "--name", "--watch", "--unwatch", "--watched", "--summary", "--type", "--note"],
-             "description": "实体综合层：聚合/list、watch 清单、可选 LLM 摘要"},
+            {"name": "entities", "args": ["--list", "--name"],
+             "description": "实体只读查询：全库实体概览 / 单实体聚合（records/timeline/co_entities/links）"},
             {"name": "run", "args": ["--id", "--max-depth", "--force-collect"],
              "description": "执行已 add+pop 的任务：record 记录提取 → spawn"},
             {"name": "add", "args": ["--input", "--input-type", "--source-type", "--id", "--no-recall"],
              "description": "添加 pending 任务（add 后自动召回相似历史条目）"},
+            {"name": "ingest", "args": ["--input", "--input-type", "--source-type", "--no-recall"],
+             "description": "收录快路径：add → pop --limit 1 → run 一次跑完（确认门之后使用）"},
             {"name": "pop", "args": ["--limit"], "description": "取出 pending 任务"},
             {"name": "publish", "args": ["--id", "--site-only"], "description": "记录发布：validate record.json + links/relations 入库（--site-only 仅重建站点）"},
             {"name": "recall", "args": ["--input", "--limit"], "description": "四层确定性相似召回"},
@@ -737,8 +759,6 @@ def cmd_manifest(args) -> int:
             {"name": "dedup", "args": ["--input"], "description": "重复检查"},
             {"name": "doctor", "args": ["--quick", "--fix-plan"], "description": "健康检查"},
             {"name": "manifest", "args": [], "description": "输出本清单"},
-            {"name": "article", "args": ["--id"], "description": "（已废除 v3.1）→ 独立 article-writer skill"},
-            {"name": "interpret", "args": ["--slug"], "description": "（已废除 v3.1）→ 独立 article-writer skill"},
         ],
     }
     if args.json:
@@ -771,9 +791,6 @@ def main():
     p_run.add_argument("--depth", choices=["brief", "deep"], default=None)
     p_run.add_argument("--append-to")
 
-    p_art = sub.add_parser("article", help="（已废除 v3.1）→ 独立 article-writer skill")
-    p_art.add_argument("--id", required=True)
-
     p_cls = sub.add_parser("classify", help="来源分类")
     p_cls.add_argument("--input", "-i", required=True)
 
@@ -783,12 +800,6 @@ def main():
     p_col.add_argument("--source-type", "--subtype", dest="source_type", required=True)
     p_col.add_argument("--input", required=True)
     p_col.add_argument("--max-depth", type=int)
-
-    p_int = sub.add_parser("interpret", help="（已废除 v3.1）→ 独立 article-writer skill")
-    p_int.add_argument("--slug", required=True)
-
-    p_vo = sub.add_parser("verify-output", help="（已废除 v3.1）→ cli.py publish --id <slug>")
-    p_vo.add_argument("--file")
 
     p_pub = sub.add_parser("publish", help="验证并发布记录（或 --site-only 只重建站点）")
     p_pub.add_argument("--id", required=True)
@@ -817,6 +828,17 @@ def main():
 
     p_pop = sub.add_parser("pop", help="取出 pending 任务")
     p_pop.add_argument("--limit", "-n", type=int, default=3)
+
+    p_ingest = sub.add_parser("ingest", help="收录快路径：add → pop --limit 1 → run（确认门之后使用）")
+    p_ingest.add_argument("--input", "-i", action="append", required=True)
+    p_ingest.add_argument("--inputs-file")
+    p_ingest.add_argument("--source-prompt")
+    p_ingest.add_argument("--append-to")
+    p_ingest.add_argument("--input-type", "--type", dest="input_type", default="unknown")
+    p_ingest.add_argument("--source-type", "--subtype", dest="source_type", default="unknown")
+    p_ingest.add_argument("--depth", default="brief")
+    p_ingest.add_argument("--id")
+    p_ingest.add_argument("--no-recall", action="store_true")
 
     p_list = sub.add_parser("list", help="列出 entries")
     p_list.add_argument("--limit", "-n", type=int)
@@ -901,15 +923,9 @@ def main():
     p_addlink.add_argument("--url", required=True)
     p_addlink.add_argument("--role", choices=["canonical", "related"], default="related")
 
-    p_ent = sub.add_parser("entities", help="实体综合层：list / --name 聚合 / --watch 管理 / --summary 摘要")
+    p_ent = sub.add_parser("entities", help="实体只读查询：--list（默认）/ --name X 聚合")
     p_ent.add_argument("--list", action="store_true")
     p_ent.add_argument("--name")
-    p_ent.add_argument("--watch")
-    p_ent.add_argument("--unwatch")
-    p_ent.add_argument("--watched", action="store_true")
-    p_ent.add_argument("--summary", action="store_true")
-    p_ent.add_argument("--type", dest="entity_type", default="")
-    p_ent.add_argument("--note", default="")
 
     p_watch = sub.add_parser("watch", help="特别关注：toggle / --on / --off / 无 --id 列出全部")
     p_watch.add_argument("--id")
@@ -939,11 +955,11 @@ def main():
     handlers = {
         "init": cmd_init,
         "entities": cmd_entities,
-        "run": cmd_run, "article": cmd_article, "classify": cmd_classify,
-        "collect": cmd_collect, "interpret": cmd_interpret,
-        "verify-output": cmd_verify_output,
+        "run": cmd_run, "classify": cmd_classify,
+        "collect": cmd_collect,
         "publish": cmd_publish, "site": cmd_site,
         "add": cmd_add, "pop": cmd_pop, "list": cmd_list, "search": cmd_search,
+        "ingest": cmd_ingest,
         "stats": cmd_stats, "sync": cmd_sync, "requeue": cmd_requeue,
         "delete": cmd_delete, "update": cmd_update, "status": cmd_status,
         "events": cmd_events, "record-event": cmd_record_event,

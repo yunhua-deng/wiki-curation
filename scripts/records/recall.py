@@ -65,7 +65,7 @@ def extract_entities_from_text(text: str, variant_map: dict) -> list[str]:
 def _default_variant_map() -> dict:
     """生产路径：从 references/entity_aliases.yaml 构建 variant map。"""
     try:
-        from scripts.site.entities import load_aliases
+        from scripts.entity_filter import load_aliases
         return build_variant_map(load_aliases())
     except Exception:
         return {}

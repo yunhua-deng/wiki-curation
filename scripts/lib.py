@@ -115,9 +115,9 @@ def run_cmd(cmd, timeout=120, retries=1, backoff=2.0, cwd=None, env=None) -> dic
 
 
 def headless_write_runner(prompt: str, ws, timeout: int = 900) -> dict:
-    """headless `claude -p` 执行写作任务（acceptEdits；工作目录=wiki 工作区）。
+    """headless `claude -p` 执行写文件任务（acceptEdits；工作目录=wiki 工作区）。
 
-    供 entities LLM 摘要等"agent 写文件"场景共用。
+    供"agent 写文件"场景复用（当前 skill 主链不调用；保留给未来的写文件型 agent 任务）。
     prompt 应约束 agent 只读材料、只写目标文件；其他需授权操作在 headless 下自动拒绝。
     """
     import subprocess

@@ -99,16 +99,6 @@ def audit_md_path(slug: str, depth: str, ws=None) -> Path:
     return audit_dir(slug, ws) / f"{slug}_{depth}_audit.md"
 
 
-def entities_dir(ws=None) -> Path:
-    """实体综合层目录：wiki/entities"""
-    return _resolve_ws(ws) / "entities"
-
-
-def entity_dir(slug: str, ws=None) -> Path:
-    """单个实体目录：wiki/entities/{slug}"""
-    return entities_dir(ws) / slug
-
-
 # ---------------------------------------------------------------------------
 # 相对路径字符串（仅用于 task prompt / Markdown 文档内链接）
 # ⚠️ 禁止用于文件写入——写入操作必须使用上面的 article_path / raw_dir / audit_dir 等绝对路径

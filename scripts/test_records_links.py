@@ -59,7 +59,7 @@ def test_relations_replace_idempotent_and_normalized(tmp_path):
     ensure_schema(db)
     edges = [
         {"a": "e2", "b": "e1", "kind": "shared_link", "score": 40, "evidence": {"url": "u"}},
-        {"a": "e1", "b": "e3", "kind": "shared_entity", "score": 20, "evidence": {"entity": "X"}},
+        {"a": "e1", "b": "e3", "kind": "tag_overlap", "score": 20, "evidence": {"tags": ["x"]}},
     ]
     L.replace_relations(db, "e1", edges)
     L.replace_relations(db, "e1", edges)  # 重复织边不翻倍

@@ -9,13 +9,14 @@ Ingest URLs/papers/files into **structured knowledge records** — link graph, T
 
 ## Overview
 
-Single tier, single path:
+Single tier, single path — **ingestion is the only main line**:
 
 - **Record**: `add → pop → run → publish` → `record.json` — link graph (explicit + inferred URLs), TL;DR, X-style summary, tags, entities. Every ingestion goes through this.
+- **Ingest (shortcut)**: `ingest --input "..."` chains those three calls (`add` → `pop --limit 1` → `run --id <slug>`) into one command and returns the three sub-results in one JSON object. It is a convenience for **after** the user has approved the pop — it does **not** bypass the confirmation gate.
 - **Recall**: `add` auto-surfaces similar past entries; `recall --input "..."` queries anytime (4-layer: url_exact → shared_link → entity → fts).
 - **Analyze**: `analyze --topic "X"` clusters evidence across records; `--discover` finds emerging hot topics.
-- **Entities**: `entities --list / --name X / --watch X / --summary --name X|--watched` — entity aggregation pages built deterministically from wiki.db (site Entities view); optional LLM summary per entity (`wiki/entities/{slug}/summary.md`). Watched entities get a refresh hint in publish output.
-- **Site**: built static HTML served locally — two views: Records and Entities.
+- **Entities (read-only)**: `entities --list` / `entities --name X` — deterministic aggregation over `entries.entities`, used to explain why a recall match hit.
+- **Site**: built static HTML served locally — one Records view (list / detail / timeline / search).
 
 Core principle: **extraction by agent, linking by system.** The LLM reads materials and writes `record.json`; similarity, relations, URL verification are deterministic code.
 
@@ -40,7 +41,6 @@ wiki/
 ├── artifacts/{id}/
 │   ├── record.json          # THE record (only artifact the agent writes)
 │   └── raw/                 # fetched source materials
-├── entities/{slug}/         # entity summaries (optional LLM): summary.md + meta.json
 └── site/                    # built static site
 ```
 
@@ -51,7 +51,7 @@ Set `WIKI_WORKSPACE` or default to `cwd/wiki`.
 1. **Always use the skill CLI.** Call the `scripts/cli.py` located next to this SKILL.md (written below as `scripts/cli.py`; resolve it against the skill's install location). Do not call sub-scripts directly.
 2. **No manual writing.** Records must go through `add → pop → run → publish`. Do not hand-author `record.json`.
 3. **Mandatory workflow.** `run` requires prior `add` + `pop`.
-4. **User confirmation before pop.** After first `add`, agent asks "start now or keep adding". User confirms before `pop --limit 3`.
+4. **User confirmation before pop.** After first `add`, agent asks "start now or keep adding". User confirms before `pop --limit 3`. `ingest` does **not** relax this: it may only be used once the user has approved the pop (see below).
 5. **Do not modify task content.** Run task payload as-is.
 6. **Configuration is single source of truth.** `references/sources.yaml` for classification; `references/record_schema.json` for record constraints.
 7. **wiki.db is tracked.** Normal workflow commits preserve it.
@@ -95,6 +95,15 @@ python scripts/cli.py --json run --id <slug>
 python scripts/cli.py --json publish --id <slug>
 ```
 
+**One-shot variant.** After the user has approved the pop, steps 1 → 3 → 4 for a single new clue can be compressed into one call:
+
+```bash
+python scripts/cli.py --json ingest --input "https://arxiv.org/abs/2101.00027"
+# → {"ok": true, "data": {"id": "<slug>", "added": {...auto-recall...}, "popped": [...], "run": {...task payload...}}}
+```
+
+`ingest` returns the three sub-results in one object (it adds, pops exactly one entry, and emits that entry's extraction task). It carries the same errors as the individual steps and **never bypasses the confirmation gate** — use it only when the user already said "直接处理 / 不用确认".
+
 Concurrency: with multiple queued entries, run steps 4–5 **in parallel per entry** (one extraction sub-agent per slug). `publish` is serialized per wiki via a `.publish.lock` file lock — on `BUSY`, wait and retry. `pop --limit 3` is the default local batch cap; do not exceed it without explicit user approval. Before declaring a batch done, reconcile completions per **Sub-agent completion reconciliation** below.
 
 ## Sub-agent completion reconciliation
@@ -120,8 +129,9 @@ All commands support `--json`. `--workspace PATH` overrides `$WIKI_WORKSPACE`.
 | Command | Purpose |
 |---|---|
 | `init` | Bootstrap wiki workspace skeleton（dirs + wiki.db + templates，幂等），输出 AGENTS.md 接入片段 |
-| `entities [--list] [--name X] [--watch X|--unwatch X|--watched] [--summary]` | Entity aggregation + watch list + optional LLM summary |
+| `entities [--list] [--name X]` | 实体只读查询：全库实体概览 / 单实体聚合（records/timeline/co_entities/links） |
 | `add --input "..." [--no-recall]` | Enqueue; auto-recalls similar past entries |
+| `ingest --input "..."` | 收录快路径：`add` → `pop --limit 1` → `run`，一次调用返回三步结果（确认门之后使用） |
 | `pop --limit N` | Dequeue pending → running |
 | `run --id <slug>` | Classify + collect + emit record extraction task |
 | `publish --id <slug>` | Validate record.json, store links/relations/entities, rebuild site |
@@ -137,7 +147,7 @@ All commands support `--json`. `--workspace PATH` overrides `$WIKI_WORKSPACE`.
 | `clean-entities [--apply] [--id X]` | Batch-clean existing record.json entities (alias normalize + suppress); dry-run by default, `--apply` rewrites records + db + relations + site (PublishLock) |
 | `watch [--id X] [--on\|--off]` | Entry watch-list：toggle / 设置 / 无 --id 列出全部 |
 | `site [--serve] [--export] [--stop]` | 构建静态 wiki 站点（可选启动/停止本地服务） |
-| `doctor [--quick] [--fix-plan]` | Health: queue/db/files/git/record-tier/entities |
+| `doctor [--quick] [--fix-plan]` | Health: queue/db/files/git/record-tier/schema-version/entities |
 | `stats` / `list` / `sync` / `requeue` / `delete` / `update` / `manifest` | Store utilities |
 
 ## Architecture
@@ -145,7 +155,7 @@ All commands support `--json`. `--workspace PATH` overrides `$WIKI_WORKSPACE`.
 ```
 add --input "..."          ← classify source + auto-recall
    │
-pop
+pop                        (or: ingest --input "..." = add + pop(1) + run, after user approval)
    │
 run --id <slug>
    ├─ collect_materials    ← fetch + recursive drill (3 levels)
@@ -158,8 +168,8 @@ extraction agent           ← reads raw/ + agent_notes.md → writes record.jso
 publish --id <slug>
    ├─ schema.validate      ← deterministic record validation
    ├─ links.replace        ← links table (fetched backfill)
-   ├─ relations.rewire     ← same_url/shared_link/shared_entity/tag_overlap edges
-   ├─ site.build           ← entries.json + timeline + entity_pages
+   ├─ relations.rewire     ← structural edges only: same_url / shared_link / tag_overlap
+   ├─ site.build           ← entries.json + tags + sources + timeline (Records view)
    ▼
 done: record + site refreshed
 ```
@@ -182,8 +192,8 @@ use the orchestrator's analytical framing as reference.
 
 - `references/sources.yaml` — source-type classification, fetch handlers, drill policy
 - `references/record_schema.json` — record.json constraints
-- `references/entity_aliases.yaml` — entity canonical/alias map + `suppress`/`suppress_patterns` 抑制名单（精确 + 正则；canonical key 永不抑制；shared logic in `scripts/entity_filter.py`，publish 与 clean-entities 共用）
-- `references/entity_groups.yaml` — entity 五类分组（academia/company/oss/product/person）+ `academia_keywords` 默认归类关键词；站点 entities 视图按组展示、低频（record_count==1）默认隐藏
+- `references/entity_aliases.yaml` — entity canonical/alias map + `suppress`/`suppress_patterns` 抑制名单（精确 + 正则；canonical key 永不抑制；shared logic in `scripts/entity_filter.py`，publish 与 clean-entities 共用，recall 的实体层也从这里取别名表）
+- `references/entity_groups.yaml` — entity 五类分组（academia/company/oss/product/person）+ `academia_keywords`；供 `scripts/entity_filter.py` 的分组查询与 canonical 豁免名单使用
 
 ## Bug recording
 

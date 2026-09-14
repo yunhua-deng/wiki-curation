@@ -32,8 +32,9 @@ def _entity_seed(db_path, entity: str, limit: int = 30) -> list[str]:
 
 
 def cluster(db_path, topic: str, limit: int = 30, variant_map: dict = None) -> dict:
-    """主题聚簇：FTS 种子 + relations 边扩展，按分数排序。
+    """主题聚簇：FTS/实体/tag 种子 + relations 结构边扩展，按分数排序。
 
+    relations 扩展只吃 same_url / shared_link / tag_overlap 三类结构边（实体驱动边已移除）。
     返回 {topic, cluster_size, entries, hints}。entries 每项含命中原因。
     """
     db_path = Path(db_path)

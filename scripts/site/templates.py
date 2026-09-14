@@ -29,7 +29,6 @@ _INDEX_CONTENT = """
   <div class="stats" id="stats"></div>
   <div class="nav-pills">
     <button id="nav-records" class="active">📋 Records</button>
-    <button id="nav-entities">🏷️ Entities</button>
   </div>
 </div>
 <div id="records-view">
@@ -44,15 +43,6 @@ _INDEX_CONTENT = """
   <label class="watch-only" title="只看特别关注"><input type="checkbox" id="filter-watch"> ★ 关注</label>
 </div>
 <div id="table-container"></div>
-</div>
-<div id="entities-view" style="display:none">
-  <div class="controls">
-    <input type="search" id="ent-search" placeholder="Search entities..." autocomplete="off">
-    <label class="watch-only" title="只看 watched 实体"><input type="checkbox" id="ent-filter-watch"> ★ Watched</label>
-  </div>
-  <div class="nav-pills ent-chipbar" id="ent-chipbar"></div>
-  <div id="entities-list"></div>
-  <div id="entity-detail"></div>
 </div>
 """
 
@@ -153,11 +143,8 @@ async function initDoc() {
         lh+='</p>'; html+=lh; }
       if(tags.length) html += `<p><strong>Tags</strong> ${tags.map(t=>`<span class="badge badge-tag">${esc(t)}</span>`).join(' ')}</p>`;
       const entBits=[];
-      for(const [k,v] of Object.entries(entities)) if(v&&v.length) entBits.push(`${k}: ${v.map(n=>`<span class="ent-chip" data-entname="${esc(n)}" title="点击跳转到实体页">${esc(n)}</span>`).join(' ')}`);
+      for(const [k,v] of Object.entries(entities)) if(v&&v.length) entBits.push(`${k}: ${v.map(n=>esc(n)).join(', ')}`);
       if(entBits.length) html += `<p><strong>Entities</strong> ${entBits.join(' · ')}</p>`;
-      if((e._related||[]).length){ html += `<p class="related-head"><strong>Related</strong></p><ul class="related-list">`;
-        html += e._related.map(r=>`<li>${recLink(r.id)} <span class="rel-title">${esc(r.title||'')}</span> <span class="rel-score muted">${r.score}</span></li>`).join('');
-        html += '</ul>'; }
       const pv=e && e.preview && e.preview.recall;
       if(pv && (pv.matches||[]).length){ html += `<details class="preview-recall"><summary>🔁 发起时召回（${pv.matches.length}）</summary><ul class="related-list">`;
         html += pv.matches.map(m=>`<li>${recLink(m.id)} ${m.title?`<span class="rel-title">${esc(m.title)}</span>`:''} <span class="rel-score muted">${m.score}</span></li>`).join('');
@@ -165,11 +152,6 @@ async function initDoc() {
       if(e && e.has_record) html += `<p class="link-add" data-linkadd="${esc(e.id)}"><button class="link-add-toggle">＋ 添加链接</button></p>`;
       html += `<p><a href="/site/raw.html?id=${encodeURIComponent(id)}" target="_blank" rel="noopener">📁 Raw materials</a></p>`;
       el('doc-body').innerHTML = html;
-      // entity chips → 跳转实体页（新 tab，实体详情以弹出卡片打开）
-      document.querySelectorAll('.ent-chip').forEach(chip=>chip.addEventListener('click', (ev)=>{
-        ev.stopPropagation();
-        window.open('/site/?v=entities&e=' + encodeURIComponent(chip.dataset.entname), '_blank');
-      }));
       // add-link form
       document.querySelectorAll('[data-linkadd]').forEach(wrap=>{
         wrap.querySelector('.link-add-toggle').addEventListener('click', ()=>{
@@ -199,20 +181,7 @@ async function initDoc() {
     return;
   }
 
-  // entity markdown
-  el('doc-back-list').href = '/site/?v=entities';
-  const src = 'entities/' + slug + '/summary.md';
-  try {
-    const res = await fetch('/' + src);
-    if (!res.ok) throw new Error(src + ': HTTP ' + res.status);
-    const md = await res.text();
-    el('doc-loading').style.display = 'none';
-    el('doc-view').style.display = '';
-    const body = el('doc-body');
-    const html = window.marked ? marked.parse(md) : '<pre>' + md.replace(/</g, '&lt;') + '</pre>';
-    body.innerHTML = html.replace(/(?<![\w"=/])(20\d\d-\d\d-\d\d_[A-Za-z0-9_-]+)/g,
-      '<a href="/site/doc.html?kind=record&id=$1" class="rec-link">$1</a>');
-  } catch (err) { el('doc-loading').textContent = 'Load failed: ' + err.message; }
+  el('doc-loading').textContent = 'Unsupported kind: ' + kind;
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initDoc); else initDoc();
 </script>

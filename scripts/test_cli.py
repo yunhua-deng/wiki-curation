@@ -56,8 +56,29 @@ def test_manifest_json(cli_workspace):
     assert "version" in data
     assert "commands" in data
     names = {c["name"] for c in data["commands"]}
-    assert {"run", "doctor", "stats"}.issubset(names)
+    assert {"run", "doctor", "stats", "ingest"}.issubset(names)
+    # 已废除的命令桩不再出现在清单里
+    assert not {"article", "interpret", "verify-output"} & names
+    # entities 收敛为只读（--list / --name）
+    ent = [c for c in data["commands"] if c["name"] == "entities"][0]
+    assert ent["args"] == ["--list", "--name"]
 
+
+def test_ingest_one_shot_local_file(cli_workspace, tmp_path):
+    """ingest = add → pop --limit 1 → run，一次调用输出三步合并结果。"""
+    src = tmp_path / "note.md"
+    src.write_text("# Note\n\nlocal material\n", encoding="utf-8")
+    resp = _run(["--json", "ingest", "--input", str(src), "--input-type", "local"],
+                cli_workspace, timeout=180)
+
+    assert resp.get("ok"), resp
+    data = resp["data"]
+    slug = data["id"]
+    assert data["added"]["id"] == slug and data["added"]["status"] == "pending"
+    assert "recall" in data["added"]  # add 的自动召回原样带出
+    assert [e["id"] for e in data["popped"]] == [slug]
+    assert data["run"]["slug"] == slug and data["run"]["task_mode"] == "record"
+    assert data["run"]["output_path"].endswith("record.json")
 
 def test_stats_json(cli_workspace):
     resp = _run(["--json", "stats"], cli_workspace)
@@ -101,10 +122,15 @@ def test_doctor_fix_plan_json(cli_workspace):
         assert "command" in action
 
 
-def test_deprecated_verify_output(cli_workspace):
-    resp = _run(["--json", "verify-output", "--file", "x"], cli_workspace, timeout=120)
-    assert not resp.get("ok"), resp
-    assert resp.get("error") == "DEPRECATED_MODE"
+def test_removed_stub_commands_rejected(cli_workspace):
+    """article / interpret / verify-output 三个已废除命令桩已移除，argparse 应拒绝。"""
+    for cmd in (["article", "--id", "x"], ["interpret", "--slug", "x"],
+                ["verify-output", "--file", "x"]):
+        r = subprocess.run(CLI + ["--json"] + cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", cwd=str(SKILL_ROOT),
+                           env={**os.environ, "WIKI_WORKSPACE": str(cli_workspace)})
+        assert r.returncode != 0, cmd
+        assert "invalid choice" in (r.stderr or "")
 
 
 def test_site_workspace_directory_resolution(cli_workspace):

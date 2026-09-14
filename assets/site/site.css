@@ -122,8 +122,7 @@ a:hover{text-decoration:underline}
 .link-add-form button:hover{border-color:var(--accent);color:var(--accent)}
 .link-add-status{font-size:.78rem}
 
-/* Related list + preview recall (v3.7) */
-.related-head{margin:.4rem 0 .1rem}
+/* Initiation preview recall (v3.7) */
 .related-list{margin:.1rem 0 .5rem;padding-left:1.1rem;list-style:none}
 .related-list li{padding:.1rem 0}
 .rel-id{font-family:var(--font-mono);font-size:.78rem;color:var(--accent);cursor:pointer}
@@ -150,16 +149,6 @@ a:hover{text-decoration:underline}
 .watch-only{display:flex;align-items:center;gap:.25rem;font-size:.85rem;color:var(--muted);cursor:pointer;user-select:none}
 .watch-only input{cursor:pointer}
 
-/* Entity 卡片（v3.18 起复用 tracking-card 样式钩子） */
-.tracking-card{border:1px solid var(--border);border-radius:var(--radius);padding:.6rem .9rem;margin-bottom:.6rem;cursor:pointer;background:var(--surface)}
-.tracking-card:hover{border-color:var(--accent)}
-.tracking-card h3{margin:.1rem 0 .2rem;font-size:1rem}
-
-/* Entity chips（点击跳实体页） */
-.ent-chip{cursor:pointer;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:0 .45rem;font-size:.78rem;display:inline-block;margin:.05rem .1rem}
-.ent-chip:hover{color:var(--accent);border-color:var(--accent)}
-.ent-hint{font-size:.72rem}
-
 /* rec links */
 .rec-link{font-family:var(--font-mono);font-size:.85em}
 
@@ -171,41 +160,4 @@ a:hover{text-decoration:underline}
 .detail-tools{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center;margin:0 0 .4rem}
 .tool-sep{color:var(--muted)}
 
-/* Entity detail card (v3.8) */
-.entity-detail-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; margin-top: 1rem; }
-.entity-detail-card h4 { margin: .9rem 0 .3rem; }
 
-/* Entities 列表控制 + 分区 (v3.18) */
-.ent-section{font-size:.95rem;margin:1rem 0 .5rem;cursor:pointer;user-select:none}
-.ent-section:hover{color:var(--accent)}
-.ent-section .ent-caret{color:var(--muted);font-size:.8rem;margin-right:.15rem}
-.ent-total{font-size:.8rem;margin:.5rem 0}
-.ent-toggle{background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:.8rem;padding:.25rem .6rem;cursor:pointer}
-.ent-toggle:hover{color:var(--accent);border-color:var(--accent)}
-
-/* Entities 视图改版 (v3.23)：类型过滤 chips + 可折叠组体 + 网格紧凑卡片 */
-.ent-chipbar{justify-content:flex-start;margin:.25rem 0 .25rem}
-.ent-group-body.collapsed{display:none}
-.ent-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.5rem}
-.ent-grid .entity-card{padding:.4rem .6rem;margin-bottom:0}
-.ent-grid .entity-card h3{font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ent-grid .entity-card .trend-meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-
-/* Entity 时间线柱状图 (v3.18) */
-.tl-wrap{padding-bottom:1.4rem;overflow-x:auto}
-.tl-chart{display:flex;align-items:flex-end;gap:3px;min-height:56px;padding:.3rem 0}
-.tl-bar{flex:0 0 18px;background:var(--accent-soft);border:1px solid var(--accent);border-radius:3px 3px 0 0;position:relative;cursor:default}
-.tl-bar:hover{background:var(--accent)}
-.tl-label{position:absolute;bottom:-1.1rem;left:50%;transform:translateX(-50%) rotate(-45deg);transform-origin:left top;font-size:.6rem;color:var(--muted);white-space:nowrap}
-
-/* Entity 记录按月分组 (v3.18) */
-.ent-rec-group summary{cursor:pointer;font-size:.85rem;color:var(--muted)}
-.ent-rec-group summary:hover{color:var(--accent)}
-.ent-rec-group ul{margin:.2rem 0 .5rem;padding-left:1.2rem;list-style:none}
-.ent-rec-group li{padding:.1rem 0;font-size:.85rem}
-
-/* Entity 详情弹出卡片 (v3.20) */
-.ent-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;padding:4vh 1rem;z-index:100;overflow-y:auto}
-.ent-modal{position:relative;max-width:860px;width:100%;max-height:88vh;overflow-y:auto;margin-top:0}
-.ent-modal-close{position:absolute;top:.6rem;right:.6rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--muted);cursor:pointer;padding:.1rem .5rem;font-size:.85rem}
-.ent-modal-close:hover{color:var(--ink);border-color:var(--accent)}

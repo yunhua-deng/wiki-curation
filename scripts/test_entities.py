@@ -1,14 +1,14 @@
-"""scripts/test_entities.py — 实体综合层：watch CRUD + 聚合契约测试。"""
+"""scripts/test_entities.py — 实体只读查询（entities / aggregate）契约测试。"""
 import json
-import sqlite3
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from scripts import conftest
-from scripts.entity_summary import (EntityError, aggregate_entity, entity_index,
-                                    find_entity, flatten_entities, list_watched,
-                                    unwatch_entity, watch_entity, watched_hits)
+from scripts.entities import (EntityError, aggregate_entity, entity_index,
+                              find_entity, flatten_entities)
 from scripts.records import links as L
 from scripts.wiki_index import ensure_schema
 
@@ -31,22 +31,6 @@ def _seed(db):
                          {"company": ["Figure AI"], "author": [], "product": [], "series": []})
 
 
-def test_watch_crud_and_idempotent(db):
-    r1 = watch_entity(db, "Figure AI", type="company", note="人形机器人")
-    assert r1 == {"name": "Figure AI", "already_watched": False}
-    r2 = watch_entity(db, "Figure AI")
-    assert r2["already_watched"] is True
-    assert [w["name"] for w in list_watched(db)] == ["Figure AI"]
-    assert unwatch_entity(db, "Figure AI") is True
-    assert list_watched(db) == []
-    assert unwatch_entity(db, "Figure AI") is False
-
-
-def test_watch_empty_name_raises(db):
-    with pytest.raises(EntityError):
-        watch_entity(db, "  ")
-
-
 def test_entity_index_and_find(db):
     _seed(db)
     idx = entity_index(db)
@@ -58,7 +42,6 @@ def test_entity_index_and_find(db):
 
 def test_aggregate_entity(db):
     _seed(db)
-    watch_entity(db, "Figure AI", type="company")
     L.replace_links(db, "2026-08-01_aaaa", [
         {"url": "https://github.com/figure/helix", "kind": "github", "role": "canonical"},
         {"url": "https://example.com/x", "kind": "other", "role": "related"},
@@ -66,7 +49,7 @@ def test_aggregate_entity(db):
     agg = aggregate_entity(db, "Figure AI")
     assert agg["slug"] == "figure-ai"
     assert agg["type"] == "company"
-    assert agg["watched"] is True
+    assert "watched" not in agg
     assert {r["id"] for r in agg["records"]} == {"2026-08-01_aaaa", "2026-08-02_bbbb"}
     assert sum(t["count"] for t in agg["timeline"]) == 2
     co_names = [c["name"] for c in agg["co_entities"]]
@@ -82,22 +65,12 @@ def test_aggregate_not_found_suggests(db):
     assert "Figure AI" in str(ei.value)
 
 
-def test_watched_hits(db):
-    watch_entity(db, "Figure AI")
-    watch_entity(db, "Physical Intelligence")
-    assert watched_hits(db, ["Figure AI", "Tesla"]) == ["Figure AI"]
-    assert watched_hits(db, []) == []
-
-
 def test_flatten_entities():
     assert flatten_entities({"company": ["A"], "author": ["B"], "product": [], "series": []}) == ["A", "B"]
     assert flatten_entities(None) == []
 
 
-# ---------- Task 2: cli.py entities 子命令契约测试 ----------
-
-import subprocess
-import sys
+# ---------- cli.py entities 子命令契约测试 ----------
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 CLI = SCRIPT_DIR / "cli.py"
@@ -108,7 +81,7 @@ def _cli(*args):
     return r.returncode, json.loads(r.stdout.decode("utf-8"))
 
 
-def test_cli_entities_watch_list_name_flow(tmp_path):
+def test_cli_entities_list_and_name(tmp_path):
     ws = tmp_path / "wiki"
     rc, out = _cli("--workspace", str(ws), "init")
     assert rc == 0 and out["ok"]
@@ -116,21 +89,17 @@ def test_cli_entities_watch_list_name_flow(tmp_path):
     L.set_entry_entities(ws / "data" / "wiki.db", "2026-08-01_aaaa",
                          {"company": ["Figure AI"], "author": [], "product": [], "series": []})
 
-    rc, out = _cli("--workspace", str(ws), "entities", "--watch", "Figure AI", "--type", "company")
-    assert rc == 0 and out["ok"] and out["data"]["already_watched"] is False
+    rc, out = _cli("--workspace", str(ws), "entities", "--list")
+    assert rc == 0 and out["ok"] and out["data"]["count"] == 1
+    assert out["data"]["entities"][0]["name"] == "Figure AI"
+    assert "watched" not in out["data"]["entities"][0]
 
-    rc, out = _cli("--workspace", str(ws), "entities", "--watched")
-    assert rc == 0 and out["data"]["count"] == 1
+    # 无参默认等同 --list
+    rc, out = _cli("--workspace", str(ws), "entities")
+    assert rc == 0 and [e["name"] for e in out["data"]["entities"]] == ["Figure AI"]
 
     rc, out = _cli("--workspace", str(ws), "entities", "--name", "figure ai")
-    assert rc == 0 and out["data"]["slug"] == "figure-ai" and out["data"]["watched"] is True
-
-    rc, out = _cli("--workspace", str(ws), "entities")
-    names = [e["name"] for e in out["data"]["entities"]]
-    assert "Figure AI" in names
-
-    rc, out = _cli("--workspace", str(ws), "entities", "--unwatch", "Figure AI")
-    assert rc == 0 and out["data"]["removed"] is True
+    assert rc == 0 and out["data"]["slug"] == "figure-ai" and out["data"]["type"] == "company"
 
 
 def test_cli_entities_not_found(tmp_path):
@@ -140,67 +109,12 @@ def test_cli_entities_not_found(tmp_path):
     assert rc == 1 and out["ok"] is False and out["error"] == "ENTITY_NOT_FOUND"
 
 
-# ---------- Task 5: LLM 摘要管线契约测试 ----------
-
-from scripts.entity_summary import auto_write_summary, validate_summary_md
-
-
-def _ws_db(tmp_path):
+def test_cli_entities_removed_flags_rejected(tmp_path):
+    """实体 watch / 摘要子命令已移除，argparse 应直接拒绝。"""
     ws = tmp_path / "wiki"
-    (ws / "data").mkdir(parents=True)
-    (ws / "artifacts").mkdir(parents=True)
-    db = ws / "data" / "wiki.db"
-    ensure_schema(db)
-    conftest.seed_entry(db, "2026-08-01_aaaa", status="done")
-    L.set_entry_entities(db, "2026-08-01_aaaa",
-                         {"company": ["Figure AI"], "author": [], "product": [], "series": []})
-    return ws, db
-
-
-def test_validate_summary_md():
-    agg = {"name": "Figure AI", "records": [{"id": "2026-08-01_aaaa"}]}
-    ok, errors = validate_summary_md("# Figure AI\n\n见 2026-08-01_aaaa。", agg)
-    assert ok and not errors
-    ok, errors = validate_summary_md("无标题无记录", agg)
-    assert not ok and len(errors) >= 2  # 缺 H1 + 缺记录引用
-    ok, errors = validate_summary_md("# 别的标题\n\n2026-08-01_aaaa", agg)
-    assert not ok  # H1 不含实体名
-
-
-def test_auto_write_summary_with_fake_runner(tmp_path):
-    ws, db = _ws_db(tmp_path)
-
-    def fake_runner(prompt, ws_arg, timeout=900):
-        out = Path(ws_arg) / "entities" / "figure-ai" / "summary.new.md"
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text("# Figure AI\n\n人形机器人公司。关联记录：2026-08-01_aaaa。", encoding="utf-8")
-        return {"ok": True}
-
-    r = auto_write_summary("Figure AI", ws, db, runner=fake_runner)
-    assert r["ok"] and r["revision"] == 1 and r["slug"] == "figure-ai"
-    assert (ws / "entities" / "figure-ai" / "summary.md").exists()
-    meta = json.loads((ws / "entities" / "figure-ai" / "meta.json").read_text(encoding="utf-8"))
-    assert meta["status"] == "done" and meta["revision"] == 1
-    # revision 自增
-    r2 = auto_write_summary("Figure AI", ws, db, runner=fake_runner)
-    assert r2["revision"] == 2
-    # 站点已重建且嵌入摘要
-    pages = json.loads((ws / "site" / "data" / "entity_pages.json").read_text(encoding="utf-8"))
-    assert "人形机器人公司" in pages["figure-ai"]["summary"]
-
-
-def test_auto_write_summary_invalid_marks_failed(tmp_path):
-    ws, db = _ws_db(tmp_path)
-
-    def bad_runner(prompt, ws_arg, timeout=900):
-        out = Path(ws_arg) / "entities" / "figure-ai" / "summary.new.md"
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text("# Figure AI\n\n没有引用任何记录 id。", encoding="utf-8")
-        return {"ok": True}
-
-    with pytest.raises(EntityError) as ei:
-        auto_write_summary("Figure AI", ws, db, runner=bad_runner)
-    assert ei.value.code == "SUMMARY_VERIFY_FAILED"
-    assert not (ws / "entities" / "figure-ai" / "summary.md").exists()
-    meta = json.loads((ws / "entities" / "figure-ai" / "meta.json").read_text(encoding="utf-8"))
-    assert meta["status"] == "failed"
+    _cli("--workspace", str(ws), "init")
+    for flag in (["--watch", "Figure AI"], ["--unwatch", "Figure AI"], ["--watched"],
+                 ["--summary", "--name", "Figure AI"]):
+        r = subprocess.run([sys.executable, str(CLI), "--json", "--workspace", str(ws),
+                            "entities", *flag], capture_output=True)
+        assert r.returncode != 0, flag

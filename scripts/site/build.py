@@ -13,9 +13,7 @@ scripts/site/build.py — 从 wiki.db 构建轻量静态 wiki 站点。
     entries.json
     tags.json
     sources.json
-    entities.json
     timeline.json
-    entity_pages.json
 """
 import argparse
 import json
@@ -23,36 +21,22 @@ import shutil
 from collections import defaultdict
 from pathlib import Path
 
-import yaml
-
+from scripts import entity_filter
 from scripts import paths
 from scripts.records.schema import load_record
 from scripts.wiki_index.store import list_entries
 from scripts.site.templates import render_pages
-from scripts.site.entities import build_entity_index
-from scripts.site.entity_pages import build_entity_pages
 
 
-REFERENCES_DIR = Path(__file__).resolve().parent.parent.parent / "references"
 _ASSET_DIR = paths.assets_dir() / "site"
 
 # v3.2: entity alias lookup table for search expansion
 _ALIAS_MAP = None
 def _get_alias_map():
+    """canonical/别名 → canonical 查找表（单源：scripts.entity_filter）。"""
     global _ALIAS_MAP
-    if _ALIAS_MAP is not None: return _ALIAS_MAP
-    path = REFERENCES_DIR / "entity_aliases.yaml"
-    if not path.exists(): _ALIAS_MAP = {}; return _ALIAS_MAP
-    data = yaml.safe_load(open(path, encoding="utf-8")) or {}
-    m = {}
-    for canonical, variants in (data.get("terms") or {}).items():
-        for v in [canonical] + (variants or []):
-            m[str(v).strip().lower()] = canonical
-    for _et, ent_map in (data.get("entities") or {}).items():
-        for canonical, variants in (ent_map or {}).items():
-            for v in [canonical] + (variants or []):
-                m[str(v).strip().lower()] = canonical
-    _ALIAS_MAP = m
+    if _ALIAS_MAP is None:
+        _ALIAS_MAP = entity_filter.build_variant_map(entity_filter.load_aliases())
     return _ALIAS_MAP
 
 
@@ -229,25 +213,6 @@ def _build_sources(entries):
     return {k: dict(v) for k, v in sorted(sources.items())}
 
 
-def _build_related_map(db_path, entries=None) -> dict[str, list[dict]]:
-    """v3.4：relations 表 → entry → top related；v3.7：附标题（列表展示）。"""
-    from scripts.records.links import get_all_relations
-    rels = get_all_relations(db_path)
-    titles = {e.get("id"): (e.get("title") or "") for e in (entries or [])}
-    m: dict[str, dict[str, float]] = {}
-    for r in rels:
-        for eid in (r["entry_a"], r["entry_b"]):
-            other = r["entry_b"] if eid == r["entry_a"] else r["entry_a"]
-            d = m.setdefault(eid, {})
-            d[other] = d.get(other, 0) + (r.get("score") or 0)
-    out = {}
-    for eid, others in m.items():
-        ranked = sorted(others.items(), key=lambda kv: -kv[1])[:6]
-        out[eid] = [{"id": oid, "score": round(s, 1), "title": titles.get(oid) or ""}
-                    for oid, s in ranked]
-    return out
-
-
 def _slim_entry(e: dict) -> dict:
     """v3.3：前端展示所需字段（去掉 raw_files/article_url/raw/sources 等大体量字段）。"""
     src = e.get("source") or {}
@@ -329,15 +294,9 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
     entries = _export_entries(db_path, wiki_dir)
     tags = _build_tags(entries)
     sources = _build_sources(entries)
-    entities = build_entity_index(entries, wiki_dir)
-
-    # v3.4：关联条目（relations 表 top N）注入 entries.json 供详情展示
-    related_map = _build_related_map(db_path, entries)
 
     # v3.3：entries.json 瘦身——只写前端表格/详情消费字段
     display_entries = [_slim_entry(e) for e in entries]
-    for de in display_entries:
-        de["_related"] = related_map.get(de["id"], [])
     (data_dir / "entries.json").write_text(
         json.dumps(display_entries, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )
@@ -346,9 +305,6 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
     )
     (data_dir / "sources.json").write_text(
         json.dumps(sources, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
-    )
-    (data_dir / "entities.json").write_text(
-        json.dumps(entities, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )
 
     # v3.1 时间线：按月聚合
@@ -375,17 +331,10 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
     render_pages(entries, tags, sources, out_dir)
 
     # v3.3：清理陈旧 data 产物（search_index/themes/trends/graph 等已废弃文件）
-    current_data = {"entries.json", "tags.json", "sources.json", "entities.json",
-                    "timeline.json", "entity_pages.json"}
+    current_data = {"entries.json", "tags.json", "sources.json", "timeline.json"}
     for f in data_dir.glob("*.json"):
         if f.name not in current_data:
             f.unlink()
-
-    # v3.8：实体聚合页（确定性，零 LLM；摘要嵌读 wiki/entities/）
-    entity_pages = build_entity_pages(db_path, wiki_dir)
-    (data_dir / "entity_pages.json").write_text(
-        json.dumps(entity_pages, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
-    )
 
     # 站点已简化为单页结构，清理旧版多页站点的遗留页面（survey.html 已随冻结管线移除）
     for legacy_page in ("browse.html", "graph.html", "clusters.html", "timeline.html", "dive.html", "survey.html"):

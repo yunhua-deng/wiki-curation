@@ -104,7 +104,6 @@ MIGRATIONS = [
     ('v3_add_source_prompt', 'ALTER TABLE entries ADD COLUMN source_prompt TEXT'),
     ('v5_add_watched', 'ALTER TABLE entries ADD COLUMN watched INTEGER DEFAULT 0'),
     ('v5_add_watched_at', 'ALTER TABLE entries ADD COLUMN watched_at TEXT'),
-    ('v7_entity_watch', "CREATE TABLE IF NOT EXISTS entity_watch (name TEXT PRIMARY KEY, type TEXT DEFAULT '', note TEXT DEFAULT '', created_at TEXT NOT NULL)"),
 ]
 
 VALID_STATUSES = {"pending", "running", "done", "failed", "orphan", "verified_brief"}
@@ -399,6 +398,27 @@ def _migrate_v6_owner(conn):
     _record_schema_version(conn, 'v6_owner')
 
 
+def _migrate_v8_structural_edges(conn):
+    """v8：纯收录定位——清掉历史 shared_entity 边并删除 entity_watch 表。"""
+    applied = _get_applied_versions(conn)
+    if 'v8_structural_edges' in applied:
+        return
+
+    conn.execute("DELETE FROM relations WHERE kind = 'shared_entity'")
+    conn.execute("DROP TABLE IF EXISTS entity_watch")
+
+    _record_schema_version(conn, 'v8_structural_edges')
+
+
+def applied_versions(db_path) -> set:
+    """已应用的迁移版本集合（doctor 可观测 schema 迁移状态）。"""
+    conn = sqlite3.connect(str(Path(db_path)))
+    try:
+        return _get_applied_versions(conn)
+    finally:
+        conn.close()
+
+
 def ensure_schema(db_path):
     """确保 wiki.db 表结构、FTS5 索引、辅助索引存在，并执行迁移。"""
     db_path = Path(db_path)
@@ -436,6 +456,9 @@ def ensure_schema(db_path):
 
     # v6：队列 owner 隔离
     _migrate_v6_owner(conn)
+
+    # v8：纯收录定位——删除 shared_entity 边与 entity_watch 表
+    _migrate_v8_structural_edges(conn)
 
     conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_topic_type ON entries(topic_type)")

@@ -1,9 +1,6 @@
 /**
  * Wiki Site v3.2 — compact table, inline expansion, month collapse.
  */
-// v3.21: entities 视图五类分组（高校/公司/开源/产品/人物）+ 单次实体默认隐藏（组内 toggle）
-// v3.23: entities 视图改版——类型过滤 chips（含组计数，单选）+ 分组可折叠 + 网格紧凑卡片
-//        （折叠/低频展开/选中 chip 均持久化到 localStorage：wiki.entCollapsed/wiki.entExpanded/wiki.entGroup）
 // v3.19: 转义引号——实体名可含双引号（如 "Data Pyramid"），属性上下文（data-coname 等）需要
 function escapeHtml(text) {
   return String(text ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -51,19 +48,16 @@ function getParam(name) {
 
 // ================= init =================
 async function init() {
-  const [entries, tags, entityPages] = await Promise.all([
+  const [entries, tags] = await Promise.all([
     loadJSON('/site/data/entries.json'),
     loadJSON('/site/data/tags.json').catch(() => ({})),
-    loadJSON('/site/data/entity_pages.json').catch(() => ({})),
   ]);
-  const entityPageMap = entityPages || {};
 
   // stats
   const withRec = entries.filter(e => e.has_record).length;
   document.getElementById('stats').innerHTML = `
     <div class="stat"><b>${withRec}</b> records</div>
     <div class="stat"><b>${entries.filter(e => e.watched).length}</b> watching</div>
-    <div class="stat"><b>${Object.keys(entityPageMap).length}</b> entities</div>
   `;
 
   // type filter
@@ -169,27 +163,13 @@ async function init() {
           const entBits = [];
           for (const [k,v] of Object.entries(e.entities)) {
             if (!v.length) continue;
-            const chips = v.map(name =>
-              `<span class="ent-chip" data-entname="${escapeHtml(name)}" title="点击跳转到实体页">${escapeHtml(name)}</span>`
-            ).join(' ');
-            entBits.push(`${k}: ${chips}`);
+            entBits.push(`${k}: ${v.map(name => escapeHtml(name)).join(', ')}`);
           }
-          if (entBits.length) html += `<p><strong>Entities</strong> <span class="muted ent-hint">（点击名字跳转到实体页）</span> ${entBits.join(' · ')}</p>`;
+          if (entBits.length) html += `<p><strong>Entities</strong> ${entBits.join(' · ')}</p>`;
         }
         if (e.source && e.source.direct_source) {
           const ds = String(e.source.direct_source);
           html += `<p><strong>Source</strong> <a href="${escapeHtml(ds)}" target="_blank" rel="noopener">${escapeHtml(ds.substring(0,80))}</a></p>`;
-        }
-        // v3.4/v3.7: related entries as list (id + title, click-to-scroll)
-        if ((e._related||[]).length) {
-          html += '<p class="related-head"><strong>Related</strong></p>';
-          html += '<ul class="related-list">';
-          html += e._related.map(r =>
-            `<li><span class="rel-id" data-relid="${escapeHtml(r.id)}" title="跳转展开">${escapeHtml(r.id)}</span>` +
-            (r.title ? ` <span class="rel-title">${escapeHtml(r.title)}</span>` : '') +
-            ` <span class="rel-score muted">${r.score}</span></li>`
-          ).join('');
-          html += '</ul>';
         }
         // v3.7: initiation preview (add-time recall list with reasons)
         const pv = e.preview && e.preview.recall;
@@ -232,14 +212,6 @@ async function init() {
     });
 
 
-
-    // v3.20: entity chip → 跳转实体页（新 tab，实体详情以弹出卡片打开）
-    container.querySelectorAll('.ent-chip').forEach(chip => {
-      chip.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        window.open('/site/?v=entities&e=' + encodeURIComponent(chip.dataset.entname), '_blank');
-      });
-    });
 
     // v3.10: watch star toggle — POST /api/watch, optimistic with revert
     container.querySelectorAll('[data-watchid]').forEach(btn => {
@@ -355,238 +327,6 @@ async function init() {
   statusSel.addEventListener('change', render);
   if (watchOnly) watchOnly.addEventListener('change', render);
   render();
-
-  // --- entities view：类型过滤 chips + 分组可折叠 + 网格卡片；搜索覆盖全部实体 ---
-  function renderEntities(pages) {
-    const list = document.getElementById('entities-list');
-    const items = Object.values(pages || {});
-    const searchEl = document.getElementById('ent-search');
-    const watchOnly = document.getElementById('ent-filter-watch');
-    const chipbar = document.getElementById('ent-chipbar');
-    if (!items.length) { list.innerHTML = '<p class="empty">No entities yet</p>'; return; }
-
-    // 五组分区（顺序固定）；groups 由后端 entity_pages.json 给出（列表，允许重叠），缺失时按 type 兜底
-    const GROUPS = [
-      ['academia', '高校与研究机构'],
-      ['company', '科技公司'],
-      ['oss', '开源项目'],
-      ['product', '商业产品'],
-      ['person', '人物'],
-    ];
-    const groupsOf = (p) => (Array.isArray(p.groups) && p.groups.length) ? p.groups :
-      [p.group || (p.type === 'author' ? 'person' : p.type === 'company' ? 'company' : 'product')];
-
-    // v3.23：UI 状态持久化（分组折叠 / 低频展开 / 选中 chip）
-    const LS_COLLAPSED = 'wiki.entCollapsed';
-    const LS_EXPANDED = 'wiki.entExpanded';
-    const LS_GROUP = 'wiki.entGroup';
-    const lsGet = (key, fallback) => {
-      try { const v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v); }
-      catch (_) { return fallback; }
-    };
-    const lsSet = (key, val) => { try { localStorage.setItem(key, JSON.stringify(val)); } catch (_) {} };
-    let activeGroup = lsGet(LS_GROUP, 'all');       // 类型过滤 chip（单选，'all' = 全部）
-    const collapsed = lsGet(LS_COLLAPSED, {});       // group key -> 组分区是否收起
-    const expanded = lsGet(LS_EXPANDED, {});         // group key -> 低频实体是否展开
-
-    function cardHtml(p) {
-      return `<div class="tracking-card entity-card" data-slug="${escapeHtml(p.slug)}">
-        <h3 title="${escapeHtml(p.name)}">${p.watched ? '★ ' : ''}${escapeHtml(p.name)}
-          ${p.summary ? `<a class="doc-link" href="/site/doc.html?kind=entity&slug=${encodeURIComponent(p.slug)}" target="_blank" rel="noopener" title="摘要独立页（新 tab）">🔗</a>` : ''}
-        </h3>
-        <div class="trend-meta">${escapeHtml(p.type)} · ${p.record_count} records${p.summary ? ' · 📝 摘要' : ''}</div>
-      </div>`;
-    }
-
-    function bindCards() {
-      list.querySelectorAll('.entity-card').forEach(card => {
-        card.addEventListener('click', (ev) => {
-          if (ev.target.closest('a')) return;
-          renderEntityDetail(pages[card.dataset.slug], pages);
-        });
-      });
-    }
-
-    // 类型过滤 chips：全部 + 五组（计数含重叠归属）；单选，选中某组只渲染该组
-    function renderChips() {
-      if (!chipbar) return;
-      const defs = [['all', '全部'], ...GROUPS];
-      chipbar.innerHTML = defs.map(([g, label]) => {
-        const n = g === 'all' ? items.length : items.filter(p => groupsOf(p).includes(g)).length;
-        return `<button class="ent-chip-filter${activeGroup === g ? ' active' : ''}" data-group="${g}">${label} (${n})</button>`;
-      }).join('');
-      chipbar.querySelectorAll('.ent-chip-filter').forEach(btn => {
-        btn.addEventListener('click', () => {
-          activeGroup = btn.dataset.group;
-          lsSet(LS_GROUP, activeGroup);
-          renderChips();
-          renderList();
-        });
-      });
-    }
-
-    const inActiveGroup = (p) => activeGroup === 'all' || groupsOf(p).includes(activeGroup);
-
-    function renderList() {
-      const q = (searchEl.value || '').toLowerCase().trim();
-      const w = watchOnly.checked;
-      if (q || w) {
-        // 搜索/筛选：覆盖全部实体（含默认隐藏的低频实体），chip 过滤一致生效
-        const matched = items.filter(p =>
-          (!q || p.name.toLowerCase().includes(q)) && (!w || p.watched) && inActiveGroup(p))
-          .sort((a, b) => b.record_count - a.record_count);
-        if (!matched.length) { list.innerHTML = '<p class="empty">No matching entities</p>'; return; }
-        const shown = matched.slice(0, 100);
-        list.innerHTML = `<div class="ent-grid">${shown.map(cardHtml).join('')}</div>` +
-          `<p class="muted ent-total">共 ${matched.length} 个匹配${matched.length > 100 ? '，显示前 100' : ''}</p>`;
-      } else {
-        // 默认：五组分区（chip 单选时只渲染该组），一个实体在其所属的每个分组里都渲染一张卡片；
-        // 组头可点击折叠（localStorage 持久）；组内 watched 置顶 + record_count 降序；
-        // 低频（仅 1 次）默认隐藏（按组成员独立计算）
-        const visibleGroups = activeGroup === 'all' ? GROUPS : GROUPS.filter(([g]) => g === activeGroup);
-        let html = '';
-        for (const [g, label] of visibleGroups) {
-          const inGroup = items.filter(p => groupsOf(p).includes(g));
-          if (!inGroup.length) continue;
-          const byCount = (a, b) => b.record_count - a.record_count;
-          const watched = inGroup.filter(p => p.watched).sort(byCount);
-          const rest = inGroup.filter(p => !p.watched).sort(byCount);
-          const frequent = rest.filter(p => p.record_count > 1);
-          const rare = rest.filter(p => p.record_count === 1);
-          const isCollapsed = !!collapsed[g];
-          html += `<h3 class="ent-section" data-group="${g}"><span class="ent-caret">${isCollapsed ? '▸' : '▾'}</span> ${label}（${inGroup.length}）</h3>`;
-          let body = `<div class="ent-grid">${watched.concat(frequent).map(cardHtml).join('')}`;
-          if (rare.length) {
-            if (expanded[g]) {
-              body += rare.map(cardHtml).join('') + '</div>' +
-                `<p><button class="ent-toggle" data-group="${g}">隐藏仅出现 1 次的实体（${rare.length}）</button></p>`;
-            } else {
-              body += '</div>' +
-                `<p><button class="ent-toggle" data-group="${g}">显示仅出现 1 次的实体（${rare.length}）</button></p>`;
-            }
-          } else {
-            body += '</div>';
-          }
-          html += `<div class="ent-group-body${isCollapsed ? ' collapsed' : ''}">${body}</div>`;
-        }
-        html += `<p class="muted ent-total">共 ${items.length} 个实体，用搜索查看全部</p>`;
-        list.innerHTML = html;
-        list.querySelectorAll('.ent-section').forEach(h => {
-          h.addEventListener('click', () => {
-            const g = h.dataset.group;
-            collapsed[g] = !collapsed[g];
-            lsSet(LS_COLLAPSED, collapsed);
-            renderList();
-          });
-        });
-        list.querySelectorAll('.ent-toggle').forEach(btn => {
-          btn.addEventListener('click', () => {
-            expanded[btn.dataset.group] = !expanded[btn.dataset.group];
-            lsSet(LS_EXPANDED, expanded);
-            renderList();
-          });
-        });
-      }
-      bindCards();
-    }
-
-    searchEl.addEventListener('input', renderList);
-    watchOnly.addEventListener('change', renderList);
-    renderChips();
-    renderList();
-  }
-
-  function renderEntityDetail(p, pages) {
-    const el = document.getElementById('entity-detail');
-    if (!p) { el.innerHTML = ''; return; }
-    // 头部：名称 + 类型 + watched + 记录数 + 活跃区间
-    const months = p.timeline.map(t => t.month).sort();
-    const span = months.length ? `${months[0]} – ${months[months.length - 1]}` : '—';
-    // 摘要：内联首段 + 独立页链接
-    const excerpt = p.summary ? p.summary.split(/\n\s*\n/)[0].trim() : '';
-    // 时间线：纯 CSS 迷你柱状图（升序：旧→新）
-    const tlAsc = [...p.timeline].sort((a, b) => a.month < b.month ? -1 : 1);
-    const maxC = Math.max(...tlAsc.map(t => t.count), 1);
-    const bars = tlAsc.map(t =>
-      `<div class="tl-bar" style="height:${Math.round(t.count / maxC * 48) + 4}px" title="${escapeHtml(t.month)}: ${t.count} records"><span class="tl-label">${escapeHtml(/^\d{4}-/.test(t.month) ? t.month.slice(2) : t.month)}</span></div>`
-    ).join('');
-    // 关联记录：按月份分组（≤3 组全展开，否则仅最新组展开）
-    const byMonth = {};
-    for (const r of p.records) { const mk = (r.date || '?').slice(0, 7); (byMonth[mk] = byMonth[mk] || []).push(r); }
-    const mks = Object.keys(byMonth).sort().reverse();
-    const recGroups = mks.map((mk, i) => {
-      const open = mks.length <= 3 || i === 0;
-      return `<details class="ent-rec-group"${open ? ' open' : ''}><summary>${escapeHtml(mk)}（${byMonth[mk].length}）</summary><ul>` +
-        byMonth[mk].map(r =>
-          `<li><span class="muted">${escapeHtml(r.date || '?')}</span> <a href="/site/doc.html?kind=record&id=${encodeURIComponent(r.id)}" target="_blank" rel="noopener">${escapeHtml(r.title || r.id)}</a></li>`
-        ).join('') + '</ul></details>';
-    }).join('');
-    // 共现实体：可点击 chips，点击跳到该实体详情
-    const co = p.co_entities.map(c =>
-      `<span class="ent-chip co-ent" data-coname="${escapeHtml(c.name)}" title="查看该实体">${escapeHtml(c.name)} ×${c.count}</span>`
-    ).join(' ');
-    // canonical 链接：按域名分组 + linkBadge 图标（同 records 详情风格）
-    const byDomain = {};
-    for (const l of p.links) {
-      try { const d = new URL(l.url).hostname.replace('www.', ''); (byDomain[d] = byDomain[d] || []).push(l); }
-      catch (_) { (byDomain.other = byDomain.other || []).push(l); }
-    }
-    const linkBits = Object.entries(byDomain).map(([d, ls]) =>
-      `<span class="link-domain">${escapeHtml(d)}</span> ` + ls.map(l => linkBadge(l)).join('')
-    ).join('<br>');
-    el.innerHTML = `
-      <div class="ent-modal-backdrop">
-        <div class="entity-detail-card ent-modal">
-          <button class="ent-modal-close" title="关闭（Esc）">✕</button>
-          <h2>${p.watched ? '★ ' : ''}${escapeHtml(p.name)} <span class="badge badge-other">${escapeHtml(p.type)}</span></h2>
-          <p class="trend-meta">${p.record_count} records · 活跃 ${escapeHtml(span)}</p>
-          ${p.summary ? `<div class="summary-block"><p>${escapeHtml(excerpt)}</p></div>
-            <p><a href="/site/doc.html?kind=entity&slug=${encodeURIComponent(p.slug)}" target="_blank" rel="noopener">📝 阅读摘要全文</a></p>` : ''}
-          <h4>时间线</h4>
-          <div class="tl-wrap"><div class="tl-chart">${bars}</div></div>
-          <h4>关联记录（${p.record_count}）</h4>${recGroups || '<p class="muted">—</p>'}
-          <h4>共现实体</h4><p>${co || '<span class="muted">—</span>'}</p>
-          <h4>Canonical 链接</h4><p>${linkBits || '<span class="muted">—</span>'}</p>
-        </div>
-      </div>`;
-    // 弹卡关闭：✕ / 点击遮罩 / Esc（重渲染前清掉上一个 Esc 监听，避免累积）
-    const close = () => { el.innerHTML = ''; if (el._escHandler) { document.removeEventListener('keydown', el._escHandler); el._escHandler = null; } };
-    if (el._escHandler) document.removeEventListener('keydown', el._escHandler);
-    el._escHandler = (ev) => { if (ev.key === 'Escape') close(); };
-    document.addEventListener('keydown', el._escHandler);
-    el.querySelector('.ent-modal-backdrop').addEventListener('click', (ev) => {
-      if (ev.target.classList.contains('ent-modal-backdrop')) close();
-    });
-    el.querySelector('.ent-modal-close').addEventListener('click', close);
-    el.querySelectorAll('.co-ent').forEach(chip => chip.addEventListener('click', () => {
-      const target = Object.values(pages || {}).find(x => x.name === chip.dataset.coname);
-      if (target) renderEntityDetail(target, pages);
-    }));
-  }
-
-  renderEntities(entityPageMap);
-
-  // --- nav（Records + Entities） ---
-  document.getElementById('nav-records').addEventListener('click', () => switchView('records'));
-  document.getElementById('nav-entities').addEventListener('click', () => switchView('entities'));
-
-  function switchView(view) {
-    for (const v of ['records', 'entities']) {
-      const nav = document.getElementById('nav-' + v);
-      if (nav) nav.classList.toggle('active', view === v);
-      const viewEl = document.getElementById(v + '-view');
-      if (viewEl) viewEl.style.display = view === v ? '' : 'none';
-    }
-  }
-
-  const v0 = getParam('v');
-  if (v0 === 'entities') switchView(v0);
-  const e0 = getParam('e');
-  if (v0 === 'entities' && e0) {
-    // v3.20：e 参数支持 slug 或实体名（records/doc 页的 chip 跳转按名字来）
-    const target = entityPageMap[e0] || Object.values(entityPageMap).find(x => x.name === e0);
-    if (target) renderEntityDetail(target, entityPageMap);
-  }
 }
 
 if (document.readyState === 'loading') {

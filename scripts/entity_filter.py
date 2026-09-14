@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""scripts/entity_filter.py — 实体抑制（suppress）与分组（group）共享逻辑。
+"""scripts/entity_filter.py — 实体配置单源：别名加载 + 抑制（suppress）+ 分组（group）。
 
-单一实现，供 publish / entity_pages / site entities / entity_summary /
-clean-entities 等所有消费方复用，避免各处独立实现再分裂。
+单一实现，供 publish / clean-entities / recall / doctor / 站点构建等
+所有消费方复用，避免各处独立实现再分裂。
 
 抑制规则（按优先级）：
   1. 豁免：entity_aliases.yaml 任何 canonical key（terms / entities 各桶 /
@@ -43,6 +43,20 @@ def _load_yaml(path: Path) -> dict:
         return {}
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
+
+
+# ---------------------------------------------------------------------------
+# alias 配置加载（recall / doctor / 站点搜索扩展共用）
+# ---------------------------------------------------------------------------
+def load_aliases(path=None) -> dict:
+    """加载 entity_aliases.yaml，返回结构化 alias 配置。
+
+    缺失文件时返回空结构（各桶/terms/series_roots 均为空 dict），调用方无需判空。
+    """
+    p = Path(path) if path else ALIASES_PATH
+    if not Path(p).exists():
+        return {"terms": {}, "entities": {"company": {}, "product": {}, "person": {}}, "series_roots": {}}
+    return _load_yaml(p)
 
 
 # ---------------------------------------------------------------------------

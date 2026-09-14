@@ -279,8 +279,8 @@ series_roots:
 
 # ============================================================
 # 实体抑制（suppress 机制）
-# 消费方：scripts/entity_filter.py（publish / entity_pages / site entities /
-# entity_summary / clean-entities 共用）。顺序：先 alias→canonical，再判抑制。
+# 消费方：scripts/entity_filter.py（publish / records/entities.py /
+# clean-entities 共用）。顺序：先 alias→canonical，再判抑制。
 # 豁免：本文件任何 canonical key（terms/entities 各桶/series_roots）与
 # references/entity_groups.yaml 显式列出的名字永不抑制。
 # ============================================================

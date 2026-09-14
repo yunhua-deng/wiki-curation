@@ -68,10 +68,20 @@ async function init() {
   const searchInput = document.getElementById('search');
   const statusSel = document.getElementById('filter-status');
   const watchOnly = document.getElementById('filter-watch');
+  const tagSel = document.getElementById('filter-tag');
+  // tag filter：tags.json 已按出现次数倒序，沿用该顺序并附上计数
+  for (const [name, ids] of Object.entries(tags || {})) {
+    const o = document.createElement('option');
+    o.value = name;
+    o.textContent = `${name} (${ids.length})`;
+    tagSel.appendChild(o);
+  }
   const container = document.getElementById('table-container');
-  // v3.5：支持 /site/?q=<kw> 预填搜索
+  // v3.5：支持 /site/?q=<kw> 预填搜索；v3.22：支持 /site/?tag=<tag> 预选标签
   const q0 = getParam('q');
   if (q0) searchInput.value = q0;
+  const tag0 = getParam('tag');
+  if (tag0) tagSel.value = tag0;
 
   // group by month
   function monthKey(e) {
@@ -93,12 +103,14 @@ async function init() {
     const q = (searchInput.value || '').toLowerCase().trim();
     const type = sel.value;
     const status = statusSel.value;
+    const tag = tagSel.value;
 
     let html = '';
     for (const mk of monthList) {
       const visible = months[mk].filter(e => {
         if (watchOnly && watchOnly.checked && !e.watched) return false;
         if (type && (e.topic_type || e.type) !== type) return false;
+        if (tag && !(e.tags || []).includes(tag)) return false;
         if (status && e.status !== status) return false;
         if (!q) return true;
         const links = (e.links||[]).map(l=>l.url||'').join(' ').toLowerCase();
@@ -158,7 +170,7 @@ async function init() {
           lh += '</p>';
           html += lh;
         }
-        if ((e.tags||[]).length) html += `<p><strong>Tags</strong> ${e.tags.map(t=>`<span class="badge badge-tag">${escapeHtml(t)}</span>`).join(' ')}</p>`;
+        if ((e.tags||[]).length) html += `<p><strong>Tags</strong> ${e.tags.map(t=>`<span class="badge badge-tag" data-tag="${escapeHtml(t)}" title="按此标签过滤">${escapeHtml(t)}</span>`).join(' ')}</p>`;
         if (e.entities) {
           const entBits = [];
           for (const [k,v] of Object.entries(e.entities)) {
@@ -192,6 +204,15 @@ async function init() {
       html += '</tbody></table></div></div>';
     }
     container.innerHTML = html || '<p class="empty">No matches</p>';
+
+    // v3.22: 点击标签即按该标签过滤
+    container.querySelectorAll('.badge-tag[data-tag]').forEach(b => {
+      b.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        tagSel.value = b.dataset.tag;
+        render();
+      });
+    });
 
     // collapse toggle
     container.querySelectorAll('.month-header').forEach(h => {
@@ -325,6 +346,7 @@ async function init() {
   searchInput.addEventListener('input', render);
   sel.addEventListener('change', render);
   statusSel.addEventListener('change', render);
+  tagSel.addEventListener('change', render);
   if (watchOnly) watchOnly.addEventListener('change', render);
   render();
 }

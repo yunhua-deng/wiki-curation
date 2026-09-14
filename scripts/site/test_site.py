@@ -93,6 +93,8 @@ def test_build_site_outputs(sample_workspace):
     index_html = (out_dir / "index.html").read_text(encoding="utf-8")
     assert 'id="search"' in index_html
     assert 'id="table-container"' in index_html
+    # 标签过滤控件（选项由前端从 data/tags.json 填充）
+    assert 'id="filter-tag"' in index_html
 
     entries = json.loads((out_dir / "data" / "entries.json").read_text(encoding="utf-8"))
     assert len(entries) == 3

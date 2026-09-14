@@ -35,6 +35,7 @@ _INDEX_CONTENT = """
 <div class="controls">
   <input type="search" id="search" placeholder="Search title, TL;DR, tags, URLs, entities..." autocomplete="off">
   <select id="filter-type"><option value="">All types</option></select>
+  <select id="filter-tag"><option value="">All tags</option></select>
   <select id="filter-status">
     <option value="">All status</option>
     <option value="done">done</option>

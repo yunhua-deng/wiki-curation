@@ -9,7 +9,8 @@ function makeEl(id) {
   return {
     id, innerHTML: '', value: '', style: {},
     appendChild(c) { this.children = (this.children || []); this.children.push(c); },
-    addEventListener() {},
+    addEventListener(type, fn) { (this._on = this._on || {}); (this._on[type] = this._on[type] || []).push(fn); },
+    fire(type) { ((this._on || {})[type] || []).forEach((fn) => fn({ stopPropagation() {} })); },
     querySelectorAll() { return []; },
     insertAdjacentHTML() {},
     classList: { toggle() {}, add() {}, remove() {} },
@@ -20,7 +21,7 @@ function makeEl(id) {
 
 async function main() {
   const els = {};
-  const ids = ['stats', 'filter-type', 'search', 'filter-status', 'table-container'];
+  const ids = ['stats', 'filter-type', 'filter-tag', 'search', 'filter-status', 'table-container'];
   for (const id of ids) els[id] = makeEl(id);
 
   const document = {
@@ -54,18 +55,43 @@ async function main() {
   const monthCount = (html.match(/month-group/g) || []).length;
   const stats = els['stats'].innerHTML;
   const typeOptions = (els['filter-type'].children || []).length;
+  const tagOptions = (els['filter-tag'].children || []).length;
+
+  // tags 过滤闭环：选中标签 → 触发 change → 行数应恰好等于该标签在 tags.json 里的条目数
+  const tags = await (await fetch(`${BASE}/site/data/tags.json`)).json();
+  const tagNames = Object.keys(tags);
+  let tagFilter = null;
+  if (tagNames.length) {
+    const t = tagNames[0];
+    const expected = tags[t].length;
+    els['filter-tag'].value = t;
+    els['filter-tag'].fire('change');
+    const filtered = (els['table-container'].innerHTML.match(/wiki-row/g) || []).length;
+    tagFilter = { tag: t, expected, filtered, ok: filtered === expected };
+  }
 
   console.log(JSON.stringify({
     stats: stats.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
     typeOptions,
+    tagOptions,
+    expectedTagOptions: tagNames.length,
+    tagFilter,
     monthCount,
     rowCount,
     htmlBytes: html.length,
-    sampleRow: (html.match(/<tr class="wiki-row"[^>]*>.{0,160}/s) || [''])[0].replace(/\s+/g, ' ').slice(0, 220),
   }, null, 2));
 
   if (rowCount === 0) { console.error('FAIL: no rows rendered'); process.exit(1); }
-  console.log('PASS: table rendered with', rowCount, 'rows');
+  if (tagOptions !== tagNames.length) {
+    console.error(`FAIL: tag filter has ${tagOptions} options, tags.json has ${tagNames.length}`);
+    process.exit(1);
+  }
+  if (tagFilter && !tagFilter.ok) {
+    console.error(`FAIL: filtering by "${tagFilter.tag}" gave ${tagFilter.filtered} rows, expected ${tagFilter.expected}`);
+    process.exit(1);
+  }
+  console.log('PASS: table rendered with', rowCount, 'rows;', tagOptions, 'tag filters;',
+              tagFilter ? `tag "${tagFilter.tag}" -> ${tagFilter.filtered} rows` : 'no tags');
 }
 
 main().catch((e) => { console.error('ERROR:', e.message); process.exit(2); });

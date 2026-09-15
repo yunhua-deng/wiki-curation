@@ -103,3 +103,91 @@ def test_handler_linkedin_needs_browser_when_chrome_unavailable(tmp_path, monkey
 
     assert result["status"] == "needs_browser"
     assert result["chrome_available"] is False
+
+
+# ---------- 2026-09-14_001：SPA 外壳不得判 success ----------
+
+SPA_SHELL_HTML = """<!doctype html>
+<html><head><title>microSLAM</title>
+<meta name="description" content="Turning plain monocular RGB videos into interactive RL environments.">
+</head>
+<body>
+    <div id="root"></div>
+    <script type="module" crossorigin src="/assets/index-D7zAKniS.js"></script>
+</body></html>
+"""
+
+
+def _fake_curl(html: str, http_code: str = "200"):
+    def _run(cmd, timeout=None):
+        path = cmd[cmd.index("-o") + 1]
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(html)
+        return {"ok": True, "exit_code": 0, "stdout": http_code, "stderr": ""}
+    return _run
+
+
+def _fetch_results(dest) -> list:
+    return json.loads((dest / "_fetch_results.json").read_text(encoding="utf-8"))["results"]
+
+
+def test_handler_webpage_spa_shell_is_failed(tmp_path, monkeypatch):
+    """SPA 外壳（正文由 JS 渲染）→ failed + spa_shell 标记，不再判 success。"""
+    monkeypatch.setattr(cm, "run_cmd", _fake_curl(SPA_SHELL_HTML))
+    dest = tmp_path / "raw" / "spa"
+    result = cm.handler_webpage(dest, "https://www.microagi.ai/articles/microslam")
+
+    assert result["status"] == "failed"
+    assert result["spa_shell"] is True
+    assert result["visible_chars"] < cm.MIN_VISIBLE_CHARS
+    assert "SPA 空壳" in result["error"]
+
+    rec = _fetch_results(dest)[0]
+    assert rec["status"] == "failed"
+    assert rec["spa_shell"] is True
+    assert rec["visible_chars"] == result["visible_chars"]
+    assert rec["http_code"] == "200"
+
+
+def test_handler_webpage_static_article_succeeds(tmp_path, monkeypatch):
+    """普通静态正文页不受影响（不误杀）。"""
+    body = "".join(f"<p>paragraph {i} about robot learning and VLA models.</p>" for i in range(40))
+    html = f"<html><head><title>t</title></head><body><article>{body}</article></body></html>"
+    monkeypatch.setattr(cm, "run_cmd", _fake_curl(html))
+    dest = tmp_path / "raw" / "static"
+    result = cm.handler_webpage(dest, "https://example.com/post")
+
+    assert result["status"] == "success"
+    assert result["files"] == ["webpage.html"]
+    assert len(cm._visible_text(html)) >= cm.MIN_VISIBLE_CHARS
+    assert _fetch_results(dest)[0]["status"] == "success"
+
+
+def test_handler_webpage_short_text_without_spa_marker(tmp_path, monkeypatch):
+    """正文过短但不是 SPA 形态 → failed，且不误标 spa_shell。"""
+    padded = '<html><body><div class="' + "p" * 240 + '">短</div></body></html>'
+    monkeypatch.setattr(cm, "run_cmd", _fake_curl(padded))
+    dest = tmp_path / "raw" / "short"
+    result = cm.handler_webpage(dest, "https://example.com/short")
+
+    assert result["status"] == "failed"
+    assert result["spa_shell"] is False
+    assert "可见正文过短" in result["error"]
+
+
+def test_handler_webpage_min_visible_chars_is_configurable(tmp_path, monkeypatch):
+    """阈值走 settings.min_visible_chars，可按需放宽/收紧。"""
+    monkeypatch.setattr(cm, "run_cmd", _fake_curl(SPA_SHELL_HTML))
+    monkeypatch.setattr(cm.sc, "get_settings",
+                        lambda cfg=None: {"fetch_timeout": 60, "min_visible_chars": 5})
+    dest = tmp_path / "raw" / "threshold"
+    result = cm.handler_webpage(dest, "https://example.com/spa")
+    assert result["status"] == "success"
+
+
+def test_handler_webpage_http_error_is_failed(tmp_path, monkeypatch):
+    monkeypatch.setattr(cm, "run_cmd", _fake_curl("<html><body>gone</body></html>", http_code="404"))
+    dest = tmp_path / "raw" / "404"
+    result = cm.handler_webpage(dest, "https://example.com/gone")
+    assert result["status"] == "failed"
+    assert _fetch_results(dest)[0]["http_code"] == "404"

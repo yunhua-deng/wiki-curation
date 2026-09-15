@@ -55,8 +55,8 @@ def _append_fetch_result(dest_dir: Path, result: dict):
 
 def _record_stage(dest_dir: Path, url: str, tool: str, ok: bool, exit_code: int,
                   file_size: int = 0, download_time: float = 0.0, error: str = "",
-                  source_type: str = ""):
-    _append_fetch_result(dest_dir, {
+                  source_type: str = "", extra: dict | None = None):
+    record = {
         "url": url,
         "tool": tool,
         "exit_code": exit_code,
@@ -65,7 +65,10 @@ def _record_stage(dest_dir: Path, url: str, tool: str, ok: bool, exit_code: int,
         "error": error[:200],
         "status": "success" if ok else "failed",
         "source_type": source_type,
-    })
+    }
+    if extra:
+        record.update(extra)
+    _append_fetch_result(dest_dir, record)
 
 
 def _merge_fetch_results(src_dir: Path, dest_dir: Path, source_index: int = 0):
@@ -331,31 +334,79 @@ def handler_linkedin(dest_dir: Path, url: str, label: str = "primary") -> dict:
     return result
 
 
+MIN_VISIBLE_CHARS = 800  # 可见正文下限（settings.min_visible_chars 可覆盖）
+MIN_HTML_BYTES = 200  # 响应体下限：低于此值视为没抓到内容
+SPA_SHELL_MARKERS = (
+    'type="module"', 'id="root"', "id='root'", 'id="app"', "id='app'",
+    '__next_data__', 'data-reactroot', 'ng-version=',
+)
+
+
+def _visible_text(html: str) -> str:
+    """剥离 script/style 与全部标签后的可见正文，用于材料有效性判定。"""
+    text = re.sub(r'<(script|style)[^>]*>.*?</\1>', ' ', html, flags=re.S | re.I)
+    text = re.sub(r'<[^>]+>', ' ', text)
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def _looks_like_spa_shell(html: str, visible_chars: int, min_visible: int) -> bool:
+    """可见正文过短且 HTML 只挂载了 JS 入口 → 疑似 SPA 空壳（正文由 JS 运行时注入）。"""
+    if visible_chars >= min_visible:
+        return False
+    low = html.lower()
+    return any(marker in low for marker in SPA_SHELL_MARKERS)
+
+
 def handler_webpage(dest_dir: Path, url: str, label: str = "primary", file_stem: str = "webpage") -> dict:
-    """通用网页：下载原始 HTML。"""
+    """通用网页：下载原始 HTML，并按「可见正文密度」判定材料是否有效。
+
+    只凭 HTTP 200 + 文件字节数会把 SPA 外壳（Vite/React/Next CSR，正文由 JS 渲染）
+    判成 success，材料实质为空却一路放行。这里剥掉 script/style/标签后再看正文长度：
+    低于 min_visible_chars 判 failed，并把 spa_shell / visible_chars 写进
+    _fetch_results.json 供 orchestration 决策。
+    """
     result = {"label": label, "subtype": "webpage", "url": url, "status": "failed", "files": []}
     dest_dir.mkdir(parents=True, exist_ok=True)
-    timeout = sc.get_settings().get('fetch_timeout', 60)
+    settings = sc.get_settings()
+    timeout = settings.get('fetch_timeout', 60)
+    min_visible = int(settings.get('min_visible_chars', MIN_VISIBLE_CHARS))
 
     page_path = dest_dir / f"{file_stem}.html"
     start = time.time()
     r = run_cmd([_curl(), "-sL", "--http1.1", "-o", str(page_path), url,
                  "--max-time", str(timeout), "-w", "%{http_code}"], timeout=timeout + 10)
     http_code = _http_code_from_stdout(r["stdout"])
-    ok = (http_code == "200" and page_path.exists() and page_path.stat().st_size > 200)
+    size = page_path.stat().st_size if page_path.exists() else 0
+    fetched = bool(http_code == "200" and size > MIN_HTML_BYTES)
+
+    html = page_path.read_text(encoding="utf-8", errors="replace") if fetched else ""
+    visible = _visible_text(html) if fetched else ""
+    spa_shell = fetched and _looks_like_spa_shell(html, len(visible), min_visible)
+    ok = fetched and len(visible) >= min_visible
+
+    error = ""
+    if fetched and not ok:
+        error = (f"疑似 SPA 空壳：可见正文仅 {len(visible)} 字符 < {min_visible}"
+                 if spa_shell else f"可见正文过短：{len(visible)} 字符 < {min_visible}")
+    elif not fetched:
+        error = (f"HTTP {http_code or '?'}" if http_code != "200"
+                 else f"响应内容过小（{size} 字节）")
+
     _record_stage(dest_dir, url, "curl", ok, r["exit_code"],
-                  page_path.stat().st_size if page_path.exists() else 0,
-                  time.time() - start, r.get("stderr", "")[:200], file_stem)
+                  size,
+                  time.time() - start, error or (r.get("stderr") or "")[:200], file_stem,
+                  extra={"http_code": http_code, "visible_chars": len(visible), "spa_shell": spa_shell})
 
     if ok:
         result["status"] = "success"
         result["files"].append(f"{file_stem}.html")
-        html = page_path.read_text(encoding="utf-8", errors="replace")
-        text = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.S | re.I)
-        text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.S | re.I)
-        text = re.sub(r'<[^>]+>', ' ', text)
-        text = re.sub(r'\s+', ' ', text)
-        result["drill_targets"] = extract_drill_targets(text, ["arxiv_paper", "github"])
+        result["drill_targets"] = extract_drill_targets(visible, ["arxiv_paper", "github"])
+    else:
+        result["error"] = error
+        result["visible_chars"] = len(visible)
+        result["spa_shell"] = spa_shell
+        if spa_shell:
+            result["note"] = "疑似 SPA 空壳：正文由 JS 渲染，curl 只拿到外壳，需浏览器抓取"
 
     return result
 

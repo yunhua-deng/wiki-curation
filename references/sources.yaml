@@ -24,6 +24,10 @@ settings:
   max_children_per_level: 5
   max_l3_children_per_parent: 2
   fetch_timeout: 60
+  # handler_webpage 材料有效性下限：剥离 script/style/标签后的可见正文字符数。
+  # SPA 外壳（Vite/React/Next CSR）正文由 JS 渲染，curl 只能拿到 2KB 级空壳，
+  # 低于该阈值判 failed 并标记 spa_shell（见 wiki/failures/2026-09-14_001）。
+  min_visible_chars: 800
   curl_command: curl
   max_code_zip_mb: 80  # interpret.py 下载代码 zip 的大小上限（MB），超限降级
 

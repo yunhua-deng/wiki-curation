@@ -104,7 +104,7 @@ python scripts/cli.py --json ingest --input "https://arxiv.org/abs/2101.00027"
 
 `ingest` returns the three sub-results in one object (it adds, pops exactly one entry, and emits that entry's extraction task). It carries the same errors as the individual steps and **never bypasses the confirmation gate** — use it only when the user already said "直接处理 / 不用确认".
 
-Concurrency: with multiple queued entries, run steps 4–5 **in parallel per entry** (one extraction sub-agent per slug). `publish` is serialized per wiki via a `.publish.lock` file lock — on `BUSY`, wait and retry. `pop --limit 3` is the default local batch cap; do not exceed it without explicit user approval. Before declaring a batch done, reconcile completions per **Sub-agent completion reconciliation** below.
+Concurrency: with multiple queued entries, run steps 4–5 **in parallel per entry** (one extraction sub-agent per slug). `publish` is serialized per wiki via a `.publish.lock` file lock — on `BUSY`, wait and retry (the message carries the holder pid/host/age). A lock left behind by a killed process is reclaimed automatically once it is older than `stale_after` (600s) and its holder pid is gone; a live holder is never preempted. `pop --limit 3` is the default local batch cap; do not exceed it without explicit user approval. Before declaring a batch done, reconcile completions per **Sub-agent completion reconciliation** below.
 
 ## Sub-agent completion reconciliation
 
@@ -190,7 +190,7 @@ use the orchestrator's analytical framing as reference.
 
 ## Configuration
 
-- `references/sources.yaml` — source-type classification, fetch handlers, drill policy
+- `references/sources.yaml` — source-type classification, fetch handlers, drill policy, material-validity threshold (`settings.min_visible_chars`)
 - `references/record_schema.json` — record.json constraints
 - `references/entity_aliases.yaml` — entity canonical/alias map + `suppress`/`suppress_patterns` 抑制名单（精确 + 正则；canonical key 永不抑制；shared logic in `scripts/entity_filter.py`，publish 与 clean-entities 共用，recall 的实体层也从这里取别名表）
 - `references/entity_groups.yaml` — entity 五类分组（academia/company/oss/product/person）+ `academia_keywords`；供 `scripts/entity_filter.py` 的分组查询与 canonical 豁免名单使用

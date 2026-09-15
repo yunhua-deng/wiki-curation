@@ -32,13 +32,15 @@ python eval/run_eval.py --llm
 - `relations` 表只存**结构边**：`same_url` / `shared_link` / `tag_overlap`（实体驱动的 `shared_entity` 边已废除，存量库由 v8 迁移清理）。
 - `entries_fts` 存的是 **CJK 逐字切开**后的 `search_text`，不是原文：索引侧（`store._insert_entry`）与查询侧（`store.search` / `recall._fts_query_or`）必须共用 `scripts/wiki_index/fts_text.py`。两侧不一致时中文子串召回会**静默退化**（v9 之前「智能」召回率仅 1%）。
 - 查询表达式只用 `fts_text.to_match_expr()` 生成：长度 ≥ `BIGRAM_MIN_CJK`(5) 的无空格 CJK 串会展开成「整串短语 OR 相邻二字组」。多词之间必须写**显式 ` AND `**，FTS5 不接受括号组与相邻短语之间的隐式 AND。
+- `handler_webpage` 的材料有效性按**可见正文密度**判定：剥掉 script/style/标签后的可见字符数须 ≥ `settings.min_visible_chars`（默认 800）。只看 HTTP 200 + 文件字节数会把 SPA 外壳（正文由 JS 渲染）判成 `success`；正文不足判 `failed` 并在 `_fetch_results.json` 标记 `visible_chars` / `spa_shell`。
 
 ## publish 与标识符约定
 
 - `publish` 是 wiki 写入流程的**唯一收口点**（`publish/commands.py` → `records/publish_record.py`）：校验 record.json、fetched 回填、links/relations/entities 入库、站点刷新。
 - v3.3：`publish --id X` = 记录发布；`publish --id X --depth brief|deep` = 历史文章标记 done（不做 verify_output）。
 - `orchestrate.py`（`run` 命令）不执行 rename，只输出 spawn JSON（record 唯一模式；`--depth`/`--mode article` 返回 DEPRECATED_MODE）。
-- `publish` 内部通过 `wiki/.publish.lock` 文件锁串行化；返回 `BUSY` 应等待重试。
+- `publish` 内部通过 `wiki/.publish.lock` 文件锁串行化；返回 `BUSY` 应等待重试（错误信息含持有者 pid / host / 锁龄）。
+- 锁目录内写 `owner.json`（pid / host / started_at）：残留锁在锁龄超过 `stale_after`(600s) 且持有者已消失时自动接管，持有者存活时绝不抢占。
 - **entry ID 不可变**：hash-based slug 在 `add` 时生成，后续命令始终使用同一个 ID（历史异常 id 除外，见 `wiki/failures/` 修复记录）。
 
 ## 目录结构约定

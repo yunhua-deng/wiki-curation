@@ -1,6 +1,9 @@
 """Tests for collect_materials.py (logic-only, no real network)."""
 import json
 import shutil
+import sys
+import time
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -191,3 +194,328 @@ def test_handler_webpage_http_error_is_failed(tmp_path, monkeypatch):
     result = cm.handler_webpage(dest, "https://example.com/gone")
     assert result["status"] == "failed"
     assert _fetch_results(dest)[0]["http_code"] == "404"
+
+
+# ---------- 2026-09-15_001：append 补料的落盘子目录 ----------
+
+def _patch_workspace(tmp_path, monkeypatch):
+    monkeypatch.setattr(cm, "WORKSPACE", tmp_path)
+    monkeypatch.setattr("scripts.paths.get_workspace", lambda _=None: tmp_path)
+
+
+def _run_main(monkeypatch, argv):
+    monkeypatch.setattr(sys, "argv", ["collect_materials.py"] + argv)
+    cm.main()
+
+
+def test_dest_subdir_places_drill_log_under_subdir(tmp_path, monkeypatch):
+    """--dest-subdir append_1：drill log 落 raw/append_1/，不写到 raw/ 顶层。"""
+    _patch_workspace(tmp_path, monkeypatch)
+    sources = json.dumps([{"input_type": "local", "source_type": "local", "input": "x.pdf"}])
+    _run_main(monkeypatch, ["--slug", "s", "--sources-json", sources,
+                            "--dest-subdir", "append_1", "--json"])
+
+    raw = paths.raw_dir("s", tmp_path)
+    assert (raw / "append_1" / "_drill_log.json").exists()
+    assert not (raw / "_drill_log.json").exists()
+
+
+@pytest.mark.parametrize("bad", ["..", "../evil", "a/b", "a\\b", "C:evil", "", "  "])
+def test_main_rejects_unsafe_dest_subdir(tmp_path, monkeypatch, capsys, bad):
+    """--dest-subdir 只接受单层安全目录名（拒绝 .. 与路径分隔符）。"""
+    _patch_workspace(tmp_path, monkeypatch)
+    with pytest.raises(SystemExit) as exc:
+        _run_main(monkeypatch, ["--slug", "s", "--sources-json", "[]", "--dest-subdir", bad])
+    assert exc.value.code == 2
+    assert "--dest-subdir" in capsys.readouterr().err
+
+
+def test_main_rejects_dest_subdir_in_single_source_mode(tmp_path, monkeypatch, capsys):
+    _patch_workspace(tmp_path, monkeypatch)
+    with pytest.raises(SystemExit) as exc:
+        _run_main(monkeypatch, ["--slug", "s", "--input-type", "url", "--source-type", "arxiv",
+                                "--input", "https://arxiv.org/abs/2501.12345",
+                                "--dest-subdir", "append_1"])
+    assert exc.value.code == 2
+    assert "--sources-json" in capsys.readouterr().err
+
+
+def test_safe_subdir_accepts_plain_component():
+    assert cm._safe_subdir("append_12") == "append_12"
+    assert cm._safe_subdir(" append_1 ") == "append_1"
+    assert cm._safe_subdir("a..b") is None
+
+
+# ---------- 2026-09-15_004 / 2026-07-29_008：渲染必需来源判定 + 浏览器兜底 ----------
+
+WEIXIN_URL = "https://mp.weixin.qq.com/s/vj05N6eXFuC30S2jw2DnMg"
+HF_SPACE_URL = "https://huggingface.co/spaces/HuggingEnvs/geoguesser-article"
+
+RENDERED_ARTICLE = ("<html><head><title>t</title></head><body><article>"
+                    + "".join(f"<p>paragraph {i} about robot learning and VLA models.</p>"
+                              for i in range(40))
+                    + "</article></body></html>")
+TINY_RENDERED = "<html><body><p>hi</p></body></html>"
+
+
+def test_handler_browser_registered():
+    assert cm.HANDLERS["browser"] is cm.handler_browser
+
+
+@pytest.mark.parametrize("subtype,url,expected", [
+    ("weixin", WEIXIN_URL, True),                       # subtype 命中
+    ("weixin_paper", "https://example.com/a", True),    # 别名先解析回 weixin
+    ("generic_web", WEIXIN_URL, True),                  # 仅域名命中
+    ("linkedin", "https://www.linkedin.com/posts/yy", True),
+    ("huggingface", HF_SPACE_URL, True),                # HF Space 外壳页
+    ("hf_model_card", "https://huggingenvs-geoguesser-article.hf.space/", True),  # 容器地址
+    ("generic_web", "https://example.com/app#!route", True),                      # hashbang SPA
+    ("arxiv_paper", "https://arxiv.org/abs/2501.12345", False),
+    ("github", "https://github.com/user/repo", False),
+    ("generic_web", "https://example.com/post", False),
+    ("generic_web", "https://notlinkedin.com/post", False),   # 域名不做整串子串匹配
+    ("__nope__", "https://example.com/post", False),          # 未知 subtype 不炸
+])
+def test_is_render_required(subtype, url, expected):
+    assert cm.is_render_required(subtype, url) is expected
+
+
+def test_is_render_required_degrades_without_config(monkeypatch):
+    """配置缺失 / 结构异常 / 读取报错 → 一律 False（不阻断普通来源）。"""
+    assert cm.is_render_required("weixin", WEIXIN_URL, config={}) is False
+    assert cm.is_render_required("weixin", WEIXIN_URL, config={"render_required": None}) is False
+    assert cm.is_render_required("weixin", WEIXIN_URL, config={"render_required": "oops"}) is False
+    assert cm.is_render_required("weixin", WEIXIN_URL,
+                                 config={"render_required": {}}) is False
+
+    monkeypatch.setattr(cm.sc, "load_config", lambda *a, **k: {})
+    assert cm.is_render_required("weixin", WEIXIN_URL) is False
+
+    def boom(*a, **k):
+        raise RuntimeError("broken yaml")
+
+    monkeypatch.setattr(cm.sc, "load_config", boom)
+    assert cm.is_render_required("weixin", WEIXIN_URL) is False
+
+
+def test_render_required_falls_back_to_browser(tmp_path, monkeypatch):
+    """渲染必需 + 轻量路径全失败 → 浏览器兜底，level-1 成功且带 rendered 记录。"""
+    _patch_workspace(tmp_path, monkeypatch)
+    calls = []
+
+    def fake_run_cmd(cmd, timeout=None):
+        calls.append(list(cmd))
+        if cmd[:2] == ["opencli", "weixin"]:
+            return {"ok": True, "exit_code": 0, "stdout": "", "stderr": ""}   # 0 字节
+        if cmd[0] == "openclaw":
+            return {"ok": True, "exit_code": 0, "stdout": "tab: abc", "stderr": ""}
+        if cmd[:4] == ["opencli", "browser", cm.BROWSER_SESSION, "open"]:
+            return {"ok": True, "exit_code": 0, "stdout": '{"page": "x", "http_code": 200}', "stderr": ""}
+        if cmd == ["opencli", "browser", cm.BROWSER_SESSION, "extract"]:
+            return {"ok": True, "exit_code": 0, "stdout": RENDERED_ARTICLE, "stderr": ""}
+        return {"ok": False, "exit_code": 1, "stdout": "", "stderr": "unexpected"}
+
+    monkeypatch.setattr(cm, "run_cmd", fake_run_cmd)
+
+    log = cm.collect_materials("render_fallback", "url", "weixin", WEIXIN_URL, max_depth=1)
+
+    raw = paths.raw_dir("render_fallback", tmp_path)
+    l1 = log["levels"][0]["entries"][0]
+    assert l1["status"] == "success"
+    assert l1["files"] == ["weixin_rendered.html", "weixin_rendered.md"]
+    assert (raw / "weixin_rendered.html").exists()
+    assert (raw / "weixin_rendered.md").exists()
+    assert log["summary"] == {"total_files": 2, "success": 1, "failed": 0, "needs_manual": 0}
+
+    recs = _fetch_results(raw)
+    assert [r["attempt"] for r in recs] == [1, 2, 3, 4]        # 3 次轻量 + 1 次渲染
+    assert [r["file_size"] for r in recs if r["tool"] == "opencli_weixin"] == [0, 0, 0]
+    rendered = recs[-1]
+    assert rendered["tool"] == "browser" and rendered["rendered"] is True
+    assert rendered["status"] == "success" and rendered["http_code"] == "200"
+    assert rendered["file_size"] > 0 and rendered["text_bytes"] > 0
+    assert ["opencli", "browser", cm.BROWSER_SESSION, "open", WEIXIN_URL] in calls
+
+
+def test_render_required_all_paths_fail_surfaces_manual(tmp_path, monkeypatch):
+    """两条路都没有正文 → 绝不 success，needs_manual 显式呈现，证据含 URL 与字节数。"""
+    _patch_workspace(tmp_path, monkeypatch)
+
+    def fake_run_cmd(cmd, timeout=None):
+        if cmd[:2] == ["opencli", "weixin"]:
+            return {"ok": True, "exit_code": 0, "stdout": "", "stderr": ""}
+        if cmd[0] == "openclaw":
+            return {"ok": True, "exit_code": 0, "stdout": "tab: abc", "stderr": ""}
+        if cmd[:4] == ["opencli", "browser", cm.BROWSER_SESSION, "open"]:
+            return {"ok": True, "exit_code": 0, "stdout": "HTTP 403", "stderr": ""}
+        if cmd == ["opencli", "browser", cm.BROWSER_SESSION, "extract"]:
+            return {"ok": False, "exit_code": 4, "stdout": "", "stderr": "extract failed"}
+        return {"ok": False, "exit_code": 1, "stdout": "", "stderr": "unexpected"}
+
+    monkeypatch.setattr(cm, "run_cmd", fake_run_cmd)
+
+    log = cm.collect_materials("render_fail", "url", "weixin", WEIXIN_URL, max_depth=1)
+
+    raw = paths.raw_dir("render_fail", tmp_path)
+    l1 = log["levels"][0]["entries"][0]
+    assert l1["status"] == "needs_browser"
+    assert l1["status"] != "success"
+    assert l1["files"] == []
+    assert "人工" in l1["note"]
+    assert log["summary"]["success"] == 0
+    assert log["summary"]["needs_manual"] == 1
+
+    recs = _fetch_results(raw)
+    assert all(r["url"] == WEIXIN_URL for r in recs)
+    assert all("file_size" in r for r in recs)
+    assert [r["attempt"] for r in recs] == [1, 2, 3, 4]
+    assert recs[-1]["rendered"] is True
+    assert recs[-1]["status"] == "failed"
+    assert recs[-1]["http_code"] == "403"
+
+
+def test_weixin_zero_byte_then_retry_succeeds(tmp_path, monkeypatch):
+    """微信 0 字节 → 重试第二次拿到正文：success 且 _fetch_results.json 有两条 attempt。"""
+    _patch_workspace(tmp_path, monkeypatch)
+    calls = []
+    body = "# WeChat article\n\n" + ("正文内容" * 200)
+
+    def fake_run_cmd(cmd, timeout=None):
+        calls.append(list(cmd))
+        if cmd[:2] == ["opencli", "weixin"]:
+            if sum(1 for c in calls if c[:2] == ["opencli", "weixin"]) > 1:
+                out = Path(cmd[cmd.index("--output") + 1])
+                out.mkdir(parents=True, exist_ok=True)
+                (out / "weixin_article.md").write_text(body, encoding="utf-8")
+            return {"ok": True, "exit_code": 0, "stdout": "", "stderr": ""}
+        return {"ok": False, "exit_code": 1, "stdout": "", "stderr": "no browser"}
+
+    monkeypatch.setattr(cm, "run_cmd", fake_run_cmd)
+
+    log = cm.collect_materials("weixin_retry", "url", "weixin", WEIXIN_URL, max_depth=1)
+
+    raw = paths.raw_dir("weixin_retry", tmp_path)
+    l1 = log["levels"][0]["entries"][0]
+    assert l1["status"] == "success"
+    assert l1["files"] == ["weixin_article.md"]
+    assert log["summary"]["success"] == 1
+
+    recs = _fetch_results(raw)
+    assert [r["attempt"] for r in recs] == [1, 2]
+    assert recs[0]["status"] == "failed" and recs[0]["file_size"] == 0
+    assert recs[1]["status"] == "success"
+    assert recs[1]["file_size"] == (raw / "weixin_article.md").stat().st_size
+    assert not any(c[0] == "openclaw" for c in calls)
+
+
+def test_render_retry_gives_up_after_slow_attempt(tmp_path, monkeypatch):
+    """一次尝试就耗尽 fetch_timeout 的一半 → 不再重试，把时间留给浏览器兜底。"""
+    monkeypatch.setattr(cm.sc, "get_settings",
+                        lambda cfg=None: {"fetch_timeout": 0.02, "min_visible_chars": 5,
+                                          "render_retries": 5, "max_children_per_level": 5})
+    calls = []
+
+    def fake_run_cmd(cmd, timeout=None):
+        calls.append(list(cmd))
+        if cmd[:2] == ["opencli", "weixin"]:
+            time.sleep(0.05)
+            return {"ok": True, "exit_code": 0, "stdout": "", "stderr": ""}
+        if cmd[0] == "openclaw":
+            return {"ok": True, "exit_code": 0, "stdout": "tab: abc", "stderr": ""}
+        if cmd[:4] == ["opencli", "browser", cm.BROWSER_SESSION, "open"]:
+            return {"ok": True, "exit_code": 0, "stdout": "", "stderr": ""}
+        if cmd == ["opencli", "browser", cm.BROWSER_SESSION, "extract"]:
+            return {"ok": True, "exit_code": 0,
+                    "stdout": "<html><body><p>hello world</p></body></html>", "stderr": ""}
+        return {"ok": False, "exit_code": 1, "stdout": "", "stderr": "unexpected"}
+
+    monkeypatch.setattr(cm, "run_cmd", fake_run_cmd)
+
+    dest = tmp_path / "raw" / "slow"
+    result = cm._run_handler("weixin", dest, WEIXIN_URL, "L1-primary")
+
+    assert sum(1 for c in calls if c[:2] == ["opencli", "weixin"]) == 1
+    assert result["status"] == "success"
+    assert [r["attempt"] for r in _fetch_results(dest)] == [1, 2]
+
+
+def test_browser_rendered_text_threshold_decides(tmp_path, monkeypatch):
+    """渲染产物按可见正文长度判成败：过短不得 success，达标才算。"""
+    monkeypatch.setattr(cm.sc, "get_settings",
+                        lambda cfg=None: {"min_visible_chars": 800, "max_children_per_level": 5})
+
+    def fake_for(payload):
+        def _run(cmd, timeout=None):
+            if cmd[0] == "openclaw":
+                return {"ok": True, "exit_code": 0, "stdout": "tab: abc", "stderr": ""}
+            if cmd[:4] == ["opencli", "browser", cm.BROWSER_SESSION, "open"]:
+                return {"ok": True, "exit_code": 0, "stdout": "", "stderr": ""}
+            if cmd == ["opencli", "browser", cm.BROWSER_SESSION, "extract"]:
+                return {"ok": True, "exit_code": 0, "stdout": payload, "stderr": ""}
+            return {"ok": False, "exit_code": 1, "stdout": "", "stderr": "unexpected"}
+        return _run
+
+    tiny_dir = tmp_path / "raw" / "tiny"
+    monkeypatch.setattr(cm, "run_cmd", fake_for(TINY_RENDERED))
+    tiny = cm.handler_browser(tiny_dir, HF_SPACE_URL, file_stem="hf_model_card",
+                              subtype="huggingface")
+    assert tiny["status"] != "success"
+    assert tiny["visible_chars"] < cm.MIN_VISIBLE_CHARS
+    assert "渲染正文过短" in tiny["error"]
+    assert tiny["files"] == []
+    assert (tiny_dir / "hf_model_card_rendered.html").exists()
+    assert (tiny_dir / "hf_model_card_rendered.md").exists()
+    assert _fetch_results(tiny_dir)[-1]["rendered"] is True
+
+    big_dir = tmp_path / "raw" / "big"
+    monkeypatch.setattr(cm, "run_cmd", fake_for(RENDERED_ARTICLE))
+    big = cm.handler_browser(big_dir, HF_SPACE_URL, file_stem="hf_model_card",
+                             subtype="huggingface")
+    assert big["status"] == "success"
+    assert big["files"] == ["hf_model_card_rendered.html", "hf_model_card_rendered.md"]
+    assert big["visible_chars"] >= cm.MIN_VISIBLE_CHARS
+
+
+def test_plain_rendered_markdown_writes_only_md(tmp_path, monkeypatch):
+    """extract 返回 markdown（无 HTML）时只落盘 <stem>_rendered.md。"""
+    def fake_run_cmd(cmd, timeout=None):
+        if cmd[0] == "openclaw":
+            return {"ok": True, "exit_code": 0, "stdout": "tab: abc", "stderr": ""}
+        if cmd[:4] == ["opencli", "browser", cm.BROWSER_SESSION, "open"]:
+            return {"ok": True, "exit_code": 0, "stdout": "", "stderr": ""}
+        if cmd == ["opencli", "browser", cm.BROWSER_SESSION, "extract"]:
+            return {"ok": True, "exit_code": 0,
+                    "stdout": json.dumps({"content": "x" * 900}), "stderr": ""}
+        return {"ok": False, "exit_code": 1, "stdout": "", "stderr": "unexpected"}
+
+    monkeypatch.setattr(cm, "run_cmd", fake_run_cmd)
+    dest = tmp_path / "raw" / "rendered_md"
+    result = cm.handler_browser(dest, HF_SPACE_URL, file_stem="hf_model_card")
+
+    assert result["status"] == "success"
+    assert result["files"] == ["hf_model_card_rendered.md"]
+    assert (dest / "hf_model_card_rendered.md").read_text(encoding="utf-8") == "x" * 900
+    assert not (dest / "hf_model_card_rendered.html").exists()
+
+
+def test_non_render_required_source_keeps_curl_path(tmp_path, monkeypatch):
+    """非渲染必需来源（arxiv）：不碰浏览器，记录结构不变（无 attempt 字段）。"""
+    calls = []
+
+    def fake_run_cmd(cmd, timeout=None):
+        calls.append(list(cmd))
+        return {"ok": False, "exit_code": 7, "stdout": "", "stderr": "no network"}
+
+    monkeypatch.setattr(cm, "run_cmd", fake_run_cmd)
+
+    dest = tmp_path / "raw" / "arxiv_only"
+    result = cm._run_handler("arxiv_paper", dest, "https://arxiv.org/abs/2501.12345", "L1-primary")
+
+    assert result["status"] == "failed"
+    assert len(calls) == 3                                        # pdf x2 + abs，与今日一致
+    assert all(c[0] == cm._curl() for c in calls)
+    assert not any(c[0] in ("opencli", "openclaw") for c in calls)
+    recs = _fetch_results(dest)
+    assert recs
+    assert all("attempt" not in r for r in recs)
+

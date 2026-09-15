@@ -174,3 +174,50 @@ def test_site_workspace_directory_resolution(cli_workspace):
     db_arg, ws_arg = args
     assert ws_arg == cli_workspace
     assert db_arg == db
+
+
+def test_run_and_collect_disable_wrapper_retry(cli_workspace):
+    """有副作用的确定性步骤不得被包装层盲目重试。
+
+    非零退出码是 run/collect 的正常失败信号（如 MATERIALS_MISSING / COLLECT_FAILED），
+    run_cmd 默认 retries=1 会把整条流水线重跑一遍：重复抓取，且可能在 raw/ 下多出
+    append_N，或让 2×180s 的超时叠加。这两个命令必须传 retries=0。
+    """
+    from unittest.mock import patch
+    from scripts import cli
+
+    class RunArgs:
+        id = "2026-01-01_0001"
+        mode = None
+        depth = None
+        append_to = None
+        max_depth = None
+        force_collect = False
+        accept_manual = False
+        json = True
+        quiet = True
+        workspace = None
+
+    class CollectArgs:
+        slug = "2026-01-01_0001"
+        input_type = "url"
+        source_type = "arxiv"
+        input = "https://arxiv.org/abs/2101.00027"
+        max_depth = None
+        dest_subdir = None
+        json = True
+        quiet = True
+        workspace = None
+
+    calls = []
+
+    def fake_run_cmd(cmd, **kwargs):
+        calls.append(kwargs)
+        return {"ok": True, "stdout": '{"ok": true, "data": {}}', "stderr": "", "exit_code": 0}
+
+    with patch.object(cli, "run_cmd", fake_run_cmd):
+        cli.cmd_run(RunArgs())
+        cli.cmd_collect(CollectArgs())
+
+    assert len(calls) == 2
+    assert [c.get("retries") for c in calls] == [0, 0]

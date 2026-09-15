@@ -9,12 +9,12 @@ from pathlib import Path
 from scripts import paths
 from scripts.wiki_index import ensure_schema
 
-SKELETON_DIRS = ["artifacts", "data", "failures", "docs"]
+SKELETON_DIRS = ["artifacts", "data", "docs", "docs/issues"]
 
 # assets/templates/ 下的源文件名 → wiki/ 下的目标相对路径
 TEMPLATES = {
     "wiki-README.md": "README.md",
-    "failures-TEMPLATE.md": "failures/TEMPLATE.md",
+    "issues-TEMPLATE.md": "docs/issues/TEMPLATE.md",
     "gitignore": ".gitignore",
 }
 

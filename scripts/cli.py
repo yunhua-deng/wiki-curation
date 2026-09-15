@@ -65,7 +65,13 @@ def _resolve_cwd(workspace: str = None) -> str:
 
 
 def _run_script(name: str, args: list, json_mode: bool = False, quiet: bool = False,
-                timeout: int = 120, workspace: str = None) -> dict:
+                timeout: int = 120, workspace: str = None, retries: int = 1) -> dict:
+    """执行 skill 子脚本。
+
+    retries=0 用于**有副作用的确定性步骤**（run / collect / ingest）：非零退出码是这些步骤
+    的正常失败信号（如 MATERIALS_MISSING），包装层的盲目重试会把整条流水线重跑一遍
+    （重复抓取、可能在 raw/ 下多出一层 append_N），必须显式关掉。
+    """
     cmd = [sys.executable, str(_script(name))]
     if json_mode: cmd.append("--json")
     cmd.extend(args)
@@ -77,7 +83,7 @@ def _run_script(name: str, args: list, json_mode: bool = False, quiet: bool = Fa
         env["WIKI_WORKSPACE"] = workspace
     elif "WIKI_WORKSPACE" not in env:
         env["WIKI_WORKSPACE"] = str(Path.cwd() / "wiki")
-    r = run_cmd(cmd, timeout=timeout, cwd=_resolve_cwd(workspace), env=env)
+    r = run_cmd(cmd, timeout=timeout, cwd=_resolve_cwd(workspace), env=env, retries=retries)
     if r["ok"]:
         stdout = r.get("stdout", "").strip()
         try: data = json.loads(stdout) if stdout else None
@@ -129,9 +135,10 @@ def cmd_run(args) -> int:
     if getattr(args, "depth", None): script_args += ["--depth", args.depth]
     if args.max_depth is not None: script_args += ["--max-depth", str(args.max_depth)]
     if args.force_collect: script_args.append("--force-collect")
+    if getattr(args, "accept_manual", False): script_args.append("--accept-manual")
     if args.json: script_args.append("--json")
     r = _run_script("orchestrate.py", script_args, json_mode=False,
-                    quiet=args.quiet, timeout=180, workspace=args.workspace)
+                    quiet=args.quiet, timeout=180, workspace=args.workspace, retries=0)
     _print_result(r, args.json)
     return 0 if r.get("ok") else 1
 
@@ -147,8 +154,9 @@ def cmd_collect(args) -> int:
     script_args = ["--slug", args.slug, "--input-type", args.input_type,
                    "--source-type", args.source_type, "--input", args.input]
     if args.max_depth is not None: script_args += ["--max-depth", str(args.max_depth)]
+    if getattr(args, "dest_subdir", None): script_args += ["--dest-subdir", args.dest_subdir]
     r = _run_script("collect_materials.py", script_args, json_mode=args.json,
-                    quiet=args.quiet, timeout=180, workspace=args.workspace)
+                    quiet=args.quiet, timeout=180, workspace=args.workspace, retries=0)
     _print_result(r, args.json)
     return 0 if r.get("ok") else 1
 
@@ -298,7 +306,7 @@ def cmd_ingest(args) -> int:
         return 1
 
     run_r = _run_script("orchestrate.py", ["run", "--id", slug, "--json"], json_mode=False,
-                        quiet=args.quiet, timeout=180, workspace=args.workspace)
+                        quiet=args.quiet, timeout=180, workspace=args.workspace, retries=0)
     data["run"] = run_r.get("data") if run_r.get("ok") else None
     payload = {"ok": True, "data": data}
     if not run_r.get("ok"):
@@ -722,7 +730,7 @@ def cmd_manifest(args) -> int:
              "description": "初始化 wiki 工作区骨架（目录/wiki.db/模板，幂等）+ 输出 AGENTS.md 接入片段"},
             {"name": "entities", "args": ["--list", "--name"],
              "description": "实体只读查询：全库实体概览 / 单实体聚合（records/timeline/co_entities/links）"},
-            {"name": "run", "args": ["--id", "--max-depth", "--force-collect"],
+            {"name": "run", "args": ["--id", "--max-depth", "--force-collect", "--accept-manual"],
              "description": "执行已 add+pop 的任务：record 记录提取 → spawn"},
             {"name": "add", "args": ["--input", "--input-type", "--source-type", "--id", "--no-recall"],
              "description": "添加 pending 任务（add 后自动召回相似历史条目）"},
@@ -744,7 +752,7 @@ def cmd_manifest(args) -> int:
             {"name": "list", "args": ["--limit", "--status", "--all"], "description": "列出 entries"},
             {"name": "search", "args": ["query", "--limit"], "description": "FTS5 搜索"},
             {"name": "classify", "args": ["--input"], "description": "输入源分类"},
-            {"name": "collect", "args": ["--slug", "--input-type", "--source-type", "--input", "--max-depth"],
+            {"name": "collect", "args": ["--slug", "--input-type", "--source-type", "--input", "--max-depth", "--dest-subdir"],
              "description": "采集原始素材"},
             {"name": "stats", "args": [], "description": "wiki.db 统计"},
             {"name": "sync", "args": ["--rebuild"], "description": "一致性检查/重建"},
@@ -786,6 +794,8 @@ def main():
     p_run.add_argument("--id", required=True)
     p_run.add_argument("--max-depth", type=int)
     p_run.add_argument("--force-collect", action="store_true")
+    p_run.add_argument("--accept-manual", action="store_true",
+                       help="声明来源缺料时降级为告警（人工抓取后使用），不通过 materials_ready 门禁")
     # 以下仅用于返回废弃错误
     p_run.add_argument("--mode", choices=["record", "article"], default=None)
     p_run.add_argument("--depth", choices=["brief", "deep"], default=None)
@@ -800,6 +810,7 @@ def main():
     p_col.add_argument("--source-type", "--subtype", dest="source_type", required=True)
     p_col.add_argument("--input", required=True)
     p_col.add_argument("--max-depth", type=int)
+    p_col.add_argument("--dest-subdir", help="把本次采集落到 raw/<name>/ 子目录（append 补料 / 重试时使用）")
 
     p_pub = sub.add_parser("publish", help="验证并发布记录（或 --site-only 只重建站点）")
     p_pub.add_argument("--id", required=True)

@@ -33,6 +33,10 @@ python eval/run_eval.py --llm
 - `entries_fts` 存的是 **CJK 逐字切开**后的 `search_text`，不是原文：索引侧（`store._insert_entry`）与查询侧（`store.search` / `recall._fts_query_or`）必须共用 `scripts/wiki_index/fts_text.py`。两侧不一致时中文子串召回会**静默退化**（v9 之前「智能」召回率仅 1%）。
 - 查询表达式只用 `fts_text.to_match_expr()` 生成：长度 ≥ `BIGRAM_MIN_CJK`(5) 的无空格 CJK 串会展开成「整串短语 OR 相邻二字组」。多词之间必须写**显式 ` AND `**，FTS5 不接受括号组与相邻短语之间的隐式 AND。
 - `handler_webpage` 的材料有效性按**可见正文密度**判定：剥掉 script/style/标签后的可见字符数须 ≥ `settings.min_visible_chars`（默认 800）。只看 HTTP 200 + 文件字节数会把 SPA 外壳（正文由 JS 渲染）判成 `success`；正文不足判 `failed` 并在 `_fetch_results.json` 标记 `visible_chars` / `spa_shell`。
+- `run` 的**素材门禁**：URL 类声明来源必须在 `raw/**/_drill_log.json` 的 level-1 条目里拿到 `status: success`，否则 `run` 返回 `MATERIALS_MISSING`（`detail.missing`）、不设 `materials_ready`、不生成提取任务；`--accept-manual` 可显式降级为告警（`FETCH: manual (accepted)`）。判定依据是**「声明来源 vs 抓取证据」**，不是「raw/ 目录是否非空」。
+- `add --append-to` 只允许对 `status=done` 的条目；append 的新素材落 `raw/append_<N>/`，**不得覆盖既有材料**；append 意图由 `ENQUEUE` 事件承载，普通 `run --id <slug>` 也要能识别。
+- **渲染必需来源**由 `references/sources.yaml` 的 `render_required` 统一判定：先按 `settings.render_retries` 重试轻量路径，再回退浏览器渲染（产物 `raw/<file_stem>_rendered.html|.md`，每次尝试写 `_fetch_results.json` 并带 `attempt`）；非渲染必需来源必须保持原轻量路径不变。
+- **有副作用的步骤不重试**：`cli.py` 对 `run` / `collect` / `ingest` 一律 `retries=0`，`orchestrate.run_script()` 亦然。`run_cmd` 默认 `retries=1` 且对任意非零退出码都重试，会把这些步骤的正常失败信号（`MATERIALS_MISSING` 等）变成「流水线跑两遍」。
 
 ## publish 与标识符约定
 
@@ -41,7 +45,7 @@ python eval/run_eval.py --llm
 - `orchestrate.py`（`run` 命令）不执行 rename，只输出 spawn JSON（record 唯一模式；`--depth`/`--mode article` 返回 DEPRECATED_MODE）。
 - `publish` 内部通过 `wiki/.publish.lock` 文件锁串行化；返回 `BUSY` 应等待重试（错误信息含持有者 pid / host / 锁龄）。
 - 锁目录内写 `owner.json`（pid / host / started_at）：残留锁在锁龄超过 `stale_after`(600s) 且持有者已消失时自动接管，持有者存活时绝不抢占。
-- **entry ID 不可变**：hash-based slug 在 `add` 时生成，后续命令始终使用同一个 ID（历史异常 id 除外，见 `wiki/failures/` 修复记录）。
+- **entry ID 不可变**：hash-based slug 在 `add` 时生成，后续命令始终使用同一个 ID（历史异常 id 除外，见 `wiki/docs/issues/` 修复记录）。
 
 ## 目录结构约定
 
@@ -104,4 +108,4 @@ chmod +x ../../.git/hooks/pre-commit
   2. 若仍遇到可疑行为，可手动清理：`find scripts -type d -name __pycache__ -exec rm -rf {} +`
   3. 契约测试脚本（`run_contract_tests.ps1` / `.sh`）每次运行前也会清理缓存，确保测试的是当前源码。
 
-相关回归记录：`wiki/failures/2026-07-09_005_linkedin-handler-invalid-command.md`
+相关回归记录：`wiki/docs/issues/2026-07-09_005_linkedin-handler-invalid-command.md`

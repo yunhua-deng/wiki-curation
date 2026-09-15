@@ -34,11 +34,12 @@ def main():
     parser = argparse.ArgumentParser(description="Record 提取任务生成器（v3.1 record-only）")
     parser.add_argument("--slug", required=True)
     parser.add_argument("--source-type", "--type", dest="source_type", default="paper")
+    parser.add_argument("--append-to")
     parser.add_argument("--mode", choices=["record"], default="record")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
-    result = generate_record_task(args.slug, args.source_type)
+    result = generate_record_task(args.slug, args.source_type, append_to=args.append_to)
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:

@@ -3,7 +3,7 @@
 reconcile.py — 子 agent 完成对账（artifact 事实源兜底）。
 
 harness 的 subagent 完成事件是 best-effort（可能静默丢失，
-见 wiki/failures/2026-08-28_001_subagent-completion-no-reconcile.md）。
+见 wiki/docs/issues/2026-08-28_001_subagent-completion-no-reconcile.md）。
 本命令以 wiki/artifacts/<slug>/record.json 为事实源对账 expected slugs：
 record 存在且非空即视为提取完成，可直接 publish。
 

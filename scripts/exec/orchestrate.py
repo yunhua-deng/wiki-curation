@@ -49,9 +49,14 @@ def _log(slug, action, detail=None):
 
 
 def run_script(script_name: str, args: list, timeout: int = 120) -> dict:
+    """调用 skill 子脚本（collect_materials / generate_task / wiki_db）。
+
+    统一 retries=0：这些步骤有副作用且非零退出码本身就是正常失败信号，
+    盲目重试会重复抓取、重复写盘。
+    """
     script_path = Path(script_name) if os.path.isabs(script_name) else SCRIPTS_DIR / script_name
     cmd = [sys.executable, str(script_path)] + args
-    return run_cmd(cmd, timeout=timeout)
+    return run_cmd(cmd, timeout=timeout, retries=0)
 
 
 class _NullStream:
@@ -99,6 +104,140 @@ def _event_exists(slug: str, action: str) -> bool:
         return bool(wiki_index.get_events(DB_PATH, slug=slug, action=action, limit=1))
     except Exception:
         return False
+
+
+# ------------------------------------------------------------
+# 声明来源 vs 已抓取来源（复用判定 + 缺料门禁的共用基础）
+# ------------------------------------------------------------
+
+APPEND_DIR_RE = re.compile(r'^append_(\d+)$')
+ERROR_FIELD_LIMIT = 200
+
+
+def _next_append_index(raw_dir: Path) -> int:
+    """下一个 append 子目录序号：扫描 raw/append_*/ 取 max+1（无既有子目录则为 1）。"""
+    if not raw_dir.exists():
+        return 1
+    indices = []
+    for child in raw_dir.iterdir():
+        if child.is_dir():
+            m = APPEND_DIR_RE.match(child.name)
+            if m:
+                indices.append(int(m.group(1)))
+    return max(indices) + 1 if indices else 1
+
+
+def _normalize_source_key(text: str) -> str:
+    """来源归一化：去 scheme / query / fragment、host 小写、去尾部 /，用于宽松匹配。"""
+    s = (text or '').strip()
+    if not s:
+        return ''
+    s = re.sub(r'^[A-Za-z][A-Za-z0-9+.\-]*://', '', s)
+    s = s.split('#', 1)[0].split('?', 1)[0]
+    if s.lower().startswith('www.'):
+        s = s[4:]
+    head, sep, tail = s.partition('/')
+    return (head.lower() + sep + tail).rstrip('/')
+
+
+def _source_keys_match(a: str, b: str) -> bool:
+    """宽松匹配：归一化后相等，或一方包含另一方（容忍 handler 改写 URL 的装饰性差异）。"""
+    if not a or not b:
+        return False
+    return a == b or a in b or b in a
+
+
+def _drill_status_map(raw_dir: Path) -> dict:
+    """递归读取 raw/ 下所有 _drill_log.json 的 level-1 条目，返回 {归一化来源: 状态}。
+
+    以 drill log 的 level-1 条目为准，而不是 _fetch_results.json：后者不含每个声明来源
+    的记录（如 handler_arxiv 只记 PDF URL，从不记声明的 arxiv.org/abs/...）。
+    同一来源出现多次时，越新的 drill log 越晚写入 → 以最后写入的状态为准。
+    """
+    statuses = {}
+    if not raw_dir.exists():
+        return statuses
+    logs = sorted(raw_dir.rglob('_drill_log.json'),
+                  key=lambda p: (p.stat().st_mtime if p.exists() else 0, p.as_posix()))
+    for path in logs:
+        try:
+            log = json.loads(path.read_text(encoding='utf-8', errors='replace'))
+        except Exception:
+            continue
+        for level in log.get('levels') or []:
+            if level.get('level') != 1:
+                continue
+            for entry in level.get('entries') or []:
+                key = _normalize_source_key(entry.get('input') or '')
+                if key:
+                    statuses[key] = entry.get('status') or 'failed'
+    return statuses
+
+
+def _missing_declared_sources(raw_dir: Path, declarations: list) -> list:
+    """声明来源中尚无可信材料的清单：[{'url': 原始输入, 'status': 状态或 missing}]。"""
+    statuses = _drill_status_map(raw_dir)
+    missing = []
+    for c in declarations or []:
+        raw_input = c.get('input') or ''
+        key = _normalize_source_key(raw_input)
+        status = ''
+        for logged_key, logged_status in statuses.items():
+            if _source_keys_match(key, logged_key):
+                status = logged_status
+                break
+        if status != 'success':
+            missing.append({'url': raw_input, 'status': status or 'missing'})
+    return missing
+
+
+def _last_stderr_line(stderr: str) -> str:
+    """traceback 的有效信息在最后一行（异常类型 + 消息），比首行更能定位问题。"""
+    lines = [l.strip() for l in (stderr or '').splitlines() if l.strip()]
+    return lines[-1] if lines else ''
+
+
+def _enqueue_append_to(slug: str) -> str:
+    """从 ENQUEUE 事件里还原 append 意图（cmd_add 写 detail.append_to）。
+
+    `run --id <base>` 不带 --append-to 时，append 意图只存在于事件流中。取最近若干条
+    ENQUEUE 中最新一条带 append_to 的记录：orchestrate 自己每次 run 也会补一条无
+    append_to 的 ENQUEUE，只看最新一条会让 requeue 重跑丢掉 append 意图。
+    """
+    try:
+        events = wiki_index.get_events(DB_PATH, slug=slug, action='ENQUEUE', limit=20)
+    except Exception:
+        return ''
+    for event in events:
+        try:
+            detail = json.loads(event.get('detail') or '{}')
+        except (TypeError, json.JSONDecodeError):
+            continue
+        append_to = (detail.get('append_to') or '').strip() if isinstance(detail, dict) else ''
+        if append_to:
+            return append_to
+    return ''
+
+
+def _append_requires_published(json_mode: bool, append_to: str, status: str, reason: str = "") -> int:
+    """append 前置条件不满足时的统一报错（返回 1，供调用方直接 return）。"""
+    msg = (f"条目 {append_to} 未发布（当前状态: {status}{reason}），"
+           f"append 仅支持已发布条目；多来源请在首次 add 时一并提供")
+    if json_mode:
+        _json_error("APPEND_REQUIRES_PUBLISHED", msg)
+    else:
+        print(f"  ❌ APPEND_REQUIRES_PUBLISHED: {msg}", file=sys.stderr)
+    return 1
+
+
+def _base_is_published(slug: str) -> bool:
+    """base 是否发布过：有 record.json 或 DONE 事件（append 自条目时用）。"""
+    try:
+        if paths.record_path(slug).exists():
+            return True
+    except Exception:
+        pass
+    return _event_exists(slug, 'DONE')
 
 
 # ============================================================
@@ -173,20 +312,28 @@ def cmd_run(args):
             err(f"  ❌ Entry has no source_input or source_prompt: {slug}")
         return 1
 
-    append_to = getattr(args, 'append_to', None)
+    append_to = getattr(args, 'append_to', None) or _enqueue_append_to(slug)
     joined_input = '\n'.join(input_sources)
     log(f"\n{'='*50}")
     log(f"  Wiki Pipeline: {joined_input[:80]}")
     log(f"  Slug: {slug}" + (f" | Append to: {append_to}" if append_to else ""))
     log(f"{'='*50}")
 
-    # record append: verify base entry exists
+    # record append: verify base entry exists and is published
     if append_to:
         base = wiki_index.get_entry(DB_PATH, append_to)
         if not base:
             msg = f"append target not found: {append_to}"
             if json_mode: _json_error("ENTRY_NOT_FOUND", msg); return 1
             else: err(f"  ❌ {msg}"); return 1
+        if append_to == slug:
+            # 自 append（add --append-to <自身>）：cmd_add 已把本条目标记为 pending/running，
+            # 所以「状态=done」不再可判——改用「曾发布过」的证据（record.json / DONE 事件）。
+            if not _base_is_published(append_to):
+                return _append_requires_published(
+                    json_mode, append_to, base.get('status', ''), '，且没有已发布记录')
+        elif base.get('status') != 'done':
+            return _append_requires_published(json_mode, append_to, base.get('status', ''))
 
     # === Step 1: Classify ===
     if entry.get('input_type') == 'local':
@@ -227,10 +374,16 @@ def cmd_run(args):
 
     # === Step 3: Collect materials ===
     force_collect = getattr(args, 'force_collect', False)
-    reuse_existing_raw = (_raw_dir_has_content(slug) and not force_collect)
+    accept_manual = getattr(args, 'accept_manual', False)
+    raw_dir = paths.raw_dir(slug)
+    has_raw = _raw_dir_has_content(slug)
+    # 声明来源 = URL 源（local 直接复制、keywords/search 按设计不产生 fetch 记录）
+    declared = [c for c in classifications if c.get('input_type') == 'url']
+    pending = _missing_declared_sources(raw_dir, declared)
+    reuse_existing_raw = (has_raw and not pending and not force_collect)
 
     if reuse_existing_raw:
-        log("\n[2/4] 跳过素材收集（raw/ 已存在且非空，使用 --force-collect 可强制重跑）")
+        log("\n[2/4] 跳过素材收集（声明来源均已抓取且 raw/ 非空，使用 --force-collect 可强制重跑）")
         wiki_index.upsert_task(DB_PATH, slug, materials_ready=1)
         _log(slug, 'FETCH', {'status': 'skipped (reuse existing raw)'})
     elif primary_source_type == 'local' and len(classifications) == 1:
@@ -242,26 +395,24 @@ def cmd_run(args):
         _log(slug, 'FETCH', {'status': 'skipped (local)'})
     else:
         log("\n[2/4] 收集素材...")
-        if append_to:
-            append_idx = _next_append_index(paths.raw_dir(slug))
-            prefix = f"append_{append_idx}/"
-            max_depth = 1
-        else:
-            prefix = ""
-            max_depth = args.max_depth if getattr(args, 'max_depth', None) is not None else None
+        # 已有素材时（append 补料 / 失败来源重试）新素材落 raw/append_<N>/，绝不覆盖旧材料
+        dest_subdir = f"append_{_next_append_index(raw_dir)}" if has_raw else None
+        if dest_subdir:
+            log(f"  → 新素材落盘 raw/{dest_subdir}/（保留既有材料）")
+        max_depth = args.max_depth if getattr(args, 'max_depth', None) is not None else None
         coll_sources = [{
             'input_type': c['input_type'], 'source_type': c['source_type'], 'input': c['input'],
             'type': c.get('type'), 'subtype': c.get('subtype'),
         } for c in classifications]
 
-        raw_dir = paths.raw_dir(slug)
+        local_base = (raw_dir / dest_subdir) if dest_subdir else raw_dir
         for i, c in enumerate(classifications):
             if c.get('source_type') == 'local':
-                src_dir = raw_dir / f"s{i}" if len(classifications) > 1 else raw_dir
+                src_dir = local_base / f"s{i}" if len(classifications) > 1 else local_base
                 src_dir.mkdir(parents=True, exist_ok=True)
                 _copy_local_source(c['input'], src_dir)
 
-        if len(coll_sources) == 1 and not prefix and coll_sources[0].get('source_type') != 'local':
+        if len(coll_sources) == 1 and not dest_subdir and coll_sources[0].get('source_type') != 'local':
             c = coll_sources[0]
             collect_args = ["--slug", slug, "--input-type", c['input_type'],
                            "--source-type", c['source_type'], "--input", c['input']]
@@ -270,16 +421,36 @@ def cmd_run(args):
             r = run_script("exec/collect_materials.py", collect_args, timeout=180)
         else:
             collect_args = ["--slug", slug, "--sources-json", json.dumps(coll_sources, ensure_ascii=False)]
-            if prefix:
-                collect_args += ["--max-depth", "1"]
             if max_depth is not None:
                 collect_args += ["--max-depth", str(max_depth)]
+            if dest_subdir:
+                collect_args += ["--dest-subdir", dest_subdir]
             r = run_script("exec/collect_materials.py", collect_args, timeout=180)
 
         if r["ok"]:
             log((r["stdout"] or "")[:500])
+            missing = _missing_declared_sources(raw_dir, declared)
+            if missing and not accept_manual:
+                # 声明了来源却没有材料 → 不许静默放行（否则会产出与旧材料等价的记录）
+                _log(slug, 'FETCH', {'status': 'failed', 'missing': missing})
+                msg = (f"{len(missing)} 个声明来源没有对应材料，已阻止生成提取任务："
+                       + "; ".join(f"{m['url']} ({m['status']})" for m in missing)
+                       + "。请手动补料后重跑，或加 --accept-manual 接受手工抓取")
+                if json_mode:
+                    _json_error("MATERIALS_MISSING", msg, detail={'missing': missing})
+                else:
+                    err(f"  ❌ MATERIALS_MISSING: {msg}")
+                    for m in missing:
+                        err(f"     - {m['url']} (status={m['status']})")
+                return 1
+            if missing:
+                err(f"  ⚠️ 接受 {len(missing)} 个声明来源的手工抓取（--accept-manual）")
+                for m in missing:
+                    err(f"     - {m['url']} (status={m['status']})")
+                _log(slug, 'FETCH', {'status': 'manual (accepted)', 'missing': missing})
+            else:
+                _log(slug, 'FETCH', {'status': 'success'})
             wiki_index.upsert_task(DB_PATH, slug, materials_ready=1)
-            _log(slug, 'FETCH', {'status': 'success'})
         else:
             err(f"  ⚠️ Collect: {(r['stderr'] or 'unknown error')[:200]}")
             _log(slug, 'FETCH', {'status': 'failed', 'error': (r['stderr'] or 'unknown error')[:200]})
@@ -296,7 +467,10 @@ def cmd_run(args):
         interp_args += ["--append-to", append_to]
     r = run_script("exec/generate_task.py", interp_args, timeout=120)
     if not r["ok"]:
-        wiki_index.update_status(DB_PATH, slug, 'failed', error=f"interpret failed: {r['stderr'][:200]}")
+        # error 列限 200 字符：保留 traceback 最后一行（异常类型 + 消息），首行只有 "Traceback ..."
+        wiki_index.update_status(
+            DB_PATH, slug, 'failed',
+            error=f"interpret failed: {_last_stderr_line(r.get('stderr'))}"[:ERROR_FIELD_LIMIT])
         if json_mode:
             _json_error("INTERPRET_FAILED", r.get("stderr", "interpret failed"))
         else:
@@ -385,6 +559,8 @@ def main():
     p_run.add_argument("--id", required=True)
     p_run.add_argument("--max-depth", type=int, default=3)
     p_run.add_argument("--force-collect", action="store_true")
+    p_run.add_argument("--accept-manual", action="store_true",
+                       help="接受手工抓取的缺失来源（LinkedIn / 微信等需登录态场景），不阻断 run")
     p_run.add_argument("--json", action="store_true")
     p_run.add_argument("--quiet", action="store_true")
     p_run.add_argument("--one-liner", action="store_true")

@@ -33,6 +33,10 @@ python eval/run_eval.py --llm
 - `entries_fts` 存的是 **CJK 逐字切开**后的 `search_text`，不是原文：索引侧（`store._insert_entry`）与查询侧（`store.search` / `recall._fts_query_or`）必须共用 `scripts/wiki_index/fts_text.py`。两侧不一致时中文子串召回会**静默退化**——v9 之前默认 unicode61 把连续汉字当单个 token，实测「智能」召回率仅 1%（1/186）。
 - 查询表达式只用 `fts_text.to_match_expr()` 生成：长度 ≥ `BIGRAM_MIN_CJK`(5) 的无空格 CJK 串会展开成「整串短语 OR 相邻二字组」，否则「机器人抓取策略」这类中文查询要求整串连续出现而召回为空。另注意多词之间必须写**显式 ` AND `**，FTS5 不接受括号组与相邻短语之间的隐式 AND（`("a" OR "b") "c"` 会语法报错）。
 - `handler_webpage` 的材料有效性按**可见正文密度**判定：剥掉 script/style/标签后的可见字符数须 ≥ `settings.min_visible_chars`（默认 800）。只看 HTTP 200 + 文件字节数会把 SPA 外壳（Vite/React/Next CSR，正文由 JS 渲染）判成 `success`；正文不足判 `failed`，并在 `_fetch_results.json` 写入 `visible_chars` / `spa_shell` 供 orchestration 决策。
+- `run` 的**素材门禁**：URL 类声明来源必须在 `raw/**/_drill_log.json` 的 level-1 条目里拿到 `status: success`，否则 `run` 返回 `MATERIALS_MISSING`（`detail.missing`）、不设 `materials_ready`、不生成提取任务；`--accept-manual` 可显式降级为告警（`FETCH: manual (accepted)`）。判定依据是**「声明来源 vs 抓取证据」**，不是「raw/ 目录是否非空」——不要退回「目录非空即复用」的旧逻辑。
+- `add --append-to` 只允许对 `status=done` 的条目；append 的新素材落 `raw/append_<N>/`（自带 `_drill_log.json` / `_fetch_results.json`），**不得覆盖既有材料**；append 意图由 `ENQUEUE` 事件承载，普通 `run --id <slug>` 也要能识别。
+- **有副作用的步骤不重试**：`cli.py` 对 `run` / `collect` / `ingest` 一律 `retries=0`（`_run_script(..., retries=0)`），`orchestrate.run_script()` 调子脚本同样 `retries=0`。`run_cmd` 默认 `retries=1` 且对**任意非零退出码**都重试，而这些步骤的非零退出码是正常失败信号（`MATERIALS_MISSING` / `COLLECT_FAILED`）——曾导致整条流水线跑两遍（重复抓取、多出一层 `append_N`、2×超时叠加）。要重试就重试抓取本身（`settings.render_retries` / `--force-collect`）。
+- **渲染必需来源**（登录态 / JS 渲染 / 反爬 / 容器型应用）由 `references/sources.yaml` 的 `render_required`（subtypes / domains / path_patterns / url_markers）统一判定：先按 `settings.render_retries` 重试轻量路径（curl / opencli weixin），再回退浏览器渲染，产物 `raw/<file_stem>_rendered.html|.md`；每次尝试都写 `_fetch_results.json`（带 `attempt`）。**非渲染必需来源必须保持原轻量路径不变**（`render_required` 缺失/损坏一律按「非渲染必需」处理）。判定仍只看可见正文密度，不看「文件是否存在」。
 
 ## publish 与标识符约定
 
@@ -41,7 +45,7 @@ python eval/run_eval.py --llm
 - `orchestrate.py`（`run` 命令）不执行 rename，只输出 spawn JSON（record 唯一模式；`--depth`/`--mode article` 返回 DEPRECATED_MODE）。
 - `publish` 内部通过 `wiki/.publish.lock` 文件锁串行化；返回 `BUSY` 应等待重试（错误信息含持有者 pid / host / 锁龄）。
 - 锁目录内写 `owner.json`（pid / host / started_at）：进程被强杀留下的残留锁，在锁龄超过 `stale_after`(600s) 且持有者已消失时由下一个 publisher **自动接管**（stderr 打 WARN），不再永久阻塞 publish；持有者仍存活时绝不抢占。
-- **entry ID 不可变**：hash-based slug 在 `add` 时生成，后续命令始终使用同一个 ID（历史异常 id 除外，见 `wiki/failures/` 修复记录）。
+- **entry ID 不可变**：hash-based slug 在 `add` 时生成，后续命令始终使用同一个 ID（历史异常 id 除外，见 `wiki/docs/issues/` 修复记录）。
 
 ## 目录结构约定
 
@@ -54,7 +58,7 @@ python eval/run_eval.py --llm
   - `entity_groups.yaml`（实体五类分组 + academia_keywords；供 `entity_filter.py` 分组查询与 canonical 豁免）
 - `assets/` —— 前端静态资源：
   - `assets/site/`（site.js / site.css / marked.min.js）
-- 工作区骨架（`scripts/bootstrap.py` 的 `SKELETON_DIRS`）：`artifacts/` / `data/` / `failures/` / `docs/` —— 实体综合层目录 `entities/` 已废除。
+- 工作区骨架（`scripts/bootstrap.py` 的 `SKELETON_DIRS`）：`artifacts/` / `data/` / `docs/` / `docs/issues/` —— 实体综合层目录 `entities/` 已废除；问题单登记表（bug + feature 共用一份）在 `docs/issues/`。
 
 > 不再维护 `wiki/configs/` 运行时覆盖目录，避免双源头。
 
@@ -105,4 +109,4 @@ chmod +x ../../.git/hooks/pre-commit
   2. 若仍遇到可疑行为，可手动清理：`find scripts -type d -name __pycache__ -exec rm -rf {} +`
   3. 契约测试脚本（`run_contract_tests.ps1` / `.sh`）每次运行前也会清理缓存，确保测试的是当前源码。
 
-相关回归记录：`wiki/failures/2026-07-09_005_linkedin-handler-invalid-command.md`
+相关回归记录：`wiki/docs/issues/2026-07-09_005_linkedin-handler-invalid-command.md`

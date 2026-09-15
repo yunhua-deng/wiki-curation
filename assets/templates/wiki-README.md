@@ -11,7 +11,7 @@ wiki/
 │   └── raw/             # 采集的原始素材（事实来源）
 ├── data/wiki.db         # SQLite + FTS5：条目、链接、结构关系边、队列（状态真相源，须提交 Git）
 ├── site/                # 构建好的静态站点（本地生成）
-├── failures/            # 工作流失败案例库（模板：failures/TEMPLATE.md）
+├── docs/issues/         # 问题单登记表（bug + feature 共用；模板 docs/issues/TEMPLATE.md）
 └── README.md            # 本文件
 ```
 

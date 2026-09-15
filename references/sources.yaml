@@ -26,10 +26,29 @@ settings:
   fetch_timeout: 60
   # handler_webpage 材料有效性下限：剥离 script/style/标签后的可见正文字符数。
   # SPA 外壳（Vite/React/Next CSR）正文由 JS 渲染，curl 只能拿到 2KB 级空壳，
-  # 低于该阈值判 failed 并标记 spa_shell（见 wiki/failures/2026-09-14_001）。
+  # 低于该阈值判 failed 并标记 spa_shell（见 wiki/docs/issues/2026-09-14_001）。
   min_visible_chars: 800
   curl_command: curl
   max_code_zip_mb: 80  # interpret.py 下载代码 zip 的大小上限（MB），超限降级
+  # 渲染必需来源的轻量路径重试次数（不含首次）：第一次失败后再重试几次 curl /
+  # opencli weixin，仍失败才回退浏览器渲染。微信 opencli 偶发 0 字节，
+  # 同一 URL 第二次即可恢复（见 wiki/docs/issues/2026-07-29_008）。
+  render_retries: 2
+
+# 渲染必需来源判定（见 wiki/docs/issues/2026-09-15_004）：
+# 这些来源的正文无法靠「无 JS、无登录态」的简单 HTTP 抓取稳定获得，collect_materials
+# 会先尝试既有轻量路径（curl / opencli weixin），失败则回退浏览器渲染
+# （产物 raw/<file_stem>_rendered.html + raw/<file_stem>_rendered.md）。
+# 命中任一维度即判定成立；配置缺失或损坏一律按「非渲染必需」处理，不阻断普通来源。
+render_required:
+  # 来源类型（canonical subtype，别名会先解析）
+  subtypes: [weixin, linkedin, zhihu, reddit, twitter_x]
+  # 域名（命中 host 本身或其子域）
+  domains: [mp.weixin.qq.com, linkedin.com, zhihu.com, reddit.com, twitter.com, x.com, threads.net]
+  # URL 片段：HF Space 容器地址 <name>.hf.space 与 huggingface.co/spaces/ 外壳页
+  path_patterns: ["huggingface.co/spaces/", "hf.space/"]
+  # URL 标记：hashbang 路由（SPA，正文由 JS 注入）
+  url_markers: ["#!"]
 
 source_types:
   # ============================================================

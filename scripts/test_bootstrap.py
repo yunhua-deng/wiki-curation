@@ -10,7 +10,7 @@ from scripts.bootstrap import init_workspace
 SCRIPT_DIR = Path(__file__).resolve().parent
 CLI = SCRIPT_DIR / "cli.py"
 
-SKELETON_DIRS = ["artifacts", "data", "failures", "docs"]
+SKELETON_DIRS = ["artifacts", "data", "docs", "docs/issues"]
 
 
 def test_init_creates_skeleton(tmp_path):
@@ -20,7 +20,7 @@ def test_init_creates_skeleton(tmp_path):
         assert (ws / d).is_dir(), d
     assert (ws / "data" / "wiki.db").exists()
     assert (ws / "README.md").exists()
-    assert (ws / "failures" / "TEMPLATE.md").exists()
+    assert (ws / "docs" / "issues" / "TEMPLATE.md").exists()
     assert (ws / ".gitignore").exists()
     assert result["agents_snippet"]
     assert result["created"]

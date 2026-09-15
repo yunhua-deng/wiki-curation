@@ -51,7 +51,7 @@ Set `WIKI_WORKSPACE` or default to `cwd/wiki`.
 1. **Always use the skill CLI.** Call the `scripts/cli.py` located next to this SKILL.md (written below as `scripts/cli.py`; resolve it against the skill's install location). Do not call sub-scripts directly.
 2. **No manual writing.** Records must go through `add → pop → run → publish`. Do not hand-author `record.json`.
 3. **Mandatory workflow.** `run` requires prior `add` + `pop`.
-4. **User confirmation before pop.** After first `add`, agent asks "start now or keep adding". User confirms before `pop --limit 3`. `ingest` does **not** relax this: it may only be used once the user has approved the pop (see below).
+4. **User confirmation before pop.** After `add`, the agent shows the queue and the recall results and waits for the user's confirmation before `pop --limit 3`. A single "collect this URL" request is **not** authorisation to skip the gate — 「收录 X」≠ permission to pop; only an explicit "process it now / no need to confirm" in the user's message relaxes it. `ingest` does **not** relax this either: it may only be used once the user has approved the pop (see below).
 5. **Do not modify task content.** Run task payload as-is.
 6. **Configuration is single source of truth.** `references/sources.yaml` for classification; `references/record_schema.json` for record constraints.
 7. **wiki.db is tracked.** Normal workflow commits preserve it.
@@ -105,6 +105,30 @@ python scripts/cli.py --json ingest --input "https://arxiv.org/abs/2101.00027"
 `ingest` returns the three sub-results in one object (it adds, pops exactly one entry, and emits that entry's extraction task). It carries the same errors as the individual steps and **never bypasses the confirmation gate** — use it only when the user already said "直接处理 / 不用确认".
 
 Concurrency: with multiple queued entries, run steps 4–5 **in parallel per entry** (one extraction sub-agent per slug). `publish` is serialized per wiki via a `.publish.lock` file lock — on `BUSY`, wait and retry (the message carries the holder pid/host/age). A lock left behind by a killed process is reclaimed automatically once it is older than `stale_after` (600s) and its holder pid is gone; a live holder is never preempted. `pop --limit 3` is the default local batch cap; do not exceed it without explicit user approval. Before declaring a batch done, reconcile completions per **Sub-agent completion reconciliation** below.
+
+## Material gate and append (补料)
+
+`run` decides whether to fetch by comparing the entry's **declared sources** against the fetch evidence already on disk (every `raw/**/_drill_log.json`, level-1 entries) — not by "is `raw/` non-empty". Consequences worth knowing:
+
+- A declared URL source counts as satisfied only when its recorded status is `success`. If any declared source lacks material, `run` **fails** with `MATERIALS_MISSING` (JSON `detail.missing` = `[{url, status}]`), does not set `materials_ready`, and produces no extraction task — a fetch failure can no longer pass silently into a record.
+- Escape hatch when the operator has fetched by hand (LinkedIn login, WeChat, paywalled pages): re-run with `--accept-manual`. The missing sources are downgraded to a warning and `FETCH` is logged as `manual (accepted)`. The entry stays `running`, so no `requeue` is needed.
+- Re-running `run` with nothing new reuses the existing raw (`FETCH: skipped (reuse existing raw)`) and writes no new files; `--force-collect` overrides.
+
+**Append.** `add --input <url> --append-to <slug>` requires the base entry to be published (`done`) — otherwise `APPEND_REQUIRES_PUBLISHED`; supply multiple sources at the first `add` instead. The append intent is carried by the `ENQUEUE` event, so a plain `run --id <slug>` picks it up even without `--append-to`. New material lands under `raw/append_<N>/` (per-source dirs `s0/`, `s1/`, …) with its own `_drill_log.json` / `_fetch_results.json`; existing material is never overwritten, and the extraction task switches to the append/merge prompt (the old sources stay recoverable from the `ENQUEUE` event history).
+
+`FETCH` event status values: `success` · `failed` (carries `missing` / `error`) · `skipped (reuse existing raw)` · `skipped (local)` · `manual (accepted)`.
+
+`collect --dest-subdir <name>` places a collection under `raw/<name>/` (multi-source mode; used internally by the append path).
+
+## Render-required sources
+
+Sources whose body cannot be obtained by a plain, JS-less HTTP fetch (login state, client-side rendering, anti-bot, container apps) are configured once in `references/sources.yaml` under `render_required` (subtypes / domains / path patterns / URL markers — e.g. WeChat, LinkedIn, Zhihu, Reddit, X, `huggingface.co/spaces/` and `*.hf.space`, `#!` URLs). For those, the collector tries the cheap path (`curl` / `opencli weixin`) up to `settings.render_retries` extra times, then falls back to browser rendering, writing `<file_stem>_rendered.html` + `<file_stem>_rendered.md`. Every attempt is recorded in `_fetch_results.json` with its `attempt` index, so a 0-byte result is evidence rather than silence.
+
+Success is still judged by **visible text density** (`settings.min_visible_chars`), never by "a file exists". If every path fails, the level-1 drill status is `failed`/`needs_browser` — never `success` — the manual-intervention signal is surfaced, and the material gate blocks the run. Non-render-required sources keep the plain path unchanged.
+
+When task generation fails, the entry's `error` column keeps the **last** stderr line (exception type + message) instead of the first 200 chars of the traceback; the full stderr is still printed.
+
+**No wrapper retry on failure.** `run` / `collect` / `ingest` are deterministic steps with side effects, so `cli.py` runs them with `retries=0`: a non-zero exit code is their normal failure signal, and retrying would repeat the whole pipeline (double fetching, a second `raw/append_N/`). Retry the *fetch* deliberately (`settings.render_retries`, `--force-collect`) rather than relying on the wrapper.
 
 ## Sub-agent completion reconciliation
 
@@ -190,14 +214,18 @@ use the orchestrator's analytical framing as reference.
 
 ## Configuration
 
-- `references/sources.yaml` — source-type classification, fetch handlers, drill policy, material-validity threshold (`settings.min_visible_chars`)
+- `references/sources.yaml` — source-type classification, fetch handlers, drill policy, material-validity threshold (`settings.min_visible_chars`), cheap-path retry count for render-required sources (`settings.render_retries`), and the render-required judgement (`render_required`: subtypes / domains / path patterns / URL markers)
 - `references/record_schema.json` — record.json constraints
 - `references/entity_aliases.yaml` — entity canonical/alias map + `suppress`/`suppress_patterns` 抑制名单（精确 + 正则；canonical key 永不抑制；shared logic in `scripts/entity_filter.py`，publish 与 clean-entities 共用，recall 的实体层也从这里取别名表）
 - `references/entity_groups.yaml` — entity 五类分组（academia/company/oss/product/person）+ `academia_keywords`；供 `scripts/entity_filter.py` 的分组查询与 canonical 豁免名单使用
 
-## Bug recording
+## Issue recording
 
-Wiki workflow bugs must be recorded in `wiki/failures/` (template: `wiki/failures/TEMPLATE.md`), with `MANIFEST.json` updated. Fix → mark `🟢 fixed`; don't delete history. False alarms → `⚪ wontfix`.
+Wiki workflow issues — bugs and feature requests alike — are recorded in the workspace's `wiki/docs/issues/` (one registry, template `wiki/docs/issues/TEMPLATE.md`). The entry's `kind` field (`bug` / `feature` / `docs` / `chore`) tells them apart. The older `wiki/failures/` path is retired (2026-09-15).
+
+- File name: `<YYYY-MM-DD>_<NNN>_<slug>.md`. Write **problem and requirement only** — problem / minimal repro / observed evidence / requirement / acceptance criteria. Never prescribe an implementation; the fixing side designs it.
+- **Never hand-edit `wiki/docs/issues/MANIFEST.json`.** After adding an entry or changing a status, run `python wiki/docs/issues/regenerate_manifest.py`.
+- Fix → mark `🟢 fixed` and fill in the verification record; false alarms → `⚪ wontfix`. Don't delete history.
 
 ## Limitations
 

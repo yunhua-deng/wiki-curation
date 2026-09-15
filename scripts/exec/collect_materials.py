@@ -7,9 +7,11 @@
 import json
 import os
 import re
+import sys
 import time
 import argparse
 import shutil
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -53,6 +55,25 @@ def _append_fetch_result(dest_dir: Path, result: dict):
     path.write_text(json.dumps({"results": results}, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+# 当前抓取尝试序号（只有渲染必需来源的重试/兜底序列会填充）：
+# 填充时 _record_stage 会把 attempt 写进 fetch 记录，0 字节的失败尝试因此可复核。
+_FETCH_ATTEMPT: dict = {}
+
+
+@contextmanager
+def _fetch_attempt(index: int):
+    """把 handler 的这次调用标为第 index 次尝试（记录进 _fetch_results.json）。"""
+    previous = _FETCH_ATTEMPT.get("index")
+    _FETCH_ATTEMPT["index"] = index
+    try:
+        yield
+    finally:
+        if previous is None:
+            _FETCH_ATTEMPT.pop("index", None)
+        else:
+            _FETCH_ATTEMPT["index"] = previous
+
+
 def _record_stage(dest_dir: Path, url: str, tool: str, ok: bool, exit_code: int,
                   file_size: int = 0, download_time: float = 0.0, error: str = "",
                   source_type: str = "", extra: dict | None = None):
@@ -66,6 +87,8 @@ def _record_stage(dest_dir: Path, url: str, tool: str, ok: bool, exit_code: int,
         "status": "success" if ok else "failed",
         "source_type": source_type,
     }
+    if "index" in _FETCH_ATTEMPT:
+        record["attempt"] = _FETCH_ATTEMPT["index"]
     if extra:
         record.update(extra)
     _append_fetch_result(dest_dir, record)
@@ -132,6 +155,210 @@ def extract_drill_targets(text: str, allowed_types: list[str], exclude_ids: set 
 
     max_children = sc.get_settings(config).get('max_children_per_level', 5)
     return results[:max_children]
+
+
+# ============================================================
+# 渲染必需来源：判定 + 浏览器抓取（共用）
+#
+# 登录态 / JS 渲染 / 反爬 / 容器型应用的正文无法靠无 JS 的简单 HTTP 抓取稳定获得
+# （见 wiki/docs/issues/2026-09-15_004）。判定来自 sources.yaml 的 render_required 块，
+# 命中后先走既有轻量路径，失败再回退到这里。
+# ============================================================
+
+BROWSER_SESSION = "wiki"          # opencli browser 的 session 名（任意，不是子命令）
+BROWSER_PROBE_CMD = ["openclaw", "browser", "--browser-profile", "user", "tabs"]
+BROWSER_PROBE_TIMEOUT = 30        # openclaw 连接初始化可能需 15-20 秒
+BROWSER_OPEN_TIMEOUT = 30
+BROWSER_EXTRACT_TIMEOUT = 60      # 页面加载 + 提取可能较慢
+RENDER_RETRIES_DEFAULT = 2        # settings.render_retries 缺省值（重试次数，不含首次）
+RENDER_SUFFIX_HTML = "_rendered.html"
+RENDER_SUFFIX_MD = "_rendered.md"
+
+
+def _render_required_config(config: dict | None = None) -> dict:
+    """读取 sources.yaml 的 render_required 块；缺失或损坏一律视为空（不抛异常）。"""
+    try:
+        cfg = config if config is not None else sc.load_config()
+        block = (cfg or {}).get('render_required') or {}
+        return block if isinstance(block, dict) else {}
+    except Exception:
+        return {}
+
+
+def _url_host(url: str) -> str:
+    host = (urlparse(url or "").netloc or "").lower()
+    host = host.rsplit("@", 1)[-1].split(":", 1)[0]
+    return host[4:] if host.startswith("www.") else host
+
+
+def is_render_required(subtype: str, url: str = "", config: dict | None = None) -> bool:
+    """该来源是否必须经浏览器渲染 / 登录态才能拿到正文。
+
+    判定维度：source subtype → URL 域名（含子域）→ URL 路径片段 / 标记（如 `#!`）。
+    配置缺失、字段缺失或配置损坏一律返回 False（宁可不兜底，也不阻断普通来源）。
+    """
+    block = _render_required_config(config)
+    if not block:
+        return False
+    try:
+        canonical = sc.resolve_subtype(subtype, config) if subtype else ""
+        subtypes = {str(s).strip().lower() for s in block.get('subtypes') or []}
+        if canonical and str(canonical).strip().lower() in subtypes:
+            return True
+
+        url_l = (url or "").strip().lower()
+        if not url_l:
+            return False
+
+        host = _url_host(url_l)
+        for dom in block.get('domains') or []:
+            d = str(dom).strip().lower()
+            if d and (host == d or host.endswith('.' + d)):
+                return True
+
+        for pat in list(block.get('path_patterns') or []) + list(block.get('url_markers') or []):
+            p = str(pat).strip().lower()
+            if p and p in url_l:
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def _http_code_from_text(text: str) -> str:
+    """尽力从 CLI/浏览器输出里取真实 HTTP 状态码；取不到返回空串（不猜）。"""
+    if not text:
+        return ""
+    try:
+        data = json.loads(text)
+    except Exception:
+        data = None
+    if isinstance(data, dict):
+        for key in ("http_code", "httpCode", "status_code", "statusCode", "status"):
+            value = data.get(key)
+            if isinstance(value, int) and 100 <= value <= 599:
+                return str(value)
+            if isinstance(value, str) and len(value) == 3 and value.isdigit() and value[0] in "12345":
+                return value
+    m = re.search(r'\b([1-5]\d{2})\b', text)
+    return m.group(1) if m else ""
+
+
+def _browser_available() -> tuple[bool, dict]:
+    """探测 openclaw 浏览器可用性，返回 (可用, 原始 run_cmd 结果)。"""
+    r = run_cmd(list(BROWSER_PROBE_CMD), timeout=BROWSER_PROBE_TIMEOUT)
+    return bool(r.get("ok") and "tab:" in (r.get("stdout") or "")), r
+
+
+def _min_visible_chars() -> int:
+    try:
+        return int(sc.get_settings().get('min_visible_chars', MIN_VISIBLE_CHARS))
+    except Exception:
+        return MIN_VISIBLE_CHARS
+
+
+def _record_browser_stage(dest_dir: Path, url: str, *, ok: bool, exit_code: int, size: int,
+                          elapsed: float, error: str, source_type: str, session: str,
+                          http_code: str = "", visible_chars: int = 0, html_bytes: int = 0,
+                          text_bytes: int = 0, chrome_available: bool = True):
+    """把一次浏览器抓取尝试记进 _fetch_results.json（rendered=true + 真实字节数）。"""
+    _record_stage(dest_dir, url, "browser", ok, exit_code, size, elapsed, error, source_type,
+                  extra={"rendered": True, "session": session, "http_code": http_code,
+                         "visible_chars": visible_chars, "html_bytes": html_bytes,
+                         "text_bytes": text_bytes, "chrome_available": chrome_available})
+
+
+def _browser_fetch(dest_dir: Path, url: str, *, html_name: str, md_name: str,
+                   session: str = BROWSER_SESSION, source_type: str = "",
+                   min_visible: int | None = None, note: str = "") -> dict:
+    """用浏览器抓取页面：openclaw 探测 → opencli browser open / extract。
+
+    落盘 `<html_name>`（extract 返回 HTML 时的原始 HTML）与 `<md_name>`（纯文本；
+    extract 直接返回 markdown 时原样写入）。成功与否只看可见正文字符数
+    （`_visible_text` + `min_visible`，默认 settings.min_visible_chars），从不看「文件存在」。
+    浏览器不可用时返回 status="needs_browser"；其余失败返回 "failed"。每次尝试都留证据。
+    """
+    result = {"status": "needs_browser", "files": [], "chrome_available": False,
+              "rendered": False, "visible_chars": 0, "text": "", "error": "", "note": note}
+    start = time.time()
+
+    chrome_open, probe = _browser_available()
+    result["chrome_available"] = chrome_open
+    if not chrome_open:
+        result["error"] = "浏览器不可用：openclaw browser tabs 未返回标签页，需人工抓取"
+        result["note"] = note or result["error"]
+        _record_browser_stage(dest_dir, url, ok=False, exit_code=probe.get("exit_code", -1),
+                              size=0, elapsed=time.time() - start,
+                              error=result["error"] + (probe.get("stderr") or "")[:100],
+                              source_type=source_type, session=session, chrome_available=False)
+        return result
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    r_open = run_cmd(["opencli", "browser", session, "open", url], timeout=BROWSER_OPEN_TIMEOUT)
+    exit_code = r_open.get("exit_code", -1)
+    http_code = _http_code_from_text(r_open.get("stdout") or "")
+    if not r_open.get("ok"):
+        result["error"] = f"opencli browser {session} open 失败（exit {exit_code}）"
+        result["note"] = note or result["error"] + "，需人工介入"
+        _record_browser_stage(dest_dir, url, ok=False, exit_code=exit_code, size=0,
+                              elapsed=time.time() - start,
+                              error=result["error"] + (r_open.get("stderr") or "")[:100],
+                              source_type=source_type, session=session, http_code=http_code)
+        return result
+
+    r_extract = run_cmd(["opencli", "browser", session, "extract"], timeout=BROWSER_EXTRACT_TIMEOUT)
+    exit_code = r_extract.get("exit_code", exit_code)
+    payload = r_extract.get("stdout") or ""
+    if not r_extract.get("ok") or not payload.strip():
+        result["error"] = f"浏览器提取为空（exit {exit_code}）"
+        result["note"] = note or result["error"] + "，需人工介入"
+        _record_browser_stage(dest_dir, url, ok=False, exit_code=exit_code, size=0,
+                              elapsed=time.time() - start,
+                              error=result["error"] + (r_extract.get("stderr") or "")[:100],
+                              source_type=source_type, session=session, http_code=http_code)
+        return result
+
+    # opencli 可能把正文包在 JSON 信封里（{"content": ...}）：拆出正文再判 HTML/纯文本。
+    if payload.lstrip().startswith('{'):
+        try:
+            data = json.loads(payload)
+            inner = data.get("content") if isinstance(data, dict) else None
+            if isinstance(inner, str) and inner.strip():
+                payload = inner
+        except Exception:
+            pass
+
+    looks_html = '<' in payload[:200].lower()
+    visible = _visible_text(payload)
+    limit = _min_visible_chars() if min_visible is None else int(min_visible)
+
+    files = []
+    if looks_html:
+        (dest_dir / html_name).write_text(payload, encoding="utf-8")
+        files.append(html_name)
+    text_body = visible if looks_html else payload
+    (dest_dir / md_name).write_text(text_body, encoding="utf-8")
+    files.append(md_name)
+
+    ok = len(visible) >= limit
+    result.update({
+        "status": "success" if ok else "failed",
+        "files": files if ok else [],
+        "rendered": True,
+        "visible_chars": len(visible),
+        "text": text_body,
+        "error": "" if ok else f"渲染正文过短：{len(visible)} 字符 < {limit}",
+    })
+    result["note"] = "via opencli browser extract" if ok else (note or result["error"] + "，需人工介入")
+    _record_browser_stage(
+        dest_dir, url, ok=ok, exit_code=exit_code,
+        size=len(payload.encode("utf-8")), elapsed=time.time() - start,
+        error=result["error"], source_type=source_type, session=session,
+        http_code=http_code, visible_chars=len(visible),
+        html_bytes=len(payload.encode("utf-8")) if looks_html else 0,
+        text_bytes=len(text_body.encode("utf-8")),
+    )
+    return result
 
 
 # ============================================================
@@ -302,35 +529,42 @@ def handler_weixin(dest_dir: Path, url: str, label: str = "primary") -> dict:
     return result
 
 
-def handler_linkedin(dest_dir: Path, url: str, label: str = "primary") -> dict:
-    """LinkedIn：需要浏览器登录态。"""
-    result = {"label": label, "subtype": "linkedin", "url": url, "status": "needs_browser",
-              "files": [], "note": "需要浏览器登录态"}
-    # openclaw browser 初始化连接可能需要 15-20 秒，给足 30 秒外层超时。
-    r = run_cmd(["openclaw", "browser", "--browser-profile", "user", "tabs"], timeout=30)
-    chrome_open = r["ok"] and "tab:" in r["stdout"]
-    result["chrome_available"] = chrome_open
+def handler_browser(dest_dir: Path, url: str, label: str = "primary",
+                    file_stem: str = "webpage", subtype: str = "webpage") -> dict:
+    """通用浏览器渲染抓取：落盘 <file_stem>_rendered.html / <file_stem>_rendered.md。
 
-    if chrome_open:
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        # 使用 opencli browser 的 session 机制打开 URL 并提取 markdown。
-        # "linkedin" 是 session 名称（任意即可），不是子命令。
-        r1 = run_cmd(["opencli", "browser", "linkedin", "open", url], timeout=30)
-        if r1["ok"]:
-            # LinkedIn 页面加载和提取可能较慢，给 60 秒超时。
-            r2 = run_cmd(["opencli", "browser", "linkedin", "extract"], timeout=60)
-            if r2["ok"] and r2["stdout"].strip():
-                content = r2["stdout"]
-                post_path = dest_dir / ("linkedin_post.html" if '<' in content[:200].lower() else "linkedin_post.md")
-                post_path.write_text(content, encoding="utf-8")
-                result.update({"status": "success", "files": [post_path.name], "note": "via opencli browser extract"})
-                text = content
-                if content.strip().startswith('{'):
-                    try:
-                        text = json.loads(content).get("content", content)
-                    except Exception:
-                        pass
-                result["drill_targets"] = extract_drill_targets(text, ["arxiv_paper", "github"])
+    既是 fetch.handler: browser 的来源类型入口，也是渲染必需来源的兜底路径实现。
+    """
+    result = _browser_fetch(
+        dest_dir, url,
+        html_name=f"{file_stem}{RENDER_SUFFIX_HTML}",
+        md_name=f"{file_stem}{RENDER_SUFFIX_MD}",
+        source_type=file_stem,
+    )
+    result.update({"label": label, "subtype": subtype, "url": url})
+    if result["status"] == "success":
+        result["drill_targets"] = extract_drill_targets(result.get("text", ""), ["arxiv_paper", "github"])
+    return result
+
+
+def handler_linkedin(dest_dir: Path, url: str, label: str = "primary") -> dict:
+    """LinkedIn：需要浏览器登录态（走共用浏览器抓取路径）。
+
+    沿用历史判据：只要 extract 拿到非空正文即算成功（LinkedIn 帖子可能很短，
+    不以 min_visible_chars 卡它）；产物名保持 linkedin_post.{html,md}。
+    """
+    out = _browser_fetch(
+        dest_dir, url, session="linkedin",
+        html_name="linkedin_post.html", md_name="linkedin_post.md",
+        source_type="linkedin", min_visible=1, note="需要浏览器登录态",
+    )
+    result = {
+        "label": label, "subtype": "linkedin", "url": url,
+        "status": out["status"], "files": out["files"], "error": out["error"],
+        "chrome_available": out["chrome_available"], "note": out["note"],
+    }
+    if out["status"] == "success":
+        result["drill_targets"] = extract_drill_targets(out.get("text", ""), ["arxiv_paper", "github"])
     return result
 
 
@@ -427,6 +661,7 @@ HANDLERS = {
     "weixin": handler_weixin,
     "linkedin": handler_linkedin,
     "webpage": handler_webpage,
+    "browser": handler_browser,
     "search": handler_search,
 }
 
@@ -434,6 +669,79 @@ HANDLERS = {
 # ============================================================
 # Core collection orchestration
 # ============================================================
+
+# 这些 handler 没有「轻量路径」可重试：linkedin/browser 直接走浏览器，search/none 不抓取。
+_SKIP_RENDER_FALLBACK_HANDLERS = {"linkedin", "browser", "search", "none"}
+
+
+def _render_retries() -> int:
+    try:
+        return max(0, int(sc.get_settings().get('render_retries', RENDER_RETRIES_DEFAULT)))
+    except Exception:
+        return RENDER_RETRIES_DEFAULT
+
+
+def _collect_with_render_fallback(handler, dest_dir: Path, input_val: str, label: str,
+                                  kwargs: dict, subtype: str, fetch: dict) -> dict:
+    """渲染必需来源：先重试轻量路径（curl / opencli weixin），全失败再浏览器兜底。
+
+    解析顺序与最终状态：
+      1. 任一轻量尝试成功 → 原样返回；
+      2. 轻量路径全失败 → 走 handler_browser（raw/<stem>_rendered.html / .md）；
+      3. 两条路都没有有效正文 → status="needs_browser"（drill log 的 needs_manual
+         会计数并带 note），绝不假报 success。
+    每次尝试都带 attempt 序号写进 _fetch_results.json。
+    """
+    retries = _render_retries()
+    try:
+        budget = float(sc.get_settings().get('fetch_timeout', 60)) / 2
+    except Exception:
+        budget = 30.0
+
+    result = {}
+    attempts = 0
+    started = time.time()
+    for attempt in range(1, retries + 2):
+        with _fetch_attempt(attempt):
+            result = handler(dest_dir, input_val, **kwargs)
+        attempts = attempt
+        if result.get("status") == "success":
+            return result
+        if time.time() - started >= budget:
+            # 单次尝试已耗掉 fetch_timeout 的一半：重试只会重复同样的慢失败
+            # （超时/网络不可达），把剩余时间留给浏览器兜底。
+            break
+
+    print(f"  ⚠️ {subtype} 为渲染必需来源：轻量路径 {attempts} 次未拿到正文 → 浏览器渲染兜底",
+          file=sys.stderr)
+    file_stem = fetch.get('file_stem') or subtype.replace('_', '-')
+    with _fetch_attempt(attempts + 1):
+        rendered = handler_browser(dest_dir, input_val, label=label,
+                                   file_stem=file_stem, subtype=subtype)
+
+    if rendered.get("status") == "success":
+        print(f"  ✅ {subtype} 浏览器渲染兜底成功", file=sys.stderr)
+        return {
+            "label": label, "subtype": subtype, "url": input_val,
+            "status": "success",
+            "files": rendered.get("files", []),
+            "drill_targets": rendered.get("drill_targets", []),
+            "note": f"轻量路径失败 {attempts} 次 → 浏览器渲染兜底成功",
+            "rendered": True,
+        }
+
+    cheap_error = result.get("error") or ""
+    render_error = rendered.get("error") or rendered.get("note") or "浏览器渲染无有效正文"
+    return {
+        "label": label, "subtype": subtype, "url": input_val,
+        "status": "needs_browser",
+        "files": [],
+        "error": f"轻量路径: {cheap_error or '无有效正文'}；渲染兜底: {render_error}"[:200],
+        "note": (f"轻量路径失败 {attempts} 次且浏览器渲染兜底无有效正文"
+                 f"（{render_error}）→ 需人工介入"),
+        "chrome_available": rendered.get("chrome_available", False),
+    }
+
 
 def _run_handler(subtype: str, dest_dir: Path, input_val: str, label: str,
                  download_zip: bool = False) -> dict:
@@ -451,10 +759,17 @@ def _run_handler(subtype: str, dest_dir: Path, input_val: str, label: str,
                 "files": [], "error": f"Unknown handler: {handler_name}"}
 
     kwargs = {"label": label}
-    if handler_name == "webpage":
+    if handler_name in ("webpage", "browser"):
         kwargs["file_stem"] = fetch.get('file_stem', subtype.replace('_', '-'))
+    if handler_name == "browser":
+        kwargs["subtype"] = subtype
     if handler_name == "github":
         kwargs["download_zip"] = download_zip
+
+    if (is_render_required(subtype, input_val)
+            and handler_name not in _SKIP_RENDER_FALLBACK_HANDLERS):
+        return _collect_with_render_fallback(handler, dest_dir, input_val, label,
+                                             kwargs, subtype, fetch)
 
     return handler(dest_dir, input_val, **kwargs)
 
@@ -709,6 +1024,18 @@ def collect_sources(slug: str, sources: list[dict], max_depth: int = None,
 # ============================================================
 # CLI
 # ============================================================
+
+SAFE_SUBDIR_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]*')
+
+
+def _safe_subdir(name: str):
+    """校验 --dest-subdir：只接受单层安全相对目录名（拒绝 .. / 路径分隔符 / 盘符）。"""
+    candidate = (name or '').strip()
+    if not candidate or '..' in candidate or not SAFE_SUBDIR_RE.fullmatch(candidate):
+        return None
+    return candidate
+
+
 def main():
     parser = argparse.ArgumentParser(description="素材收集器 — 递归下钻 + 落盘 raw/")
     parser.add_argument("--slug", required=True)
@@ -719,14 +1046,27 @@ def main():
     parser.add_argument("--input", help="URL / arXiv ID / 关键词（单源模式）")
     parser.add_argument("--sources-json", help='多源模式：JSON 列表，如 [{"source_type":"arxiv","input":"..."}, ...]')
     parser.add_argument("--max-depth", type=int, default=None)
+    parser.add_argument("--dest-subdir", dest="dest_subdir",
+                        help="落盘到 raw/<dest-subdir>/（append 补料用；仅单层安全目录名，多源模式）")
     parser.add_argument("--download-zip", action="store_true", help="仅对 github handler 下载 code.zip")
     parser.add_argument("--json", action="store_true", help="输出完整 drill_log JSON")
     args = parser.parse_args()
 
+    dest_base = None
+    if args.dest_subdir is not None:
+        name = _safe_subdir(args.dest_subdir)
+        if name is None:
+            parser.error(f"--dest-subdir 只接受单层安全相对目录名（字母数字/._-，不含 ..、/、\\\\）: "
+                         f"{args.dest_subdir!r}")
+        dest_base = paths.raw_dir(args.slug, WORKSPACE) / name
+
     if args.sources_json:
         sources = json.loads(args.sources_json)
-        log = collect_sources(args.slug, sources, args.max_depth, download_zip=args.download_zip)
+        log = collect_sources(args.slug, sources, args.max_depth,
+                              download_zip=args.download_zip, dest_base=dest_base)
     elif args.input:
+        if dest_base is not None:
+            parser.error("--dest-subdir 仅支持多源模式（--sources-json）")
         if not args.input_type or not args.source_type:
             parser.error("单源模式需要 --input-type 和 --source-type（或旧 --type/--subtype）")
         log = collect_materials(args.slug, args.input_type, args.source_type, args.input,

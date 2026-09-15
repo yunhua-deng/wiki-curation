@@ -31,6 +31,16 @@ def cmd_add(args, db_path):
             else:
                 print(msg)
             sys.exit(1)
+        # append 只对「已发布」条目成立：对 pending/running 条目 append 会覆盖 source_input
+        # 且把条目推进到不可能成功的状态（见 issues/2026-07-20_001）。
+        if base_entry.get('status') != 'done':
+            msg = (f"条目 {append_to} 状态为 {base_entry.get('status')}，append 仅支持已发布（done）条目；"
+                   f"多来源请在首次 add 时一并提供")
+            if args.json:
+                _out_json({"ok": False, "error": "APPEND_REQUIRES_PUBLISHED", "message": msg})
+            else:
+                print(msg)
+            sys.exit(1)
 
     try:
         intake_result = intake.prepare_intake(

@@ -430,6 +430,22 @@ def _migrate_v9_cjk_fts(conn):
     _record_schema_version(conn, 'v9_cjk_fts')
 
 
+def _migrate_v10_fts_orphans(conn):
+    """v10：清掉 entries_fts 里 rowid 已不在 entries 中的孤儿行。
+
+    `INSERT OR REPLACE INTO entries` 在冲突时会删旧行插新行（rowid 变化），
+    v9 之前 `_insert_entry` 未清理旧 rowid 的 fts 行，历史库会累积孤儿，
+    导致 fts 行数虚高、sync/stats 口径漂移。
+    """
+    applied = _get_applied_versions(conn)
+    if 'v10_fts_orphans' in applied:
+        return
+    conn.execute(
+        'DELETE FROM entries_fts WHERE rowid NOT IN (SELECT rowid FROM entries)'
+    )
+    _record_schema_version(conn, 'v10_fts_orphans')
+
+
 def applied_versions(db_path) -> set:
     """已应用的迁移版本集合（doctor 可观测 schema 迁移状态）。"""
     conn = sqlite3.connect(str(Path(db_path)))
@@ -482,6 +498,9 @@ def ensure_schema(db_path):
 
     # v9：CJK 分词——独立 FTS 表 + 逐字索引
     _migrate_v9_cjk_fts(conn)
+
+    # v10：清理 entries_fts 孤儿行（OR REPLACE 改 rowid 的存量残留）
+    _migrate_v10_fts_orphans(conn)
 
     conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_topic_type ON entries(topic_type)")

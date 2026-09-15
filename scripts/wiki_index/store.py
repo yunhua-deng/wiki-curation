@@ -136,12 +136,21 @@ def _entry_to_row(entry):
 
 
 def _insert_entry(conn, entry):
-    """向 entries 与 entries_fts 同时写入/更新一条记录。"""
+    """向 entries 与 entries_fts 同时写入/更新一条记录。
+
+    `INSERT OR REPLACE INTO entries` 在冲突时是「删旧行 + 插新行」，rowid 会变；
+    因此必须在写入前记下旧 rowid，并在 rowid 变化时清掉旧 rowid 的 fts 行，
+    否则每次对同一 id 重新写入都会留下孤儿（查询侧 `entries JOIN entries_fts`
+    看不到，但 fts 行数会持续虚高，sync/stats 口径漂移）。
+    """
     placeholders = ', '.join('?' * len(COLUMNS))
     cols = ', '.join(COLUMNS)
     sql = f'INSERT OR REPLACE INTO entries ({cols}) VALUES ({placeholders})'
+    prev = conn.execute('SELECT rowid FROM entries WHERE id = ?', (entry['id'],)).fetchone()
     conn.execute(sql, _entry_to_row(entry))
     rowid = conn.execute('SELECT rowid FROM entries WHERE id = ?', (entry['id'],)).fetchone()[0]
+    if prev and prev[0] != rowid:
+        conn.execute('DELETE FROM entries_fts WHERE rowid = ?', (prev[0],))
     search_text = to_index_text(entry['id'], entry.get('title', ''),
                                 entry.get('overview', ''), _tags_to_str(entry.get('tags', [])))
     conn.execute(

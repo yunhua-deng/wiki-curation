@@ -208,7 +208,7 @@ def upsert_task(db_path, slug, source_input=None, source_prompt=None, input_type
             'id': slug,
             'date': date_prefix.group(1) if date_prefix else '—',
             'ver': '—',
-            'depth': depth,
+            'depth': depth or 'brief',
             'sources': '—',
             'topic_type': 'unknown',
             'title': title or source_input[:80] if source_input else slug,
@@ -533,10 +533,91 @@ def sync_with_files(db_path, wiki_dir):
             "both": both, "mismatch": []}
 
 def rebuild_index(db_path, wiki_dir, preserve_meta=True):
-    """重建索引：返回 (entry_count, fts_count)。"""
-    from scripts.wiki_index.schema import ensure_schema
+    """从 `artifacts/*/record.json` 重建索引（entries 行 + FTS + links + relations）。
+
+    这是 `sync --rebuild` 的实现，也是 wiki.db 丢失/损坏后的恢复路径：`record.json` 是
+    事实源，库只是索引。遍历工作区里每个 `artifacts/<slug>/record.json`，复用 publish
+    的同一套原语回填条目行与链接/关系边（links → entities → relations，顺序不能反）。
+
+    - `preserve_meta=True`：已存在的条目**保留**其队列字段（status/owner/queued_at…），
+      只补记录字段；缺失的条目按已发布（status=done）建行。
+    - `preserve_meta=False`：全部按 record.json 重建（条目一律标记 done）。
+    - 只增不删：库里有条目但磁盘上没有 record.json 的行**不动**（可能只是记录还没产出）。
+
+    返回 (entry_count, fts_count)。
+    """
+    from scripts.wiki_index.schema import normalize_topic_type
+    import sqlite3 as _sqlite3
+
     db_path = Path(db_path)
+    wiki_dir = Path(wiki_dir)
     ensure_schema(db_path)
-    entries = list_entries(db_path)
-    return len(entries), len(entries)
+
+    artifacts = wiki_dir / "artifacts"
+    records = []
+    if artifacts.is_dir():
+        for d in sorted(p for p in artifacts.iterdir() if p.is_dir()):
+            rp = d / "record.json"
+            if not rp.exists():
+                continue
+            try:
+                rec = json.loads(rp.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if isinstance(rec, dict):
+                records.append((rec.get("id") or d.name, rec))
+
+    from scripts.records import links as _links
+    from scripts.records import relations as _relations
+    from scripts.records import publish_record as _publish_record
+
+    for slug, rec in records:
+        existing = get_entry(db_path, slug)
+        src = rec.get("source") or {}
+        kwargs = {
+            "title": rec.get("title") or "",
+            "status": "done",
+        }
+        if rec.get("tldr"):
+            kwargs["overview"] = rec["tldr"]
+        if rec.get("tags"):
+            kwargs["tags"] = rec["tags"]
+        if rec.get("date"):
+            kwargs["date"] = rec["date"]
+        if src:
+            if src.get("direct_source") or src.get("original_source"):
+                kwargs["source_input"] = src.get("direct_source") or src.get("original_source")
+            if src.get("input_type"):
+                kwargs["input_type"] = src.get("input_type")
+            if src.get("source_type"):
+                kwargs["source_type"] = src.get("source_type")
+        kwargs["topic_type"] = normalize_topic_type(
+            rec.get("topic_type"), kwargs.get("source_type") or (existing or {}).get("source_type")
+        )
+        if preserve_meta and existing and existing.get("status"):
+            # 运行中/排队的条目不要被重建改成 done
+            kwargs.pop("status")
+        upsert_task(db_path, slug, **kwargs)
+
+        if isinstance(rec.get("links"), list):
+            _links.replace_links(db_path, slug, rec["links"])
+        if isinstance(rec.get("entities"), dict):
+            try:
+                _links.set_entry_entities(
+                    db_path, slug, _publish_record._canonicalize_entities(rec["entities"])
+                )
+            except Exception:
+                pass
+        try:
+            _relations.rewire_relations(db_path, slug)
+        except Exception:
+            pass
+
+    conn = _sqlite3.connect(str(db_path))
+    try:
+        entry_count = conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0]
+        fts_count = conn.execute("SELECT COUNT(*) FROM entries_fts").fetchone()[0]
+    finally:
+        conn.close()
+    return entry_count, fts_count
 

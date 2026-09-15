@@ -211,6 +211,21 @@ Written by the pipeline, append-only — they are the audit trail:
 
 `record-event` only accepts `{ENQUEUE, FETCH, GATE, WRITE, VERIFY, DONE}` — `RECALL` / `STARTED` / `FAILED` are written by the pipeline only.
 
+## Disaster recovery (`sync --rebuild`)
+
+`record.json` is the source of truth; `wiki.db` is only its index. If the db is lost or corrupted:
+
+```bash
+python scripts/cli.py --json --workspace <wiki> sync --rebuild
+```
+
+It walks `wiki/artifacts/*/record.json` and rebuilds — through the same primitives `publish` uses — the entry rows and their FTS index (`entries` / `entries_fts`), the `links` table and the structural `relations` edges. Worth knowing:
+
+- Only folders that actually contain a `record.json` are indexed; a folder with just `raw/` is ignored (an entry is never invented).
+- Entries already in the db **keep their queue metadata** (status / owner / queued_at): a `running` extraction is not flipped to `done`. Nothing is deleted — db rows without a `record.json` stay as they are.
+- What it does **not** restore: the `events` audit trail, the `RECALL` preview that `publish` injects into `record.preview`, and queue entries that never produced a record. Links / relations / entities come back deterministically because `publish` keeps them backfilled in `record.json`.
+- After it runs, plain `sync` must report `db_only=[] / md_only=[] / record_only=[]`.
+
 ## Architecture
 
 ```

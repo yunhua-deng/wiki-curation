@@ -446,6 +446,23 @@ def _migrate_v10_fts_orphans(conn):
     _record_schema_version(conn, 'v10_fts_orphans')
 
 
+def _migrate_v11_depth_placeholders(conn):
+    """v11：把 depth 列的占位/脏值归一为 'brief'（每次 ensure_schema 都跑一次，稳态下 0 行命中）。
+
+    历史库里有三种非值：`'—'`（早期迁移写的占位符，543 行）、空串、NULL；另外
+    `upsert_task` 新建行时若不传 depth 也会写 NULL。record 模式只有 brief 一种深度
+    （`add` / `run` 都写 'brief'），这些占位值会让 `stats` / 站点把深度显示成 `-`。
+    `'deep'` 是已废除的文章管线遗留，**保留不动**（有历史含义，legacy publish --depth 仍认它）。
+    与 `_migrate_v4b_normalize_topic_types` 同理：归一化必须每次执行，否则「迁移之后新插入的
+    脏值」会一直留着；版本记录只用于 doctor 观测。
+    """
+    conn.execute(
+        "UPDATE entries SET depth = 'brief' "
+        "WHERE depth IS NULL OR TRIM(depth) = '' OR depth = '—'"
+    )
+    _record_schema_version(conn, 'v11_depth_placeholders')
+
+
 def applied_versions(db_path) -> set:
     """已应用的迁移版本集合（doctor 可观测 schema 迁移状态）。"""
     conn = sqlite3.connect(str(Path(db_path)))
@@ -501,6 +518,10 @@ def ensure_schema(db_path):
 
     # v10：清理 entries_fts 孤儿行（OR REPLACE 改 rowid 的存量残留）
     _migrate_v10_fts_orphans(conn)
+
+    # v11：depth 列占位值归一（'—' / 空串 / NULL → 'brief'）；与方法名里的 v4b 同理，
+    # 必须每次执行（迁移之后新建的脏值也要能被收掉）
+    _migrate_v11_depth_placeholders(conn)
 
     conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_topic_type ON entries(topic_type)")

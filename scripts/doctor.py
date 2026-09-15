@@ -14,7 +14,7 @@ Wiki Harness Doctor — record 时代健康自检（v3.2 精简版）。
 Usage:
   python skills/wiki-curation/scripts/doctor.py [--json] [--quick] [--fix-plan]
 """
-import os, sys, json, glob, shlex
+import os, re, sys, json, glob, shlex
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -141,6 +141,13 @@ def check_record_tier():
 # ============================================================
 # 6. schema 迁移版本（信息性）
 # ============================================================
+def _migration_sort_key(version: str):
+    """迁移版本按数字排序，而不是字典序——否则 'v9_…' 会排在 'v10_…' 之后，
+    doctor 显示的 latest 就停在 v9（实际已应用 v11）。"""
+    m = re.match(r'v(\d+)', version or '')
+    return (int(m.group(1)) if m else -1, version)
+
+
 def check_schema_version():
     """已应用迁移版本（信息性）：确认迁移已落库，如 v8 结构边迁移。"""
     try:
@@ -149,7 +156,7 @@ def check_schema_version():
         if not db_path.exists():
             return {'check': 'schema version (wiki.db)', 'passed': True,
                     'summary': 'SKIP: wiki.db NOT FOUND'}
-        applied = sorted(SC.applied_versions(db_path))
+        applied = sorted(SC.applied_versions(db_path), key=_migration_sort_key)
     except Exception as e:
         return {'check': 'schema version (wiki.db)', 'passed': False, 'summary': f'Error: {e}'}
     if not applied:

@@ -37,6 +37,8 @@ python eval/run_eval.py --llm
 - `add --append-to` 只允许对 `status=done` 的条目；append 的新素材落 `raw/append_<N>/`（自带 `_drill_log.json` / `_fetch_results.json`），**不得覆盖既有材料**；append 意图由 `ENQUEUE` 事件承载，普通 `run --id <slug>` 也要能识别。
 - **有副作用的步骤不重试**：`cli.py` 对 `run` / `collect` / `ingest` 一律 `retries=0`（`_run_script(..., retries=0)`），`orchestrate.run_script()` 调子脚本同样 `retries=0`。`run_cmd` 默认 `retries=1` 且对**任意非零退出码**都重试，而这些步骤的非零退出码是正常失败信号（`MATERIALS_MISSING` / `COLLECT_FAILED`）——曾导致整条流水线跑两遍（重复抓取、多出一层 `append_N`、2×超时叠加）。要重试就重试抓取本身（`settings.render_retries` / `--force-collect`）。
 - **渲染必需来源**（登录态 / JS 渲染 / 反爬 / 容器型应用）由 `references/sources.yaml` 的 `render_required`（subtypes / domains / path_patterns / url_markers）统一判定：先按 `settings.render_retries` 重试轻量路径（curl / opencli weixin），再回退浏览器渲染，产物 `raw/<file_stem>_rendered.html|.md`；每次尝试都写 `_fetch_results.json`（带 `attempt`）。**非渲染必需来源必须保持原轻量路径不变**（`render_required` 缺失/损坏一律按「非渲染必需」处理）。判定仍只看可见正文密度，不看「文件是否存在」。
+- **`sync --rebuild` 必须真的重建索引**：遍历 `artifacts/*/record.json`（事实源），复用 publish 的同套原语回填 `entries` / `entries_fts` / `links` / `relations`；**只增不删**、保留既有队列元数据（running 不会被改成 done）、没有 `record.json` 的目录忽略。它是 wiki.db 丢失后的唯一恢复路径——历史上这里是空实现（返回计数却什么都不做），**不得退回**。它不恢复 `events` 审计流与 `record.preview`。
+- `doctor` 的迁移版本排序按**数字**（v11 > v9），不是字典序；新增 v10+ 迁移时留意任何 `sorted(applied)`。
 - **浏览器探测只作诊断，绝不能当闸门**：`_browser_fetch` 里的 `openclaw browser tabs` 探测与实际抓取用的 `opencli browser` **不是同一个后端**，探测结论只写进 `_fetch_results.json` 的 `probe` 字段；探测失败时仍必须尝试 opencli（否则 opencli 明明可用也会被误判成「浏览器不可用」，`2026-09-15_005` 就是这个问题）。状态由真实后端给：opencli 起不来（exit `-2`）→ `needs_browser`；页面打开但正文过短 → `failed`。
 
 ## publish 与标识符约定

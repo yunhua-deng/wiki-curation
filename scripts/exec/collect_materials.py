@@ -19,7 +19,6 @@ from urllib.parse import urlparse
 # 本脚本位于 exec/，需要 scripts/ 根目录才能导入 lib、source_config 等公共模块
 
 from scripts import source_config as sc
-from scripts import lib
 from scripts import paths
 from scripts.lib import run_cmd
 
@@ -260,50 +259,61 @@ def _min_visible_chars() -> int:
 def _record_browser_stage(dest_dir: Path, url: str, *, ok: bool, exit_code: int, size: int,
                           elapsed: float, error: str, source_type: str, session: str,
                           http_code: str = "", visible_chars: int = 0, html_bytes: int = 0,
-                          text_bytes: int = 0, chrome_available: bool = True):
-    """把一次浏览器抓取尝试记进 _fetch_results.json（rendered=true + 真实字节数）。"""
+                          text_bytes: int = 0, chrome_available: bool = True, probe: str = ""):
+    """把一次浏览器抓取尝试记进 _fetch_results.json（rendered=true + 真实字节数）。
+
+    `probe` 记录这次尝试开始时 `openclaw browser tabs` 的探测结论：它**不是**抓取后端，
+    只用于把「探测失败」与「抓取失败」区分开。
+    """
     _record_stage(dest_dir, url, "browser", ok, exit_code, size, elapsed, error, source_type,
                   extra={"rendered": True, "session": session, "http_code": http_code,
                          "visible_chars": visible_chars, "html_bytes": html_bytes,
-                         "text_bytes": text_bytes, "chrome_available": chrome_available})
+                         "text_bytes": text_bytes, "chrome_available": chrome_available,
+                         "probe": probe})
 
 
 def _browser_fetch(dest_dir: Path, url: str, *, html_name: str, md_name: str,
                    session: str = BROWSER_SESSION, source_type: str = "",
                    min_visible: int | None = None, note: str = "") -> dict:
-    """用浏览器抓取页面：openclaw 探测 → opencli browser open / extract。
+    """用浏览器抓取页面：opencli browser open / extract。
+
+    探测（`openclaw browser tabs`）与抓取（`opencli browser`）**不是同一后端**，因此探测
+    只作为证据记录（`probe` 字段），**不再作为闸门**——否则 opencli 明明可用也会被判成
+    「浏览器不可用」。最终判定按实际抓取后端：opencli 无法执行（spawn 失败 exit=-2）
+    → status="needs_browser"；open/extract 失败或正文过短 → status="failed"。
 
     落盘 `<html_name>`（extract 返回 HTML 时的原始 HTML）与 `<md_name>`（纯文本；
     extract 直接返回 markdown 时原样写入）。成功与否只看可见正文字符数
     （`_visible_text` + `min_visible`，默认 settings.min_visible_chars），从不看「文件存在」。
-    浏览器不可用时返回 status="needs_browser"；其余失败返回 "failed"。每次尝试都留证据。
     """
     result = {"status": "needs_browser", "files": [], "chrome_available": False,
               "rendered": False, "visible_chars": 0, "text": "", "error": "", "note": note}
     start = time.time()
 
-    chrome_open, probe = _browser_available()
-    result["chrome_available"] = chrome_open
-    if not chrome_open:
-        result["error"] = "浏览器不可用：openclaw browser tabs 未返回标签页，需人工抓取"
-        result["note"] = note or result["error"]
-        _record_browser_stage(dest_dir, url, ok=False, exit_code=probe.get("exit_code", -1),
-                              size=0, elapsed=time.time() - start,
-                              error=result["error"] + (probe.get("stderr") or "")[:100],
-                              source_type=source_type, session=session, chrome_available=False)
-        return result
+    probe_ok, probe = _browser_available()
+    result["chrome_available"] = probe_ok
+    probe_note = "" if probe_ok else (
+        "openclaw 探测未返回标签页（仅诊断，不阻断 opencli 抓取）"
+        + (probe.get("stderr") or "")[:80])
 
     dest_dir.mkdir(parents=True, exist_ok=True)
     r_open = run_cmd(["opencli", "browser", session, "open", url], timeout=BROWSER_OPEN_TIMEOUT)
     exit_code = r_open.get("exit_code", -1)
     http_code = _http_code_from_text(r_open.get("stdout") or "")
     if not r_open.get("ok"):
-        result["error"] = f"opencli browser {session} open 失败（exit {exit_code}）"
+        # 打不开页面 = 浏览器侧不可用（opencli 缺失 exit=-2 / 无法起标签页）→ needs_browser；
+        # 「抓取失败」（打开了但 extract 没内容）才判 failed，两者在证据里可区分。
+        env_unavailable = exit_code == -2
+        result["status"] = "needs_browser"
+        result["error"] = (f"opencli 不可用（exit {exit_code}），浏览器路径无法启用"
+                           if env_unavailable
+                           else f"opencli browser {session} open 失败（exit {exit_code}）：浏览器/标签页不可用")
         result["note"] = note or result["error"] + "，需人工介入"
         _record_browser_stage(dest_dir, url, ok=False, exit_code=exit_code, size=0,
                               elapsed=time.time() - start,
                               error=result["error"] + (r_open.get("stderr") or "")[:100],
-                              source_type=source_type, session=session, http_code=http_code)
+                              source_type=source_type, session=session, http_code=http_code,
+                              chrome_available=probe_ok, probe=probe_note)
         return result
 
     r_extract = run_cmd(["opencli", "browser", session, "extract"], timeout=BROWSER_EXTRACT_TIMEOUT)
@@ -315,7 +325,8 @@ def _browser_fetch(dest_dir: Path, url: str, *, html_name: str, md_name: str,
         _record_browser_stage(dest_dir, url, ok=False, exit_code=exit_code, size=0,
                               elapsed=time.time() - start,
                               error=result["error"] + (r_extract.get("stderr") or "")[:100],
-                              source_type=source_type, session=session, http_code=http_code)
+                              source_type=source_type, session=session, http_code=http_code,
+                              chrome_available=probe_ok, probe=probe_note)
         return result
 
     # opencli 可能把正文包在 JSON 信封里（{"content": ...}）：拆出正文再判 HTML/纯文本。
@@ -357,6 +368,7 @@ def _browser_fetch(dest_dir: Path, url: str, *, html_name: str, md_name: str,
         http_code=http_code, visible_chars=len(visible),
         html_bytes=len(payload.encode("utf-8")) if looks_html else 0,
         text_bytes=len(text_body.encode("utf-8")),
+        chrome_available=probe_ok, probe=probe_note,
     )
     return result
 
@@ -417,8 +429,8 @@ def handler_arxiv(dest_dir: Path, input_val: str, label: str = "primary") -> dic
     return result
 
 
-def handler_github(dest_dir: Path, url: str, label: str = "primary", download_zip: bool = False) -> dict:
-    """获取 GitHub README；deep 时可选源码 zip。"""
+def handler_github(dest_dir: Path, url: str, label: str = "primary") -> dict:
+    """获取 GitHub README。"""
     result = {"label": label, "subtype": "github", "url": url, "status": "failed", "files": []}
     dest_dir.mkdir(parents=True, exist_ok=True)
 
@@ -448,34 +460,6 @@ def handler_github(dest_dir: Path, url: str, label: str = "primary", download_zi
                 readme_path.read_text(encoding="utf-8", errors="replace"), ["arxiv_paper", "github"]
             )
             break
-
-    # Optional zip for deep interpretation
-    if download_zip and result["status"] == "success":
-        zip_path = dest_dir / "code.zip"
-        if not (zip_path.exists() and zip_path.stat().st_size > 1024):
-            for base in [f"https://github.com/{owner}/{repo}/archive/refs/heads",
-                         f"https://mirror.ghproxy.com/https://github.com/{owner}/{repo}/archive/refs/heads"]:
-                for branch in ["main", "master"]:
-                    start = time.time()
-                    r = run_cmd([_curl(), "-sL", "--http1.1", "-o", str(zip_path),
-                                 f"{base}/{branch}.zip", "--max-time", "120", "-w", "%{http_code}"],
-                                timeout=130)
-                    http_code = _http_code_from_stdout(r["stdout"])
-                    ok = (http_code == "200" and zip_path.exists() and zip_path.stat().st_size > 1024)
-                    _record_stage(dest_dir, f"{base}/{branch}.zip", "curl", ok, r["exit_code"],
-                                  zip_path.stat().st_size if zip_path.exists() else 0,
-                                  time.time() - start, r.get("stderr", "")[:200], "github_zip")
-                    if ok:
-                        size_mb = zip_path.stat().st_size / (1024 * 1024)
-                        if size_mb > 80:
-                            zip_path.unlink()
-                            result["note"] = f"zip 过大 ({size_mb:.0f}MB > 80MB)，跳过源码"
-                        else:
-                            result["files"].append("code.zip")
-                        break
-                else:
-                    continue
-                break
 
     return result
 
@@ -655,6 +639,11 @@ def handler_search(dest_dir: Path, query: str, label: str = "primary") -> dict:
     return result
 
 
+def handler_none(dest_dir: Path, input_val: str, label: str = "primary") -> dict:
+    """不抓取的来源（如 local_file / multi_source，素材由用户手动提供）：不联网、不写盘。"""
+    return {"label": label, "status": "skipped_local", "files": []}
+
+
 HANDLERS = {
     "arxiv": handler_arxiv,
     "github": handler_github,
@@ -663,6 +652,13 @@ HANDLERS = {
     "webpage": handler_webpage,
     "browser": handler_browser,
     "search": handler_search,
+    "none": handler_none,
+}
+
+# sources.yaml 里 arxiv_title / project_name 声明的组合 handler 名；实际都走 search。
+HANDLER_ALIASES = {
+    "search_then_arxiv": "search",
+    "search_then_github": "search",
 }
 
 
@@ -743,8 +739,7 @@ def _collect_with_render_fallback(handler, dest_dir: Path, input_val: str, label
     }
 
 
-def _run_handler(subtype: str, dest_dir: Path, input_val: str, label: str,
-                 download_zip: bool = False) -> dict:
+def _run_handler(subtype: str, dest_dir: Path, input_val: str, label: str) -> dict:
     """根据 subtype 的 fetch.handler 调用对应 handler。"""
     defn = sc.get_source_type(subtype)
     if not defn:
@@ -753,6 +748,7 @@ def _run_handler(subtype: str, dest_dir: Path, input_val: str, label: str,
 
     fetch = defn.get('fetch', {})
     handler_name = fetch.get('handler', 'webpage')
+    handler_name = HANDLER_ALIASES.get(handler_name, handler_name)
     handler = HANDLERS.get(handler_name)
     if not handler:
         return {"label": label, "subtype": subtype, "status": "failed",
@@ -763,8 +759,6 @@ def _run_handler(subtype: str, dest_dir: Path, input_val: str, label: str,
         kwargs["file_stem"] = fetch.get('file_stem', subtype.replace('_', '-'))
     if handler_name == "browser":
         kwargs["subtype"] = subtype
-    if handler_name == "github":
-        kwargs["download_zip"] = download_zip
 
     if (is_render_required(subtype, input_val)
             and handler_name not in _SKIP_RENDER_FALLBACK_HANDLERS):
@@ -795,8 +789,7 @@ def _result_to_entry(level: int, label: str, subtype: str, input_val: str,
 
 
 def collect_materials(slug: str, input_type: str, source_type: str,
-                      input_val: str, max_depth: int = None,
-                      download_zip: bool = False) -> dict:
+                      input_val: str, max_depth: int = None) -> dict:
     """主入口：收集素材 + 递归下钻。
 
     Args:
@@ -822,7 +815,7 @@ def collect_materials(slug: str, input_type: str, source_type: str,
     }
 
     # Level 1
-    l1_result = _run_handler(subtype, dest_dir, input_val, "L1-primary", download_zip=download_zip)
+    l1_result = _run_handler(subtype, dest_dir, input_val, "L1-primary")
     l1_entry = _result_to_entry(1, "L1-primary", subtype, input_val, l1_result)
     drill_log["levels"].append({"level": 1, "entries": [l1_entry]})
     drill_log["summary"]["total_files"] += len(l1_result.get("files", []))
@@ -854,7 +847,7 @@ def collect_materials(slug: str, input_type: str, source_type: str,
             seen_ids.add(t_input)
 
             l2_dir = dest_dir / f"l2_{i+1}"
-            t_result = _run_handler(t_subtype, l2_dir, t_input, f"L2-{i+1}", download_zip=False)
+            t_result = _run_handler(t_subtype, l2_dir, t_input, f"L2-{i+1}")
             entry = _result_to_entry(2, f"L2-{i+1}", t_subtype, t_input, t_result, parent="L1-primary")
             l2_entries.append(entry)
             drill_log["summary"]["total_files"] += len(t_result.get("files", []))
@@ -876,7 +869,7 @@ def collect_materials(slug: str, input_type: str, source_type: str,
                     t_subtype = target["subtype"]
                     t_input = target["input"]
                     l3_dir = dest_dir / f"l3_{l3_idx}"
-                    t_result = _run_handler(t_subtype, l3_dir, t_input, f"L3-{l3_idx}", download_zip=False)
+                    t_result = _run_handler(t_subtype, l3_dir, t_input, f"L3-{l3_idx}")
                     entry = _result_to_entry(3, f"L3-{l3_idx}", t_subtype, t_input, t_result, parent=l2_entry["label"])
                     entry["drill_targets"] = []
                     l3_entries.append(entry)
@@ -892,7 +885,7 @@ def collect_materials(slug: str, input_type: str, source_type: str,
 
 
 def collect_sources(slug: str, sources: list[dict], max_depth: int = None,
-                    download_zip: bool = False, prefix: str = "", dest_base=None) -> dict:
+                    prefix: str = "", dest_base=None) -> dict:
     """多源收集入口：每个 source 放入 {dest_base}/{prefix}s{i}/，仅主源启用下钻。
 
     sources 元素格式（兼容旧键）：
@@ -937,10 +930,7 @@ def collect_sources(slug: str, sources: list[dict], max_depth: int = None,
         if subtype == 'local_file' or src.get("input_type", src.get("type")) == 'local':
             l1_result = {"label": label, "subtype": "local_file", "status": "skipped_local", "files": []}
         else:
-            l1_result = _run_handler(
-                subtype, src_dir, input_val, label,
-                download_zip=(download_zip if is_primary else False)
-            )
+            l1_result = _run_handler(subtype, src_dir, input_val, label)
             _merge_fetch_results(src_dir, dest_base, source_index=i)
         l1_entry = _result_to_entry(
             1, label, subtype, input_val, l1_result, file_prefix=file_prefix
@@ -977,7 +967,7 @@ def collect_sources(slug: str, sources: list[dict], max_depth: int = None,
                 seen_ids.add(t_input)
 
                 l2_dir = src_dir / f"l2_{j+1}"
-                t_result = _run_handler(t_subtype, l2_dir, t_input, f"L2-{j+1}", download_zip=False)
+                t_result = _run_handler(t_subtype, l2_dir, t_input, f"L2-{j+1}")
                 entry = _result_to_entry(
                     2, f"L2-{j+1}", t_subtype, t_input, t_result,
                     parent=label, file_prefix=file_prefix
@@ -1002,7 +992,7 @@ def collect_sources(slug: str, sources: list[dict], max_depth: int = None,
                         t_subtype = target["subtype"]
                         t_input = target["input"]
                         l3_dir = src_dir / f"l3_{l3_idx}"
-                        t_result = _run_handler(t_subtype, l3_dir, t_input, f"L3-{l3_idx}", download_zip=False)
+                        t_result = _run_handler(t_subtype, l3_dir, t_input, f"L3-{l3_idx}")
                         entry = _result_to_entry(
                             3, f"L3-{l3_idx}", t_subtype, t_input, t_result,
                             parent=l2_entry["label"], file_prefix=file_prefix
@@ -1048,7 +1038,6 @@ def main():
     parser.add_argument("--max-depth", type=int, default=None)
     parser.add_argument("--dest-subdir", dest="dest_subdir",
                         help="落盘到 raw/<dest-subdir>/（append 补料用；仅单层安全目录名，多源模式）")
-    parser.add_argument("--download-zip", action="store_true", help="仅对 github handler 下载 code.zip")
     parser.add_argument("--json", action="store_true", help="输出完整 drill_log JSON")
     args = parser.parse_args()
 
@@ -1062,15 +1051,14 @@ def main():
 
     if args.sources_json:
         sources = json.loads(args.sources_json)
-        log = collect_sources(args.slug, sources, args.max_depth,
-                              download_zip=args.download_zip, dest_base=dest_base)
+        log = collect_sources(args.slug, sources, args.max_depth, dest_base=dest_base)
     elif args.input:
         if dest_base is not None:
             parser.error("--dest-subdir 仅支持多源模式（--sources-json）")
         if not args.input_type or not args.source_type:
             parser.error("单源模式需要 --input-type 和 --source-type（或旧 --type/--subtype）")
         log = collect_materials(args.slug, args.input_type, args.source_type, args.input,
-                                args.max_depth, download_zip=args.download_zip)
+                                args.max_depth)
     else:
         parser.error("需要 --input（单源）或 --sources-json（多源）")
 

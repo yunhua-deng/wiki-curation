@@ -5,7 +5,6 @@ store/commands.py — wiki.db 纯 CRUD / 队列 / 搜索 / 统计 / 迁移命令
 从 wiki_db.py 拆分而来，保持 CLI 行为不变。
 """
 import sys
-import argparse
 import json
 import sqlite3
 from pathlib import Path
@@ -48,7 +47,7 @@ def _fmt_row_dict(e: dict) -> dict:
 
 def cmd_list(args, db_path):
     limit = 50 if getattr(args, 'all', False) else args.limit
-    order_by = 'queued_at DESC, id DESC' if getattr(args, 'queue', False) else 'date DESC'
+    order_by = 'date DESC'
     entries = wiki_index.list_entries(db_path, limit=limit, order_by=order_by,
                                       status=args.status)
     if args.json:

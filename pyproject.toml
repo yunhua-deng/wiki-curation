@@ -1,7 +1,7 @@
 [project]
 name = "wiki-curation"
 version = "0.1.0"
-description = "Knowledge lifecycle skill: produce, consume, update, and aggregate structured articles."
+description = "Knowledge curation skill: ingest clues into structured knowledge records (link graph + TL;DR + tags + entities), recall, analyze."
 requires-python = ">=3.11"
 dependencies = [
     "pyyaml>=6.0",
@@ -18,15 +18,14 @@ wiki-curation = "scripts.cli:main"
 [tool.pytest.ini_options]
 testpaths = ["scripts"]
 pythonpath = ["."]
-norecursedirs = ["adhoc", "legacy", "__pycache__"]
+norecursedirs = ["__pycache__", ".git"]
 
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-py-modules = ["scripts"]
-packages = ["scripts", "scripts.exec", "scripts.intake", "scripts.publish", "scripts.records", "scripts.store", "scripts.wiki_index"]
+packages = ["scripts", "scripts.exec", "scripts.intake", "scripts.publish", "scripts.records", "scripts.site", "scripts.store", "scripts.wiki_index"]
 
 [tool.setuptools.package-data]
 "*" = ["references/*", "assets/*"]

@@ -116,9 +116,6 @@ def test_entity_groups_multi_value():
     assert EF.entity_groups_for("GR00T N1.7", "product", cfg) == ["oss", "product"]
     assert EF.entity_groups_for("Meta FAIR", "company", cfg) == ["company", "academia"]
     assert EF.entity_groups_for("VGGT", "product", cfg) == ["oss"]  # 纯开源单值
-    # 向后兼容单值接口
-    assert EF.entity_group("GR00T N1.7", "product", cfg) == "oss"
-    assert EF.entity_group("某某大学", "company", cfg) == "academia"
 
 
 def test_load_entity_groups_normalizes_values(tmp_path):

@@ -8,7 +8,7 @@ import pytest
 
 from scripts import conftest
 from scripts.entities import (EntityError, aggregate_entity, entity_index,
-                              find_entity, flatten_entities)
+                              find_entity)
 from scripts.records import links as L
 from scripts.wiki_index import ensure_schema
 
@@ -63,11 +63,6 @@ def test_aggregate_not_found_suggests(db):
         aggregate_entity(db, "Figure A")  # difflib 相近
     assert ei.value.code == "ENTITY_NOT_FOUND"
     assert "Figure AI" in str(ei.value)
-
-
-def test_flatten_entities():
-    assert flatten_entities({"company": ["A"], "author": ["B"], "product": [], "series": []}) == ["A", "B"]
-    assert flatten_entities(None) == []
 
 
 # ---------- cli.py entities 子命令契约测试 ----------

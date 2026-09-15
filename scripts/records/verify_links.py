@@ -5,7 +5,6 @@ scripts/records/verify_links.py — links 表 URL 可达性懒验证（verify-li
 网络操作被显式隔离在本模块；publish 等主路径不做网络请求。
 """
 import os
-import sys
 
 from scripts.lib import run_cmd
 from scripts.records import links as L

@@ -17,7 +17,6 @@ _BASE_TEMPLATE = """<!DOCTYPE html>
   <main class="container">{content}</main>
   <footer class="site-footer"><p>Wiki · {generated_at}</p></footer>
 </div>
-<script src="assets/marked.min.js"></script>
 <script src="assets/site.js?v=3.22"></script>
 </body>
 </html>
@@ -189,7 +188,7 @@ if (document.readyState === 'loading') document.addEventListener('DOMContentLoad
 """
 
 
-def render_pages(entries, tags, sources, out_dir):
+def render_pages(out_dir):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -207,5 +206,5 @@ def render_pages(entries, tags, sources, out_dir):
 if __name__ == "__main__":
     from scripts import paths
     out = paths.get_workspace() / "site"
-    render_pages([], {}, {}, out)
+    render_pages(out)
     print(f"rendered pages to {out}")

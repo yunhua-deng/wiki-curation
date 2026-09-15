@@ -18,13 +18,6 @@ class EntityError(Exception):
         self.code = code
 
 
-def flatten_entities(entities) -> list:
-    out = []
-    for b in ENTITY_BUCKETS:
-        out.extend((entities or {}).get(b) or [])
-    return out
-
-
 def entity_index(db_path) -> dict:
     """全部 canonical 实体 → {"type": 桶, "entries": [slug...]}（跳过被抑制实体）。"""
     from scripts import entity_filter as EF

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """test_records_publish.py — 记录发布（publish 默认路径）+ 关联织边契约测试。"""
 import json
+import sqlite3
 from argparse import Namespace
 from pathlib import Path
 from unittest import mock
@@ -109,11 +110,15 @@ def test_publish_record_happy_path(tmp_path, monkeypatch):
     assert ents["company"] == ["Figure AI"] and ents["product"] == ["Helix"]
 
     # relations 边：shared_link(rec2 arxiv)
-    rel = L.get_related(db, "rec1")
-    kinds = {r["kind"] for r in rel}
+    conn = sqlite3.connect(str(db))
+    rows = conn.execute(
+        "SELECT entry_a, entry_b, kind FROM relations WHERE entry_a = ? OR entry_b = ?",
+        ("rec1", "rec1")).fetchall()
+    conn.close()
+    kinds = {kind for _, _, kind in rows}
     assert "shared_link" in kinds
     assert "shared_entity" not in kinds
-    assert all(r["other"] == "rec2" for r in rel)
+    assert all((b if a == "rec1" else a) == "rec2" for a, b, _ in rows)
 
 
     # DONE 事件

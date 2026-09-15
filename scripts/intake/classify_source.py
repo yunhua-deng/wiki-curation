@@ -8,9 +8,7 @@
 import re
 import json
 import argparse
-from pathlib import Path
 from typing import Optional
-from urllib.parse import urlparse
 
 # 允许从仓库任意位置被直接调用
 
@@ -21,13 +19,6 @@ URL_PATTERN = re.compile(r'https?://[^\s<>"\')\]]+', re.IGNORECASE)
 def extract_urls(text: str) -> list[str]:
     """从文本中提取所有 URL。"""
     return URL_PATTERN.findall(text)
-
-
-def _normalize_domain(netloc: str) -> str:
-    d = netloc.lower().strip()
-    if d.startswith("www."):
-        d = d[4:]
-    return d
 
 
 def classify_url(url: str, config: Optional[dict] = None) -> Optional[dict]:

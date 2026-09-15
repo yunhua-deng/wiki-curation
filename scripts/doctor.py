@@ -14,7 +14,7 @@ Wiki Harness Doctor — record 时代健康自检（v3.2 精简版）。
 Usage:
   python skills/wiki-curation/scripts/doctor.py [--json] [--quick] [--fix-plan]
 """
-import os, re, sys, json, glob, shlex
+import os, sys, json, glob, shlex
 from pathlib import Path
 from datetime import datetime, timezone
 

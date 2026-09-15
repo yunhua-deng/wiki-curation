@@ -4,13 +4,11 @@ scripts/records/analyze.py — 分析层：主题聚簇 + 去重候选。
 
 确定性部分（本模块）：FTS 种子 + relations 扩展 → ranked cluster + evidence。
 """
-import json
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from scripts.records import links as L
-from scripts.records.recall import build_variant_map, _default_variant_map
-from scripts.records.schema import normalize_url
+from scripts.records.recall import _default_variant_map
 from scripts.wiki_index import store as wiki_store
 
 
@@ -18,17 +16,6 @@ def _fts_seed(db_path, query: str, limit: int = 20) -> list[str]:
     """FTS 种子条目（OR 语义）。"""
     from scripts.records.recall import _fts_matches
     return _fts_matches(db_path, query, limit=limit)
-
-
-def _entity_seed(db_path, entity: str, limit: int = 30) -> list[str]:
-    """按实体名（含别名）找条目。"""
-    wanted = entity.lower()
-    out = []
-    for eid, buckets in L.all_entry_entities(db_path).items():
-        flat = {str(v).lower() for vals in buckets.values() for v in vals}
-        if wanted in flat:
-            out.append(eid)
-    return out[:limit]
 
 
 def cluster(db_path, topic: str, limit: int = 30, variant_map: dict = None) -> dict:
@@ -102,8 +89,6 @@ def cluster(db_path, topic: str, limit: int = 30, variant_map: dict = None) -> d
     tag_c, ent_c, dom_c = Counter(), Counter(), Counter()
     ents_map = L.all_entry_entities(db_path)
     for eid, _ in ranked:
-        for t in out_entries[-1]["tags"] if out_entries else []:
-            pass
         for t in (entries[eid].get("tags") or []):
             tag_c[t] += 1
         for vals in ents_map.get(eid, {}).values():

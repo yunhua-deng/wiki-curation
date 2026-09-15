@@ -12,10 +12,7 @@ scripts/site/build.py — 从 wiki.db 构建轻量静态 wiki 站点。
   data/
     entries.json
     tags.json
-    sources.json
-    timeline.json
 """
-import argparse
 import json
 import shutil
 from collections import defaultdict
@@ -204,15 +201,6 @@ def _build_tags(entries):
     return dict(sorted(tags.items(), key=lambda x: (-len(x[1]), x[0])))
 
 
-def _build_sources(entries):
-    """input_type -> source_type -> entry ids。"""
-    sources = defaultdict(lambda: defaultdict(list))
-    for e in entries:
-        sources[e.get("input_type") or "unknown"][e.get("source_type") or "unknown"].append(e["id"])
-    # 转为普通 dict
-    return {k: dict(v) for k, v in sorted(sources.items())}
-
-
 def _slim_entry(e: dict) -> dict:
     """v3.3：前端展示所需字段（去掉 raw_files/article_url/raw/sources 等大体量字段）。"""
     src = e.get("source") or {}
@@ -293,7 +281,6 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
 
     entries = _export_entries(db_path, wiki_dir)
     tags = _build_tags(entries)
-    sources = _build_sources(entries)
 
     # v3.3：entries.json 瘦身——只写前端表格/详情消费字段
     display_entries = [_slim_entry(e) for e in entries]
@@ -303,35 +290,12 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
     (data_dir / "tags.json").write_text(
         json.dumps(tags, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )
-    (data_dir / "sources.json").write_text(
-        json.dumps(sources, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
-    )
-
-    # v3.1 时间线：按月聚合
-    from collections import defaultdict
-    months = defaultdict(lambda: {"month": "", "entries": [], "count": 0, "types": defaultdict(int)})
-    for e in entries:
-        date = e.get("date") or ""
-        month_key = date[:7] if len(date) >= 7 else "unknown"
-        if month_key not in months:
-            months[month_key] = {"month": month_key, "entries": [], "count": 0, "types": defaultdict(int), "record_count": 0}
-        months[month_key]["entries"].append(e["id"])
-        months[month_key]["count"] += 1
-        months[month_key]["types"][e.get("topic_type", "?")] += 1
-        if e.get("has_record"):
-            months[month_key]["record_count"] += 1
-    timeline = sorted([v for v in months.values()], key=lambda x: x["month"], reverse=True)
-    for m in timeline:
-        m["types"] = dict(m["types"])
-    (data_dir / "timeline.json").write_text(
-        json.dumps(timeline, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
 
     # 渲染 HTML 页面
-    render_pages(entries, tags, sources, out_dir)
+    render_pages(out_dir)
 
     # v3.3：清理陈旧 data 产物（search_index/themes/trends/graph 等已废弃文件）
-    current_data = {"entries.json", "tags.json", "sources.json", "timeline.json"}
+    current_data = {"entries.json", "tags.json"}
     for f in data_dir.glob("*.json"):
         if f.name not in current_data:
             f.unlink()
@@ -347,21 +311,3 @@ def build_site(db_path, wiki_dir, out_dir=None, export=False):
     _inject_cli_cmd(out_dir)
 
     return out_dir
-
-
-def main():
-    parser = argparse.ArgumentParser(description="构建 wiki 静态站点")
-    parser.add_argument("--workspace", help="wiki 工作区路径")
-    parser.add_argument("--out", help="输出目录")
-    parser.add_argument("--export", action="store_true", help="生成自包含导出")
-    args = parser.parse_args()
-
-    ws = Path(args.workspace) if args.workspace else paths.get_workspace()
-    db = paths.db_path(ws)
-    out = Path(args.out) if args.out else None
-    build_site(db, ws, out_dir=out, export=args.export)
-    print(f"wiki site built: {out or (ws / 'site')}")
-
-
-if __name__ == "__main__":
-    main()

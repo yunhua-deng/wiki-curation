@@ -188,17 +188,6 @@ def get_entry(db_path, slug):
     return _row_to_entry(row) if row else None
 
 
-def get_entry_by_file(db_path, filename):
-    """按 file 名读取 entry。"""
-    db_path = Path(db_path)
-    ensure_schema(db_path)
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    row = conn.execute('SELECT * FROM entries WHERE file = ?', (filename,)).fetchone()
-    conn.close()
-    return _row_to_entry(row) if row else None
-
-
 def upsert_task(db_path, slug, source_input=None, source_prompt=None, input_type=None,
                 source_type=None, topic_type=None, depth=None, status=None, title=None,
                 error=None, owner=None, **kwargs):
@@ -513,21 +502,6 @@ def get_events(db_path, slug=None, action=None, limit=None):
     rows = conn.execute(sql, params).fetchall()
     conn.close()
     return [_row_to_entry(r) for r in rows]
-
-
-def check_events_complete(db_path, slug):
-    """检查 slug 的审计事件是否包含所有必需阶段。"""
-    events = get_events(db_path, slug=slug)
-    actions = {e['action'] for e in events}
-    required = {'ENQUEUE', 'FETCH', 'GATE', 'WRITE', 'VERIFY', 'DONE'}
-    missing = sorted(required - actions)
-    fetches = [e for e in events if e['action'] == 'FETCH']
-    return {
-        'complete': len(missing) == 0 and len(fetches) > 0,
-        'missing': missing,
-        'fetch_count': len(fetches),
-        'total_events': len(events),
-    }
 
 
 # v3.1: moved from deleted meta.py

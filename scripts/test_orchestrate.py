@@ -4,15 +4,9 @@ skills/wiki-curation/scripts/test_orchestrate.py — orchestrate.py / CLI 编排
 
 设计原则：
 - 使用 pytest fixtures 替代 unittest shim。
-- 需要网络/LLM/外部工具的测试标记 @require_ci，默认跳过。
-- 核心路径（输入解析、分类聚合、收集路由、追加输出路径、deep 复用 raw、工作流门禁）用 mock 验证。
+- 核心路径（输入解析、分类聚合、收集路由、追加输出路径、工作流门禁）用 mock 验证。
 """
 import json
-import os
-import shutil
-import subprocess
-import sys
-import tempfile
 from argparse import Namespace
 from pathlib import Path
 from unittest import mock
@@ -23,14 +17,13 @@ from scripts import conftest
 from scripts import intake
 from scripts import paths
 from scripts import wiki_index
-from scripts.conftest import SCRIPT_DIR, require_ci, seed_entry
+from scripts.conftest import SCRIPT_DIR, seed_entry
 from scripts.exec import orchestrate
 from scripts.intake import commands as intake_cmds
 from scripts.publish import commands as publish_cmds
 
 
 FIXTURES_DIR = SCRIPT_DIR.parent / "tests" / "fixtures"
-ORCHESTRATE_CASES = FIXTURES_DIR / "orchestrate_cases.json"
 
 
 def _make_args(**kwargs):
@@ -604,90 +597,6 @@ class TestPublishWorkflowGate:
 
 
 # Record publish tests are covered in test_records_publish.py
-
-
-class TestFixturesLoaded:
-    """验证 fixtures/orchestrate_cases.json 可加载且结构正确。"""
-
-    def test_fixture_loads(self):
-        assert ORCHESTRATE_CASES.exists()
-        data = json.loads(ORCHESTRATE_CASES.read_text(encoding="utf-8"))
-        assert "cases" in data
-        names = {c["name"] for c in data["cases"]}
-        expected = {
-            "single_arxiv_url",
-            "multiple_urls_combined",
-            "url_plus_keyword",
-            "github_repo_deep",
-            "local_file",
-        }
-        assert expected.issubset(names), f"missing cases: {expected - names}"
-
-
-class TestCLIDeepReuse:
-    """集成测试：CLI --id + --depth deep 复用已有 raw，不触发网络收集。"""
-
-    def _make_tmp_workspace(self):
-        repo_ws = SCRIPT_DIR.parent
-        tmp = Path(tempfile.mkdtemp(prefix="wiki_test_ws_"))
-        shutil.copytree(repo_ws / "references", tmp / "references", dirs_exist_ok=True)
-        shutil.copytree(repo_ws / "assets", tmp / "assets", dirs_exist_ok=True)
-        (tmp / "data").mkdir(parents=True, exist_ok=True)
-        (tmp / "artifacts").mkdir(parents=True, exist_ok=True)
-        return tmp
-
-    @require_ci
-    def test_cli_deep_reuse_raw(self):
-        tmp = self._make_tmp_workspace()
-        slug = f"test_deep_reuse_{os.getpid()}"
-        raw = paths.raw_dir(slug, tmp)
-        raw.mkdir(parents=True)
-        (raw / "_fetch_results.json").write_text(json.dumps({"results": []}))
-        (raw / "paper.html").write_text("<html>paper</html>")
-
-        env = os.environ.copy()
-        env["WIKI_WORKSPACE"] = str(tmp)
-        env.setdefault("PYTHONIOENCODING", "utf-8")
-        env["PYTHONPATH"] = str(SCRIPT_DIR.parent) + os.pathsep + env.get("PYTHONPATH", "")
-
-        add_cmd = [
-            sys.executable, str(SCRIPT_DIR / "wiki_db.py"),
-            "--json", "add",
-            "--id", slug,
-            "--input", "https://arxiv.org/abs/2605.26112",
-            "--type", "url",
-            "--subtype", "arxiv_paper",
-            "--depth", "deep",
-        ]
-        r = subprocess.run(add_cmd, capture_output=True, text=True, encoding="utf-8",
-                           errors="replace", env=env)
-        assert r.returncode == 0, f"add failed: {r.stderr}\nstdout:\n{r.stdout}"
-
-        pop_cmd = [
-            sys.executable, str(SCRIPT_DIR / "wiki_db.py"),
-            "--json", "pop",
-        ]
-        r = subprocess.run(pop_cmd, capture_output=True, text=True, encoding="utf-8",
-                           errors="replace", env=env)
-        assert r.returncode == 0, f"pop failed: {r.stderr}\nstdout:\n{r.stdout}"
-
-        run_cmd = [
-            sys.executable, str(SCRIPT_DIR / "cli.py"),
-            "--json", "run",
-            "--id", slug,
-            "--depth", "deep",
-            "--no-download-zip",
-        ]
-        r = subprocess.run(run_cmd, capture_output=True, text=True, encoding="utf-8",
-                           errors="replace", env=env)
-        assert r.returncode == 0, f"run failed: {r.stderr}\nstdout:\n{r.stdout}"
-        data = json.loads(r.stdout)
-        assert data.get("ok", True)
-        payload = data.get("data", {})
-        assert payload.get("depth") == "deep"
-        assert payload.get("slug") == slug
-        assert payload.get("sources_count") == 1
-        assert "source_inputs" in payload
 
 
 # ============================================================

@@ -60,11 +60,6 @@ def entry_dir(slug: str, ws=None) -> Path:
     return artifacts_dir(ws) / slug
 
 
-def source_metadata_path(slug: str, ws=None) -> Path:
-    """来源元数据 JSON 路径：wiki/artifacts/{slug}/source_metadata.json"""
-    return entry_dir(slug, ws) / "source_metadata.json"
-
-
 def record_path(slug: str, ws=None) -> Path:
     """结构化记录 JSON 路径：wiki/artifacts/{slug}/record.json"""
     return entry_dir(slug, ws) / "record.json"
@@ -84,24 +79,9 @@ def raw_dir(slug: str, ws=None) -> Path:
     return entry_dir(slug, ws) / "raw"
 
 
-def audit_dir(slug: str, ws=None) -> Path:
-    """审计报告目录：wiki/artifacts/{slug}/audit"""
-    return entry_dir(slug, ws) / "audit"
-
-
-def audit_json_path(slug: str, depth: str, ws=None) -> Path:
-    """审计 JSON 路径：wiki/artifacts/{slug}/audit/{slug}_{depth}_audit.json"""
-    return audit_dir(slug, ws) / f"{slug}_{depth}_audit.json"
-
-
-def audit_md_path(slug: str, depth: str, ws=None) -> Path:
-    """审计 Markdown 路径：wiki/artifacts/{slug}/audit/{slug}_{depth}_audit.md"""
-    return audit_dir(slug, ws) / f"{slug}_{depth}_audit.md"
-
-
 # ---------------------------------------------------------------------------
 # 相对路径字符串（仅用于 task prompt / Markdown 文档内链接）
-# ⚠️ 禁止用于文件写入——写入操作必须使用上面的 article_path / raw_dir / audit_dir 等绝对路径
+# ⚠️ 禁止用于文件写入——写入操作必须使用上面的 article_path / raw_dir 等绝对路径
 # ---------------------------------------------------------------------------
 def article_rel(slug: str, depth: str) -> str:
     """仅用于 task prompt / 文档内链接；文件 IO 请用 article_path()。"""
@@ -116,27 +96,3 @@ def raw_rel(slug: str) -> str:
 def record_rel(slug: str) -> str:
     """仅用于 task prompt / 文档内链接；文件 IO 请用 record_path()。"""
     return f"artifacts/{slug}/record.json"
-
-
-def audit_json_rel(slug: str, depth: str) -> str:
-    """仅用于 task prompt / 文档内链接；文件 IO 请用 audit_json_path()。"""
-    return f"artifacts/{slug}/audit/{slug}_{depth}_audit.json"
-
-
-# ---------------------------------------------------------------------------
-# 旧版路径（迁移期兼容）
-# ---------------------------------------------------------------------------
-def legacy_article_path(slug: str, depth: str, ws=None) -> Path:
-    return _resolve_ws(ws) / f"{slug}_{depth}.md"
-
-
-def legacy_raw_dir(slug: str, ws=None) -> Path:
-    return _resolve_ws(ws) / "raw" / slug
-
-
-def legacy_audit_dir(ws=None) -> Path:
-    return _resolve_ws(ws) / "audit"
-
-
-def legacy_audit_json_path(slug: str, depth: str, ws=None) -> Path:
-    return legacy_audit_dir(ws) / f"{slug}_{depth}_audit.json"

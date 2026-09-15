@@ -105,19 +105,18 @@ def test_build_site_outputs(sample_workspace):
     assert "tag-b" in tags
     assert len(tags["tag-b"]) == 2
 
-    sources = json.loads((out_dir / "data" / "sources.json").read_text(encoding="utf-8"))
-    assert sources["url"]["arxiv"] == ["2026-07-01_alpha"]
-    assert sources["url"]["github"] == ["2026-07-01_beta"]
-
     # graph.json 已停止生成（graph 链整条移除）；search_index.json 已停止生成
     assert not (out_dir / "data" / "graph.json").exists()
     assert not (out_dir / "data" / "search_index.json").exists()
+
+    # sources.json / timeline.json 无前端消费者（site.js 只取 entries/tags），已停止生成
+    assert not (out_dir / "data" / "sources.json").exists()
+    assert not (out_dir / "data" / "timeline.json").exists()
 
     # 实体可视化层已移除：不再产出 entities.json / entity_pages.json
     assert not (out_dir / "data" / "entities.json").exists()
     assert not (out_dir / "data" / "entity_pages.json").exists()
 
-    # themes.json 已停止生成；timeline.json 仍在生成；旧版页面清理照常
     # 旧版多页站点遗留的页面会在重建时被清理
     stale = out_dir / "browse.html"
     stale.write_text("stale", encoding="utf-8")
@@ -229,7 +228,7 @@ def test_serve_pid_file_lifecycle(sample_workspace, tmp_path):
 def test_render_pages_no_survey_html(tmp_path):
     from scripts.site.templates import render_pages
     out = tmp_path / "site"
-    render_pages([], {}, {}, out)
+    render_pages(out)
     assert not (out / "survey.html").exists()
     index_html = (out / "index.html").read_text(encoding="utf-8")
     assert "site.js" in index_html

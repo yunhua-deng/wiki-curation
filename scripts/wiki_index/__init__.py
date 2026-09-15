@@ -20,7 +20,6 @@ from .schema import (
 from .store import (
     migrate_queue_db,
     get_entry,
-    get_entry_by_file,
     upsert_task,
     update_status,
     pop_pending,
@@ -32,7 +31,6 @@ from .store import (
     get_stats,
     record_event,
     get_events,
-    check_events_complete,
 )
 
 # v3.1: sync/rebuild moved to store
@@ -41,9 +39,9 @@ from .store import rebuild_index, sync_with_files
 __all__ = [
     "SCHEMA_SQL", "FTS_SQL", "EVENTS_SQL", "SCHEMA_VERSION_SQL",
     "MIGRATIONS", "VALID_STATUSES", "ensure_schema",
-    "migrate_queue_db", "get_entry", "get_entry_by_file",
+    "migrate_queue_db", "get_entry",
     "upsert_task", "update_status", "pop_pending", "requeue",
     "update_entry", "delete_entry", "search", "list_entries",
-    "get_stats", "record_event", "get_events", "check_events_complete",
+    "get_stats", "record_event", "get_events",
     "rebuild_index", "sync_with_files",
 ]

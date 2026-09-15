@@ -1,6 +1,6 @@
 # wiki-curation 维护守则
 
-本 repo 是 wiki-curation skill 的单源。各 agent 通过用户目录下的标准 skill 加载点使用本 skill 的 clone（OpenClaw / Kimi Code: `~/.agents/skills/wiki-curation`，Kimi Code 另有 `~/.kimi-code/skills/wiki-curation`，Claude Code: `~/.claude/skills/wiki-curation`）；工作区只有一个 `D:/wiki-workspace`（所有 agent 共用，也是 OpenClaw 的工作区）。每次修改本 skill 后，必须先通过契约测试，再汇报完成；推送后需在各 clone `git pull` 同步。
+本 repo 是 wiki-curation skill 的单源。各 agent 通过用户目录下的标准 skill 加载点使用本 skill 的 clone（OpenClaw / Kimi Code: `~/.agents/skills/wiki-curation`，Kimi Code 另有 `~/.kimi-code/skills/wiki-curation`，Claude Code: `~/.claude/skills/wiki-curation`）；工作区只有一个 `D:/wiki-workspace`（所有 agent 共用，也是 OpenClaw 的工作区）。每次修改本 skill 后，必须先通过契约测试，再汇报完成；推送后需在各 clone `git pull` 同步——**注意 `~/.kimi-code/skills/wiki-curation` 是指向 `D:/wiki-curation` 的符号链接**，它不需要 pull（改动即时生效），只有前两处是独立 clone。（`openclaw skills update` 只作用于从 ClawHub 安装的 skill，不会同步这些 clone。）
 
 ## 本地契约测试（每次提交前必跑）
 
@@ -37,12 +37,13 @@ python eval/run_eval.py --llm
 - `add --append-to` 只允许对 `status=done` 的条目；append 的新素材落 `raw/append_<N>/`（自带 `_drill_log.json` / `_fetch_results.json`），**不得覆盖既有材料**；append 意图由 `ENQUEUE` 事件承载，普通 `run --id <slug>` 也要能识别。
 - **有副作用的步骤不重试**：`cli.py` 对 `run` / `collect` / `ingest` 一律 `retries=0`（`_run_script(..., retries=0)`），`orchestrate.run_script()` 调子脚本同样 `retries=0`。`run_cmd` 默认 `retries=1` 且对**任意非零退出码**都重试，而这些步骤的非零退出码是正常失败信号（`MATERIALS_MISSING` / `COLLECT_FAILED`）——曾导致整条流水线跑两遍（重复抓取、多出一层 `append_N`、2×超时叠加）。要重试就重试抓取本身（`settings.render_retries` / `--force-collect`）。
 - **渲染必需来源**（登录态 / JS 渲染 / 反爬 / 容器型应用）由 `references/sources.yaml` 的 `render_required`（subtypes / domains / path_patterns / url_markers）统一判定：先按 `settings.render_retries` 重试轻量路径（curl / opencli weixin），再回退浏览器渲染，产物 `raw/<file_stem>_rendered.html|.md`；每次尝试都写 `_fetch_results.json`（带 `attempt`）。**非渲染必需来源必须保持原轻量路径不变**（`render_required` 缺失/损坏一律按「非渲染必需」处理）。判定仍只看可见正文密度，不看「文件是否存在」。
+- **浏览器探测只作诊断，绝不能当闸门**：`_browser_fetch` 里的 `openclaw browser tabs` 探测与实际抓取用的 `opencli browser` **不是同一个后端**，探测结论只写进 `_fetch_results.json` 的 `probe` 字段；探测失败时仍必须尝试 opencli（否则 opencli 明明可用也会被误判成「浏览器不可用」，`2026-09-15_005` 就是这个问题）。状态由真实后端给：opencli 起不来（exit `-2`）→ `needs_browser`；页面打开但正文过短 → `failed`。
 
 ## publish 与标识符约定
 
 - `publish` 是 wiki 写入流程的**唯一收口点**（`publish/commands.py` → `records/publish_record.py`）：校验 record.json、fetched 回填、links/relations/entities 入库、站点刷新。
-- v3.3：`publish --id X` = 记录发布；`publish --id X --depth brief|deep` = 历史文章标记 done（不做 verify_output）。
-- `orchestrate.py`（`run` 命令）不执行 rename，只输出 spawn JSON（record 唯一模式；`--depth`/`--mode article` 返回 DEPRECATED_MODE）。
+- v3.3：`publish --id X` = 记录发布；`publish --id X --depth brief|deep` = 历史文章标记 done（不做 verify_output）——**legacy 兼容路径**，v3.1 起新流程不再产生 `<id>_<depth>.md`，现存文件已归档到工作区 `wiki/archive/deep/`。
+- `orchestrate.py`（`run` 命令）不执行 rename，只输出 spawn JSON（record 唯一模式；`--depth`/`--mode article` 返回 `DEPRECATED_MODE`，保留仅为给出明确错误）。
 - `publish` 内部通过 `wiki/.publish.lock` 文件锁串行化；返回 `BUSY` 应等待重试（错误信息含持有者 pid / host / 锁龄）。
 - 锁目录内写 `owner.json`（pid / host / started_at）：进程被强杀留下的残留锁，在锁龄超过 `stale_after`(600s) 且持有者已消失时由下一个 publisher **自动接管**（stderr 打 WARN），不再永久阻塞 publish；持有者仍存活时绝不抢占。
 - **entry ID 不可变**：hash-based slug 在 `add` 时生成，后续命令始终使用同一个 ID（历史异常 id 除外，见 `wiki/docs/issues/` 修复记录）。
@@ -57,19 +58,17 @@ python eval/run_eval.py --llm
   - `entity_aliases.yaml`（实体 canonical/别名映射 + suppress 抑制名单；`scripts/entity_filter.py` 是唯一读取入口，recall 实体层与站点搜索扩展也从这里取）
   - `entity_groups.yaml`（实体五类分组 + academia_keywords；供 `entity_filter.py` 分组查询与 canonical 豁免）
 - `assets/` —— 前端静态资源：
-  - `assets/site/`（site.js / site.css / marked.min.js）
+  - `assets/site/`（site.js / site.css）
 - 工作区骨架（`scripts/bootstrap.py` 的 `SKELETON_DIRS`）：`artifacts/` / `data/` / `docs/` / `docs/issues/` —— 实体综合层目录 `entities/` 已废除；问题单登记表（bug + feature 共用一份）在 `docs/issues/`。
 
-> 不再维护 `wiki/configs/` 运行时覆盖目录，避免双源头。
+> 配置的唯一来源就是 skill 内的 `references/`；不再有 `wiki/configs/` 这类工作区运行时覆盖目录。
 
 ## 关于 `eval/` 和 `tests/`
 
-这两个目录不属于 skills-best-practices 定义的 skill 内容，而是本地工程测试设施：
+这两个目录不是 skill 内容，而是本地工程测试设施：
 
-- `eval/`：skillgrade 风格的本地评测脚本（deterministic + 可选 LLM-rubric）。
+- `eval/`：本地评测脚本（deterministic 检查 + 可选 LLM-rubric，见 `eval/eval.yaml`）。
 - `tests/`：pytest fixtures。
-
-在未引入官方 skillgrade CLI 前保留它们。
 
 ## Git Hook 说明
 
@@ -83,20 +82,9 @@ python eval/run_eval.py --llm
 git config core.hooksPath .githooks
 ```
 
-如果你用的 coding agent 没有读到这个配置，导致它去 `.git/hooks/` 找不到 hook，告诉它 hook 在 `.githooks/pre-commit`，或者先执行上面的配置命令。
+**Hook 的触发范围**：只有暂存区里出现 `scripts/` / `references/` / `assets/` / `SKILL.md` / `pyproject.toml` 的改动时，hook 才会跑契约测试（其余提交零延迟放行）。所以**改 `eval/` 或 `tests/` 时必须手动跑**上面两条命令。
 
-### 一次性安装脚本（可选）
-
-```powershell
-# Windows
-Copy-Item ..\..\.githooks\pre-commit ..\..\.git\hooks\pre-commit
-```
-
-```bash
-# Linux/macOS
-cp ../../.githooks/pre-commit ../../.git/hooks/pre-commit
-chmod +x ../../.git/hooks/pre-commit
-```
+不要采用「把 hook 复制进 `.git/hooks/`」的替代做法：`core.hooksPath .githooks` 生效后两者会各跑一遍，而复制出来的那份还会随 `.githooks/` 的更新而失效。
 
 ## Bytecode 缓存陷阱
 

@@ -78,6 +78,8 @@ def build_record_task(slug: str, source_type: str, raw_files: list[str], raw_sum
                       drill_urls: list[str], append_to: str = None, has_agent_notes: bool = False) -> str:
     """构造提取 agent 的 task prompt。"""
     c = record_schema._load_constraints()
+    tldr_max = c["tldr_max_chars"]
+    summary_max = c["summary_max_chars"]
     record_out = str(paths.record_path(slug).resolve())
     type_label = sc.get_label_cn(source_type)
     drill_block = "\n".join(f"- {u}" for u in drill_urls[:20]) if drill_urls else "- （无）"
@@ -96,8 +98,6 @@ def build_record_task(slug: str, source_type: str, raw_files: list[str], raw_sum
 1. **不动字段**：id、date（老条目整体时间不变）、original_source
 2. **合并字段**：links 使用已有 links + 新材料关联（去重、保持 same_kind canonical 唯一）；tags/entities 同样合并去重
 3. **更新字段**：title 可按新材料扩展；tldr 重新提炼
-4. **revision**：设为 `{rev + 1}`
-5. **history**：追加一条 `{{"revision": {rev + 1}, "date": "today", "note": "append", "added_sources": [原文需要填入]}}`
 """
             except Exception:
                 append_section = "\n## Append 模式\n（无法读取已有 record.json，请首先生成全新记录）\n"
@@ -118,8 +118,8 @@ def build_record_task(slug: str, source_type: str, raw_files: list[str], raw_sum
   "title": "内容标题",
   "date": "YYYY-MM-DD（无法确定留空字符串）",
   "topic_type": "paper|project|tool|company|institution|researcher|concept|whitepaper|best_practice|comparison|trend|article|observation|product 之一",
-  "tldr": "一句话总结（≤80字，客观陈述，不评价）",
-  "summary": "解读摘要（400-800 字，2-5 个短段落，每段以 **小标题** 开头再接内容，如 **核心要点**：…。第 1 段一句话点题（这是什么）；中间段核心要点（方法/数据/结果）；末段背景与意义或待验证处。客观陈述，不评价。"
+  "tldr": "一句话总结（≤{tldr_max}字，客观陈述，不评价）",
+  "summary": "解读摘要（≤{summary_max} 字，2-5 个短段落，每段以 **小标题** 开头再接内容，如 **核心要点**：…。第 1 段一句话点题（这是什么）；中间段核心要点（方法/数据/结果）；末段背景与意义或待验证处。客观陈述，不评价。"
   "tags": ["3-5 个关键词"],
   "entities": {{"company": [], "author": [], "product": [], "series": []}},
   "links": [
@@ -142,8 +142,8 @@ def build_record_task(slug: str, source_type: str, raw_files: list[str], raw_sum
    - links 允许为空数组（实在解不出关联链接也合法）。
 3. **entities 归一化**：公司/作者/产品名优先对齐 `skills/wiki-curation/references/entity_aliases.yaml` 中的 canonical 写法；四个桶必须齐全（可为空数组）。
 4. **topic_type** 必须是上面枚举之一，按内容主题判断（不是按来源平台）。
-5. **tldr** 一句话，≤80 字；禁止评价、对比、个人观点（不写"我认为/优于/最强"）。
-6. **summary** 400-800 字；每段以 `**小标题**` 开头（如 **核心要点**、**关键数据**、**背景与意义**），小标题后接该段内容；客观陈述，不评价。
+5. **tldr** 一句话，≤{tldr_max} 字；禁止评价、对比、个人观点（不写"我认为/优于/最强"）。
+6. **summary** ≤{summary_max} 字；每段以 `**小标题**` 开头（如 **核心要点**、**关键数据**、**背景与意义**），小标题后接该段内容；客观陈述，不评价。
 7. **tags** 3-5 个，能用于后续检索与趋势聚合。
 
 ## 已抓取的关联目标（explicit 候选，供参考）

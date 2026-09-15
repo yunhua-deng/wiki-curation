@@ -63,19 +63,21 @@ def test_relations_replace_idempotent_and_normalized(tmp_path):
     ]
     L.replace_relations(db, "e1", edges)
     L.replace_relations(db, "e1", edges)  # 重复织边不翻倍
-    rel = L.get_related(db, "e1")
-    assert len(rel) == 2
-    others = {r["other"] for r in rel}
-    assert others == {"e2", "e3"}
-    # entry_a < entry_b 规范化落库
     conn = sqlite3.connect(str(db))
     rows = conn.execute("SELECT entry_a, entry_b FROM relations").fetchall()
     conn.close()
+    assert len(rows) == 2
+    others = {b if a == "e1" else a for a, b in rows}
+    assert others == {"e2", "e3"}
+    # entry_a < entry_b 规范化落库
     for a, b in rows:
         assert a < b
     # 换成空边 = 清除该条目所有边
     L.replace_relations(db, "e1", [])
-    assert L.get_related(db, "e1") == []
+    conn = sqlite3.connect(str(db))
+    remaining = conn.execute("SELECT COUNT(*) FROM relations").fetchone()[0]
+    conn.close()
+    assert remaining == 0
 
 
 def test_entities_column_roundtrip(tmp_path):

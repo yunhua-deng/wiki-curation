@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 source_config.py — Load and query references/sources.yaml.
-Single source of truth for source types, classification, fetching, and checklists.
+Single source of truth for source types, classification, and fetching.
 """
 import re
 from pathlib import Path
@@ -29,9 +29,17 @@ def get_aliases(config: Optional[dict] = None) -> dict:
 
 
 def resolve_subtype(subtype: str, config: Optional[dict] = None) -> str:
-    """Resolve alias or legacy name to canonical subtype."""
+    """Resolve alias or legacy name to canonical subtype.
+
+    默认/未知平台值（`unknown`，也是 cli.py `--source-type` 的缺省值）既无别名也无
+    source_type 定义，解析为 generic_web，避免存量 source_type=unknown 的条目在
+    collect 时报 `Unknown subtype`。
+    """
+    if not subtype or subtype == 'unknown':
+        return 'generic_web'
     aliases = get_aliases(config)
-    return aliases.get(subtype, subtype)
+    resolved = aliases.get(subtype, subtype)
+    return 'generic_web' if resolved == 'unknown' else resolved
 
 
 PLATFORM_NAMES = {

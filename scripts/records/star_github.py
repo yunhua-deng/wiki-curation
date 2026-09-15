@@ -8,7 +8,6 @@ scripts/records/star_github.py — publish 后自动标星 canonical GitHub 仓�
 凭据：GITHUB_TOKEN 环境变量（classic PAT + public_repo scope）。
 fine-grained PAT（github_pat_...）不支持 starring API（403）。
 """
-import json
 import os
 import re
 import socket

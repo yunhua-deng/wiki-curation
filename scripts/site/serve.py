@@ -4,7 +4,6 @@ scripts/site/serve.py — 本地 HTTP 服务包装器。
 
 以 wiki 工作区为根目录启动 http.server，使 /site/ 与 /artifacts/ 均可访问。
 """
-import argparse
 import atexit
 import json
 import os
@@ -15,8 +14,6 @@ import subprocess
 import webbrowser
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
-
-from scripts import paths
 
 
 class SPAHandler(SimpleHTTPRequestHandler):
@@ -177,30 +174,3 @@ def serve(wiki_dir, port=8123, open_browser=False, quiet=False, pid_file: str | 
         if not quiet:
             print("\nServer stopped")
         server.shutdown()
-
-
-def main():
-    parser = argparse.ArgumentParser(description="本地启动 wiki 站点")
-    parser.add_argument("--workspace", help="wiki 工作区路径")
-    parser.add_argument("--port", type=int, default=8123, help="监听端口")
-    parser.add_argument("--open", action="store_true", help="自动打开浏览器")
-    parser.add_argument("--quiet", action="store_true", help="抑制输出")
-    parser.add_argument("--pid-file", help="启动时将 PID 写入此文件；停止后可据此文件终止服务")
-    parser.add_argument("--stop", action="store_true", help="读取 --pid-file 并终止对应进程")
-    args = parser.parse_args()
-
-    ws = Path(args.workspace) if args.workspace else paths.get_workspace()
-
-    if args.stop:
-        if not args.pid_file:
-            parser.error("--stop requires --pid-file")
-        stop_server(args.pid_file)
-        if not args.quiet:
-            print(f"Stopped server via PID file: {args.pid_file}")
-        return
-
-    serve(ws, port=args.port, open_browser=args.open, quiet=args.quiet, pid_file=args.pid_file)
-
-
-if __name__ == "__main__":
-    main()

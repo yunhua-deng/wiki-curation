@@ -519,3 +519,110 @@ def test_non_render_required_source_keeps_curl_path(tmp_path, monkeypatch):
     assert recs
     assert all("attempt" not in r for r in recs)
 
+
+# ---------- 配置→handler 契约：search_then_* / none / unknown ----------
+
+def test_search_then_handlers_alias_to_search():
+    """sources.yaml 的 search_then_* 组合 handler 名映射到既有 handler_search。"""
+    assert cm.HANDLERS[cm.HANDLER_ALIASES["search_then_arxiv"]] is cm.handler_search
+    assert cm.HANDLERS[cm.HANDLER_ALIASES["search_then_github"]] is cm.handler_search
+
+
+@pytest.mark.parametrize("subtype", ["arxiv_title", "project_name"])
+def test_run_handler_config_handlers_resolve(tmp_path, subtype):
+    """声明了 search_then_* 的来源类型真正可解析，不再报 Unknown handler。"""
+    result = cm._run_handler(subtype, tmp_path / subtype, "帮我找几篇论文推荐", "L1")
+    assert "Unknown handler" not in (result.get("error") or "")
+    assert result["subtype"] == "search"
+
+
+def test_run_handler_none_is_skipped_local(tmp_path):
+    """handler: none 的来源（local_file / multi_source）注册后返回 skipped_local，不写盘。"""
+    dest = tmp_path / "ms"
+    result = cm._run_handler("multi_source", dest, "x", "L1")
+    assert result["status"] == "skipped_local"
+    assert result["files"] == []
+    assert not dest.exists()
+
+
+def test_to_platform_subtype_unknown_falls_back_to_generic_web():
+    """默认/未知平台值 unknown 解析为 generic_web，存量 source_type=unknown 不再 Unknown subtype。"""
+    from scripts import source_config as sc
+    assert sc.to_platform_subtype("unknown") == "generic_web"
+    assert sc.resolve_subtype("unknown") == "generic_web"
+    assert sc.resolve_subtype("") == "generic_web"
+    assert sc.get_source_type("unknown") == sc.get_source_type("generic_web")
+
+
+# ---------- 2026-09-15_005：可用性探测后端 ≠ 实际抓取后端 ----------
+
+def test_browser_fetch_runs_opencli_even_when_probe_fails(tmp_path, monkeypatch):
+    """openclaw 探测失败不得阻断 opencli 抓取（探测与抓取是两个后端）。
+
+    修复前：探测失败即 return needs_browser，opencli 永不被调用；本机正是这种环境。
+    """
+    calls = []
+
+    def fake_run_cmd(cmd, timeout=None):
+        calls.append(list(cmd))
+        if cmd[:2] == ["openclaw", "browser"]:
+            return {"ok": False, "exit_code": 1, "stdout": "", "stderr": "no tabs"}
+        if cmd[:4] == ["opencli", "browser", cm.BROWSER_SESSION, "open"]:
+            return {"ok": True, "exit_code": 0, "stdout": '{"page": "abc"}', "stderr": ""}
+        if cmd == ["opencli", "browser", cm.BROWSER_SESSION, "extract"]:
+            return {"ok": True, "exit_code": 0, "stdout": RENDERED_ARTICLE, "stderr": ""}
+        return {"ok": False, "exit_code": 1, "stdout": "", "stderr": ""}
+
+    monkeypatch.setattr(cm, "run_cmd", fake_run_cmd)
+    dest = tmp_path / "raw"
+    with cm._fetch_attempt(1):
+        result = cm.handler_browser(dest, HF_SPACE_URL, file_stem="hf_model_card", subtype="huggingface")
+
+    assert ["opencli", "browser", cm.BROWSER_SESSION, "open", HF_SPACE_URL] in calls
+    assert result["status"] == "success"
+    assert result["chrome_available"] is False           # 探测确实失败，但不再拦路
+    assert (dest / "hf_model_card_rendered.md").exists()
+    rec = json.loads((dest / "_fetch_results.json").read_text(encoding="utf-8"))["results"][-1]
+    assert rec["status"] == "success" and rec["rendered"] is True and rec["attempt"] == 1
+    assert rec["probe"]                                   # 探测结论单独留痕
+    assert rec["chrome_available"] is False
+
+
+def test_browser_fetch_needs_browser_when_opencli_missing(tmp_path, monkeypatch):
+    """opencli 根本跑不起来（exit -2）→ needs_browser，且证据能区分探测失败与抓取失败。"""
+    def fake_run_cmd(cmd, timeout=None):
+        if cmd[:2] == ["openclaw", "browser"]:
+            return {"ok": False, "exit_code": 1, "stdout": "", "stderr": "no tabs"}
+        return {"ok": False, "exit_code": -2, "stdout": "", "stderr": "系统找不到指定的文件"}
+
+    monkeypatch.setattr(cm, "run_cmd", fake_run_cmd)
+    dest = tmp_path / "raw"
+    result = cm.handler_browser(dest, HF_SPACE_URL, file_stem="hf_model_card", subtype="huggingface")
+
+    assert result["status"] == "needs_browser"
+    assert "opencli 不可用" in result["error"]
+    rec = json.loads((dest / "_fetch_results.json").read_text(encoding="utf-8"))["results"][-1]
+    assert rec["status"] == "failed" and rec["exit_code"] == -2
+    assert "probe" in rec
+
+
+def test_browser_fetch_extract_empty_is_distinguishable_from_probe_failure(tmp_path, monkeypatch):
+    """页面打开成功但 extract 无正文：状态仍是 needs_browser（需人工），但证据与「探测失败」可区分。"""
+    def fake_run_cmd(cmd, timeout=None):
+        if cmd[:2] == ["openclaw", "browser"]:
+            return {"ok": True, "exit_code": 0, "stdout": "tab: 1", "stderr": ""}
+        if cmd[:4] == ["opencli", "browser", cm.BROWSER_SESSION, "open"]:
+            return {"ok": True, "exit_code": 0, "stdout": "{}", "stderr": ""}
+        return {"ok": True, "exit_code": 0, "stdout": "   ", "stderr": ""}
+
+    monkeypatch.setattr(cm, "run_cmd", fake_run_cmd)
+    dest = tmp_path / "raw"
+    result = cm.handler_browser(dest, HF_SPACE_URL, file_stem="hf_model_card", subtype="huggingface")
+
+    assert result["status"] == "needs_browser"
+    assert result["chrome_available"] is True            # 探测正常 → 不是环境问题
+    assert "提取为空" in result["error"]
+    rec = json.loads((dest / "_fetch_results.json").read_text(encoding="utf-8"))["results"][-1]
+    assert rec["probe"] == ""                            # 探测正常时留痕为空，与探测失败区分
+    assert rec["chrome_available"] is True
+

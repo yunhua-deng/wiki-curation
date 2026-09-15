@@ -5,11 +5,9 @@ intake/commands.py — wiki 入队命令（原 wiki_db.py cmd_add）。
 从 wiki_db.py 拆分而来，保持 CLI 行为不变。
 """
 import sys
-import argparse
 import json
 import hashlib
 from datetime import date
-from pathlib import Path
 
 
 from scripts import wiki_index

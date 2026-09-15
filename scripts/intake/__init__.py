@@ -153,9 +153,3 @@ def prepare_intake(input_list=None, inputs_file=None, source_prompt: str = None)
         'joined_input': joined_input,
         'source_prompt': source_prompt or joined_input,
     }
-
-
-if __name__ == "__main__":
-    # 简单自测
-    r = prepare_intake(input_list=["https://arxiv.org/abs/2605.26112", "https://github.com/user/repo"])
-    print(r)

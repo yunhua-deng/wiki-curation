@@ -9,8 +9,6 @@ Orchestrator — Wiki 执行模块（v3.1 record-only）。
 
 Usage:
   python orchestrate.py run --id <slug>
-  python orchestrate.py classify --input "..."
-  python orchestrate.py collect --slug ... --type ... --subtype ... --input ...
 """
 import json
 import os
@@ -23,7 +21,7 @@ from pathlib import Path
 
 # 本脚本位于 exec/，需要 scripts/ 根目录才能导入 lib、wiki_index、intake 等公共模块
 
-from scripts.lib import run_cmd, get_workspace
+from scripts.lib import run_cmd
 from scripts import paths
 if sys.stdout.encoding != 'utf-8':
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -37,7 +35,6 @@ META_FILE_NAMES = {'source.txt', 'source_info.md', '_drill_log.json', 'prompt.md
 
 from scripts import wiki_index
 from scripts import intake
-from scripts.intake import classify_source
 from scripts.records.schema import RECORD_VERSION
 
 
@@ -57,11 +54,6 @@ def run_script(script_name: str, args: list, timeout: int = 120) -> dict:
     script_path = Path(script_name) if os.path.isabs(script_name) else SCRIPTS_DIR / script_name
     cmd = [sys.executable, str(script_path)] + args
     return run_cmd(cmd, timeout=timeout, retries=0)
-
-
-class _NullStream:
-    def write(self, *args, **kwargs): pass
-    def flush(self): pass
 
 
 def _json_error(error: str, message: str, detail: dict = None, next_cmd: str = None):
@@ -454,9 +446,12 @@ def cmd_run(args):
         else:
             err(f"  ⚠️ Collect: {(r['stderr'] or 'unknown error')[:200]}")
             _log(slug, 'FETCH', {'status': 'failed', 'error': (r['stderr'] or 'unknown error')[:200]})
+            # 采集器硬失败：与缺料门禁一致，两种输出模式都必须中止（不得静默继续生成提取任务）
             if json_mode:
                 _json_error("COLLECT_FAILED", r.get("stderr", "collect failed"))
-                return 1
+            else:
+                err("  ❌ COLLECT_FAILED: 采集器失败，已中止（未生成提取任务）")
+            return 1
 
     # === Step 4: Generate record extraction task ===
     log(f"\n[3/4] Record 记录提取任务生成...")
@@ -515,10 +510,6 @@ def cmd_run(args):
     if append_to:
         spawn_spec["append_to"] = append_to
 
-    if getattr(args, 'one_liner', False):
-        print(f"{spawn_spec['spawn_cmd']}; {publish_cmd}")
-        return 0
-
     if json_mode:
         print(json.dumps(spawn_spec, ensure_ascii=False, indent=2))
         return 0
@@ -537,20 +528,6 @@ def cmd_run(args):
     return 0
 
 
-def cmd_classify(args):
-    r = run_script("intake/classify_source.py", ["--input", args.input])
-    print(r["stdout"] if r["ok"] else r["stderr"])
-    return r["exit_code"] if not r["ok"] else 0
-
-
-def cmd_collect(args):
-    collect_args = ["--slug", args.slug, "--input-type", args.input_type,
-                   "--source-type", args.source_type, "--input", args.input]
-    r = run_script("exec/collect_materials.py", collect_args, timeout=180)
-    print(r["stdout"] if r["ok"] else r["stderr"])
-    return r["exit_code"] if not r["ok"] else 0
-
-
 def main():
     parser = argparse.ArgumentParser(description="Wiki 工作流总入口")
     sub = parser.add_subparsers(dest="command", help="命令")
@@ -563,28 +540,14 @@ def main():
                        help="接受手工抓取的缺失来源（LinkedIn / 微信等需登录态场景），不阻断 run")
     p_run.add_argument("--json", action="store_true")
     p_run.add_argument("--quiet", action="store_true")
-    p_run.add_argument("--one-liner", action="store_true")
     # 以下参数仅用于返回明确的废除错误（v3.1）
     p_run.add_argument("--mode", choices=["record", "article"], default=None)
     p_run.add_argument("--depth", choices=["brief", "deep"], default=None)
     p_run.add_argument("--append-to")
 
-    p_cls = sub.add_parser("classify", help="来源分类")
-    p_cls.add_argument("--input", "-i", required=True)
-
-    p_col = sub.add_parser("collect", help="收集素材")
-    p_col.add_argument("--slug", required=True)
-    p_col.add_argument("--input-type", required=True, dest="input_type")
-    p_col.add_argument("--source-type", required=True, dest="source_type")
-    p_col.add_argument("--input", required=True)
-
     args = parser.parse_args()
     if args.command == "run":
         sys.exit(cmd_run(args) or 0)
-    elif args.command == "classify":
-        sys.exit(cmd_classify(args))
-    elif args.command == "collect":
-        sys.exit(cmd_collect(args))
     else:
         parser.print_help()
 

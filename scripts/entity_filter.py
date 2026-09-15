@@ -199,8 +199,3 @@ def entity_groups_for(name, bucket: str, cfg: dict = None) -> list:
             return ["academia"]
         return ["company"]
     return ["product"]
-
-
-def entity_group(name, bucket: str, cfg: dict = None) -> str:
-    """向后兼容的单值接口：返回 entity_groups_for() 的第一个分组。"""
-    return entity_groups_for(name, bucket, cfg)[0]

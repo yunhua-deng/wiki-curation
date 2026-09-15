@@ -408,8 +408,6 @@ def cmd_record_event(args) -> int:
 def cmd_publish(args) -> int:
     extra = ["--id", args.id]
     if getattr(args, "depth", None): extra += ["--depth", args.depth]
-    if getattr(args, "spec", None): extra += ["--spec", args.spec]
-    if getattr(args, "title", None): extra += ["--title", args.title]
     if getattr(args, "site_only", False): extra.append("--site-only")
     r = _wiki_db_cmd("publish", args, extra, timeout=60)
     _print_result(r, args.json)

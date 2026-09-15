@@ -131,21 +131,6 @@ def set_link_verified(db_path, entry_id, url: str, verified) -> None:
 # relations（无向边：entry_a < entry_b）
 # ============================================================
 
-def _row_to_edge(row, perspective: str) -> dict:
-    other = row["entry_b"] if row["entry_a"] == perspective else row["entry_a"]
-    evidence = row["evidence"]
-    try:
-        evidence = json.loads(evidence) if evidence else {}
-    except Exception:
-        evidence = {"raw": evidence}
-    return {
-        "other": other,
-        "kind": row["kind"],
-        "score": row["score"] or 0,
-        "evidence": evidence,
-    }
-
-
 def replace_relations(db_path, entry_id, edges: list[dict]) -> int:
     """删除该 entry 的全部旧边后织入新边。edge 键：a, b, kind, score, evidence。"""
     conn = _connect(db_path)
@@ -176,17 +161,6 @@ def replace_relations(db_path, entry_id, edges: list[dict]) -> int:
     conn.commit()
     conn.close()
     return count
-
-
-def get_related(db_path, entry_id) -> list[dict]:
-    """该 entry 的全部关联边（双向展开），按 score 降序。"""
-    conn = _connect(db_path)
-    rows = conn.execute(
-        "SELECT * FROM relations WHERE entry_a = ? OR entry_b = ? ORDER BY score DESC",
-        (entry_id, entry_id),
-    ).fetchall()
-    conn.close()
-    return [_row_to_edge(r, entry_id) for r in rows]
 
 
 def get_all_relations(db_path) -> list[dict]:

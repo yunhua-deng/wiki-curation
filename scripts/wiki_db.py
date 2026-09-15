@@ -23,7 +23,6 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 from scripts import paths
-from scripts import wiki_index
 from scripts.wiki_index.schema import VALID_STATUSES
 
 from scripts.store import commands as store_cmds
@@ -129,8 +128,6 @@ def main():
                            help='只重建站点，跳过 record 校验/入库（用于 trends 更新后）')
     p_publish.add_argument('--depth', choices=['brief', 'deep'], default=None,
                            help='显式指定走文章校验；缺省为记录发布（record.json）')
-    p_publish.add_argument('--spec', help='Path to output spec YAML')
-    p_publish.add_argument('--title', help='Article title')
 
     p_record = sub.add_parser('record-event', help='Record an audit event')
     p_record.add_argument('--id', required=True, help='Entry slug')

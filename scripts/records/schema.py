@@ -106,7 +106,6 @@ def validate_record(data) -> tuple[bool, list[str]]:
     if not isinstance(data, dict):
         return False, ["record 必须是 JSON object"]
 
-    # v3.1: revision 与 history 为可选 append 字段
     for field in c["required_fields"]:
         if field not in data:
             errors.append(f"missing required field: {field}")

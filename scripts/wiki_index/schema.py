@@ -456,11 +456,15 @@ def _migrate_v11_depth_placeholders(conn):
     与 `_migrate_v4b_normalize_topic_types` 同理：归一化必须每次执行，否则「迁移之后新插入的
     脏值」会一直留着；版本记录只用于 doctor 观测。
     """
-    conn.execute(
+    cur = conn.execute(
         "UPDATE entries SET depth = 'brief' "
         "WHERE depth IS NULL OR TRIM(depth) = '' OR depth = '—'"
     )
-    _record_schema_version(conn, 'v11_depth_placeholders')
+    # 版本记录只在「真的归一了」或「版本行缺失」时补写：稳态（0 行命中）下若无条件写，
+    # 每次开库都会刷新 applied_at，`wiki.db` 被永久标记为 modified（同尺寸零信息二进制
+    # 增量随每次提交进仓库，2026-09-18_001）。版本行本身必须继续存在——doctor 靠它观测。
+    if cur.rowcount > 0 or 'v11_depth_placeholders' not in _get_applied_versions(conn):
+        _record_schema_version(conn, 'v11_depth_placeholders')
 
 
 def applied_versions(db_path) -> set:

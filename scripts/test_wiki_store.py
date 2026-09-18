@@ -139,6 +139,51 @@ def test_v11_migration_normalizes_depth_placeholders(tmp_path):
     assert recorded == 1
 
 
+def test_repeated_ensure_schema_leaves_db_untouched(tmp_path):
+    """稳态下开库本身零写入（工单 2026-09-18_001）。
+
+    v11 归一化每次 ensure_schema 都跑，但版本记账只在真的归一了（或版本行缺失）时才写；
+    否则每次开库都会刷新 applied_at，`wiki.db` 被永久标记为 modified。
+    """
+    path = tmp_path / "wiki.db"
+    ensure_schema(path)
+    ensure_schema(path)  # 二次开库后进入稳态：迁移全部已应用、无脏值
+
+    conn = sqlite3.connect(str(path))
+    before_ts = conn.execute(
+        "SELECT applied_at FROM schema_version WHERE version = 'v11_depth_placeholders'"
+    ).fetchone()
+    conn.close()
+    before_bytes = path.read_bytes()
+
+    ensure_schema(path)
+
+    conn = sqlite3.connect(str(path))
+    after_ts = conn.execute(
+        "SELECT applied_at FROM schema_version WHERE version = 'v11_depth_placeholders'"
+    ).fetchone()
+    conn.close()
+    assert before_ts is not None                   # 版本行仍在，doctor 可观测
+    assert after_ts == before_ts                   # applied_at 不刷新
+    assert path.read_bytes() == before_bytes       # 开库本身零写入
+
+    # 归一化语义不变：新插入的脏值仍被收掉，且归一后再次开库同样零写入
+    conn = sqlite3.connect(str(path))
+    conn.execute("INSERT INTO entries (id, status, depth) VALUES ('e_dirty', 'done', '—')")
+    conn.commit()
+    conn.close()
+
+    ensure_schema(path)
+    conn = sqlite3.connect(str(path))
+    depth = conn.execute("SELECT depth FROM entries WHERE id = 'e_dirty'").fetchone()[0]
+    conn.close()
+    assert depth == "brief"
+
+    steady_bytes = path.read_bytes()
+    ensure_schema(path)
+    assert path.read_bytes() == steady_bytes
+
+
 def test_rebuild_index_restores_entries_links_and_relations(tmp_path):
     """`sync --rebuild` 必须真的从 artifacts/*/record.json 重建索引（此前是空实现）。"""
     ws = tmp_path / "wiki"
